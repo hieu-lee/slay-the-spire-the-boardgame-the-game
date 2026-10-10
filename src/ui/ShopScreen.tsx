@@ -11,8 +11,8 @@ import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { CARD_PACK_IDS, CARD_PACKS } from '../game/packs.ts'
 import type { CardPackDef, CardPackId } from '../game/packs.ts'
-import { buyPack, coinsShort, ownsPack } from '../wallet.ts'
-import { updateWallet } from '../wallet-storage.ts'
+import { coinsShort, ownsPack } from '../wallet.ts'
+import { purchasePack } from '../wallet-storage.ts'
 import { CardKeywordHelp, cardAccessibleName } from './Card.tsx'
 import { CoinAmount, CoinIcon, formatCoins } from './Coins.tsx'
 import { ScannedCardFace } from './CompendiumScreen.tsx'
@@ -169,18 +169,19 @@ function PurchaseDialog({ pack, coins, onClose, onBrowse }: {
     cancel.current?.focus()
   }, [])
   useEffect(() => { if (bought) done.current?.focus() }, [bought])
-  const confirm = () => {
-    let outcome: ReturnType<typeof buyPack> | null = null
-    // Read-modify-write of the stored wallet: another tab may have spent the coins meanwhile.
-    updateWallet((wallet) => {
-      outcome = buyPack(wallet, pack.id)
-      return outcome.wallet
-    })
-    const result = outcome as ReturnType<typeof buyPack> | null
-    if (result?.ok) {
-      setBought(true)
-      playSoundEffect('magic')
-    } else setRefusal(result?.reason === 'owned' ? 'You already own this pack.' : 'You no longer have enough coins.')
+  const [buying, setBuying] = useState(false)
+  const confirm = async () => {
+    if (buying) return
+    setBuying(true)
+    setRefusal('')
+    try {
+      const result = await purchasePack(pack.id)
+      if (result.ok) {
+        setBought(true)
+        playSoundEffect('magic')
+      } else setRefusal(result.reason === 'owned' ? 'You already own this pack.' : 'You no longer have enough coins.')
+    } catch { setRefusal('Could not reach the Shop. Please try again.') }
+    finally { setBuying(false) }
   }
   return <dialog ref={dialog} className="shop-confirm" style={accentStyle(pack.id)} data-bought={bought || undefined}
     aria-labelledby="shop-confirm-title" aria-describedby="shop-confirm-copy" onClose={onClose}>
@@ -210,7 +211,7 @@ function PurchaseDialog({ pack, coins, onClose, onBrowse }: {
         {refusal ? <p className="shop-confirm__refusal" role="alert">{refusal}</p> : null}
         <div className="shop-confirm__actions">
           <button ref={cancel} type="button" className="shop-button shop-button--browse" onClick={() => dialog.current?.close()}>Cancel</button>
-          <button type="button" className="shop-button shop-button--buy" disabled={Boolean(refusal)} onClick={confirm}>
+          <button type="button" className="shop-button shop-button--buy" disabled={buying} aria-busy={buying} onClick={confirm}>
             Buy for <CoinAmount coins={CARD_PACK_PRICE} size={20} />
           </button>
         </div>

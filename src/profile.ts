@@ -1,4 +1,16 @@
 import { resetRoomEndpoint, roomUrl } from './multiplayer/room-endpoint.ts'
+import type { Wallet } from './wallet.ts'
+import type { BossCoinAward } from './game/coins.ts'
+
+export type WalletCredit = { runKey: string; awards: BossCoinAward[]; joinedAfter: number }
+export type WalletMigration = { id: string; wallet: Wallet }
+export type WalletReply = { wallet: Wallet; purchase?: { ok: boolean; reason?: string } }
+export const syncProfileWallet = (profile: Profile, migration: WalletMigration | undefined, credits: WalletCredit[], pack?: string) =>
+  post<WalletReply | { registered: false }>('/api/profile/wallet', { token: profile.token, migration, credits, pack }, 'Could not sync your coins. Please try again.')
+    .then((reply) => {
+      if ('registered' in reply) throw new Error('Your account is not registered on this server. Please log in again.')
+      return reply
+    })
 
 /** Where the signed-in profile is stored; other modules listen for it in `storage` events. */
 export const PROFILE_KEY = 'sts-profile'
@@ -126,9 +138,3 @@ export function logOut() {
 
 export const loadProfileStats = (profile: Profile) =>
   post<ProfileStats>('/api/profile/stats', { token: profile.token }, 'Could not open your record. Please try again.')
-
-/** The account's one-time coins for the runs it recorded before the Shop (see src/legacy-coins.ts). */
-export const claimLegacyCoins = (profile: Profile, claimId: string) =>
-  post<{ coins: number; grantId?: string }>('/api/profile/coins', { token: profile.token, claimId }, UNREACHABLE)
-export const confirmLegacyCoins = (profile: Profile, claimId: string, grantId: string) =>
-  post<{ claimed: boolean }>('/api/profile/coins/confirm', { token: profile.token, claimId, grantId }, UNREACHABLE)

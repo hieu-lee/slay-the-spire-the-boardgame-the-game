@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { claimProfile, loginProfile } from './lib/profiles.mjs'
 import { claimCoinGrant, confirmCoinGrant } from './lib/coin-grants.mjs'
+import { syncAccountWallet } from './lib/account-wallets.mjs'
 import { MAX_MAIL_CHARACTERS, WELCOME_LETTER, announceToPlayers, developerInbox, developerUnread, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
@@ -604,6 +605,7 @@ export function createRoomServer({
           ok: true, rooms: store.rooms.size, connections: sockets.size, connectionCapacity: maxConnections,
           protocolVersion: MULTIPLAYER_PROTOCOL_VERSION, profiles: true, passwordAccounts: true,
           entryRequestIds: true, webSocketActionAcks: true, releaseSha: RELEASE_SHA,
+          accountWallets: true,
         })
       }
       if (request.method === 'POST' && url.pathname === '/api/profile') {
@@ -655,6 +657,23 @@ export function createRoomServer({
         const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
         if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
         return send(response, 200, personalStats(store.leaderboardRuns, profile.username))
+      }
+      if (request.method === 'POST' && url.pathname === '/api/profile/wallet') {
+        if (!consume(statsRates, `wallet:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
+          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
+        }
+        const body = await readJson(request)
+        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
+        if (!profile) return send(response, 200, { registered: false })
+        const reply = syncAccountWallet(store, profile, body)
+        if (store.walletsDirty) {
+          if (!attemptSave()) {
+            queueSave()
+            return send(response, 503, { error: 'Could not save your wallet. Please try again.' })
+          }
+          store.walletsDirty = false
+        }
+        return send(response, 200, reply)
       }
       if (request.method === 'POST' && (url.pathname === '/api/profile/coins' || url.pathname === '/api/profile/coins/confirm')) {
         if (!consume(statsRates, `coins:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {

@@ -58,147 +58,60 @@ Act I-III wins at A0, 8 at A5, 4 at A8, or 2 at A10 (fewer with Act IV and A13's
 
 ## The wallet
 
-The wallet belongs to the signed-in account. It is stored in `localStorage` under
-`sts-wallet:<username>` (the name normalised like the server compares names), and under
-`sts-wallet` while nobody is signed in. The first time an account has no wallet, it adopts the
-anonymous one by moving it (the anonymous key is cleared), so a second account on the same
-browser starts empty and never inherits another account's coins or packs. The purse follows
-logging in and out in this tab and in other tabs (`onProfileChange`, `storage`).
+Hosted coin balances and owned packs belong to the authenticated account and are saved
+on the room server with its persistent profile. Desktop and phone share the same wallet.
+`POST /api/profile/wallet` reads it, imports an older browser wallet once, submits pending
+recorded-run credits, or buys a pack. Replies acknowledge mutations only after the server
+store is saved; a failed save returns 503 and a retry is safe.
 
-```json
-{ "version": 1, "coins": 1284, "packs": ["slayer_silent"], "addPacksToRuns": true,
-  "credited": { "solo:campaign-7:123456:3f0c…": 2, "online:K7QW2D:campaign-3": 1 } }
-```
+The browser keeps `sts-wallet:<username>` as a local cache (names are NFKC-normalised,
+trimmed and case-insensitive). `sts-wallet:<username>:sync` holds a migration id and
+pending credits. On load, login, reconnect, focus, and every 15 seconds while visible,
+the client refreshes the cache. A reply for an account that signed out is discarded;
+a run recorded while a refresh is in flight remains pending and visible until its
+next acknowledgement. Offline recorded-run credits survive reloads when storage works.
+Account purchases require the server and use its latest balance, so concurrent devices
+cannot overspend; retrying a bought pack never charges again. Anonymous and standalone
+builds continue using the local wallet and its browser-wide `sts-paid-runs` record.
 
-* `coins` — the balance (whole number, 0 to 100,000,000).
-* `packs` — owned pack ids, always in catalogue order.
-* `addPacksToRuns` — the switch below (default `true`).
-* `credited` — the idempotency ledger: run key → how many of that run's awards are paid.
+Older browser wallets migrate their packs and lifetime earnings (coins plus the price
+of owned packs). The server unions packs and takes the higher earnings rather than
+adding device balances, because old devices can contain the same legacy grant. Each
+migration id is remembered, so stale retries never restore spent money. This conservatively
+merges pre-sync wallets: separate earnings accumulated on multiple old devices cannot be
+summed reliably because those saves contain award counts, not each payment's amount.
+New recorded-run payments sync individually and do accumulate across devices. The server
+retains their paid-award counts without the browser ledger's 64-run eviction.
 
-Everything read from storage is validated field by field (`parseWallet`): a wrong version or
-unreadable JSON is the empty wallet; otherwise a bad balance becomes 0, unknown or duplicate
-pack ids are dropped, a non-boolean switch is `true`, and invalid ledger entries are dropped,
-without losing the other fields. Reads and writes never throw: if storage refuses a write the
-newer wallet stays in memory for this tab (and the next successful write carries it). Every
-change is a read-modify-write of the stored wallet, so a purchase in one tab and a boss credit
-in another cannot overwrite each other; open tabs follow changes through the `storage` event.
+### Recorded-run coins and ownership
 
-**Buying** (`buyPack`) refuses unknown ids, owned packs and balances below the price; a refusal
-returns the wallet unchanged. The screen asks for confirmation first and re-checks against the
-stored wallet when confirmed (another tab may have spent the coins).
+Boss victories append pending awards to `run.campaign.bossCoins`. Coins pay only when
+the result is recorded: **Stop and record result** after victory, or **Record campaign
+result** after defeat. Abandoning a run pays nothing; replays, tutorials, and Daily Climbs
+pay nothing. Solo keys include the run id, seed, and start nonce; online keys include
+room code and run id. Server credits are idempotent by run key and award count.
 
-### The idempotency ledger
-
-`creditBossCoins(wallet, runKey, awards, joinedAfter)` pays the awards from index
-`max(paid, joinedAfter)` on and records `awards.length` as paid. Crediting the same awards again
-pays nothing and returns the same wallet object, so nothing is written. This is what keeps
-reloads, a resumed solo run, online reconnects, repeated snapshots and React re-renders from
-paying a boss twice.
-
-* **Solo key** — `solo:<runId>:<seed>:<nonce>`. App draws the nonce when a run is *started*
-  and saves it with the run (`BuiltRun.coinKey`), so resuming the same attempt keeps the key
-  while a new attempt on a reused seed is a new run. Saves from before the Shop use
-  `solo:<runId>:<seed>`.
-* **Online key** — `online:<room code>:<runId>`. Run ids are unique within a room; room codes
-  are unique while the room lives.
-* The ledger keeps the 64 most recently paid runs. A run that falls out of it has long
-  finished (a finished run's awards never grow), so this bounds storage without re-paying.
-
-**Once per browser.** Every payment is also written to a browser-wide record, `sts-paid-runs`
-(`PAID_RUNS_KEY`): run key → awards paid, the 256 most recent runs (`MAX_PAID_RUNS`), validated
-on read. `creditOncePerBrowser` checks it in the same read-modify-write as the wallet, so a run
-paid to one account can never be claimed by another account on this browser — not by switching
-account and recording the same run again, nor from a second tab still showing the unrecorded
-victory. If storage refuses the write, the tab keeps the record in memory until a write succeeds.
-The per-wallet `credited` ledger stays: it travels with the wallet (an account adopting the
-anonymous wallet keeps its history) and covers wallets paid before the browser record existed.
-
-**Coins are paid only when the run's result is recorded.** A boss victory rolls and stores its
-award in `run.campaign.bossCoins` at once, but no wallet changes then: the award is *pending*.
-The coins are credited when the player records the result — **Stop and record result** after a
-victory, **Record campaign result** after a defeat (`recordRunResult` in `App.tsx`, the same
-action that records the leaderboard result). A run abandoned, discarded, replaced by a new run,
-given up and never recorded, or merely resumed or reloaded pays nothing; a recorded run pays
-once, also after a reload (the ledger, and the saved `recordRunId`). **Replays and the tutorial
-never credit**, and a Daily Climb has no awards. The solo/hot-seat device has one wallet.
-
-**A run pays the account that started it.** A solo run records its owner (`BuiltRun.owner`, the
-wallet key signed in at its start). If another account signs in — in this tab or another — the
-open run is left, its save is never rewritten for the new account nor offered to it, and a
-record of it pays nothing (the player is told why). Online, a seat pays only the account that
-took the seat in that tab. That owner is remembered in `sessionStorage` under the seat's token
-(`claimSeatOwner`), not its player id: rejoining a room reuses ids (p1..p4), so a different account
-taking the same id later is a new seat and pays its own account, while the same seat after a
-reload with another account signed in stays foreign. The token never leaves `useRoomSession`,
-which exposes only `seatOwnsCoins`.
-
-Online, the party's record button sends `finishRun`, which finalizes the run; every client then
-credits its own wallet once from the finalized run in its snapshot, skipping the bosses beaten
-before its hero joined (`campaign.joinedAfterBosses`, sent only for the viewer's own hero, mapped
-to a position in the awards by `catchUpAwardIndex`). A seat that was away when the run was
-recorded is paid on its next snapshot of the finalized run, or — once the party is back in the
-lobby — from the room's `recordedRuns` (the last 8 recorded runs' awards and that seat's
-offsets, keyed by seat token and sent only to seats that played them).
-
-Feedback: each boss shows a dashed "+N coins pending" toast (with "Boss bounty · claimed when you record the run (X to claim)" under it);
-recording shows "+N coins · Run recorded · X in your purse". The victory and defeat summaries
-show **Coins to claim** (with "record the run to claim") until the run is recorded; online they show nothing to claim to a seat that will not be paid (another account's seat, or a run this browser already paid). The main-menu
-purse and the Shop balance change only when coins are credited.
+A run pays the account that started it. Solo saves carry the wallet owner. Online seat
+owners are remembered by seat token in sessionStorage; changing accounts never inherits
+an old seat's payout. Catch Up skips awards before the hero joined. Disconnected seats
+can claim finalized awards after reconnecting, including the room's recent recorded runs.
+Browser-wide paid-run records continue preventing an account switch from paying the same
+local run to a second wallet.
 
 ### Coins for runs recorded before the Shop
 
-Accounts that played before the Shop get coins for the runs they already recorded
-(`scripts/lib/coin-grants.mjs`, verified by `verify-coin-grants.mjs`). The room server stores
-`coinsLaunchedAt` the first time a server with the Shop starts; only runs recorded **before** it
-count (later runs pay in game when recorded, so nothing is paid twice). For each account, every
-non-Daily run on the leaderboard that names it — its solo runs (`username`) and its seats in co-op
-runs (`winningDecks[].username`; online seats carry the account name) — pays the bosses it beat:
-each Act from its starting Act to `highestBossActDefeated`, and at Ascension 13 the Act III boss
-twice (a run marks Act III beaten only after both A13 Act III bosses fell). A Mind Bloom boss, and
-the first A13 Act III boss of a run that then fell, are not on the leaderboard and are not paid.
-Each boss is rolled with `rollBossCoins` at the run's Ascension from a seed made of the
-account name and the run id, so the result is the same on every restart and device. Names
-compare like the profile registry (NFKC, case-insensitive). Anonymous players and accounts
-without such runs get nothing.
+The frozen legacy grant (`scripts/lib/coin-grants.mjs`) seeds the server wallet, including
+when a browser already claimed it. It is based on non-Daily leaderboard runs recorded
+strictly before `coinsLaunchedAt`, and includes named co-op seats. Every defeated Act boss
+pays its deterministic Ascension bounty; A13 Act III pays twice. The leaderboard cannot
+recover Mind Bloom bosses, a lone first A13 Act III boss, or Catch Up offsets.
 
-**Deploy order.** `coinsLaunchedAt` is set when the first Shop-enabled room server starts
-(`createStore`, persisted with the store), so deploy and restart the room server **before**
-publishing the Pages client. In the other order, runs recorded in the gap pay twice: the new
-client credits them in game, and the legacy grant pays them again because they predate the
-cutoff. In a server-first gap, cached old clients record runs that are never paid.
-
-A grant is computed the first time its account asks and then stored and frozen
-(`coinGrants` in the room store): later leaderboard edits never change it. Claiming is
-two-phase. Builds that talk to a room server (the hosted game, or `VITE_MAIL`/`VITE_COIN_GRANTS`
-set locally) ask; others never do, so no request fails. An unknown or stale token gets
-`{ coins: 0 }` with a 200, never an error. On load and on every log in/registration the client
-(`src/legacy-coins.ts`) stores a
-claim id, asks `POST /api/profile/coins {token, claimId}` (which reserves the grant for that
-claim id), pays `sts-wallet:<username>` under the ledger key `legacy:<username>`, and then
-confirms with `POST /api/profile/coins/confirm {token, claimId, grantId}`. A lost answer is
-retried with the same claim id and never pays twice; another browser or device gets 0 while the
-grant is reserved, and every claim after the confirmation gets 0. Failures are silent and retried
-on the next visit. The credit shows a "+N coins · Your past runs" toast.
-
-The wallet lives in the browser, so the grant lands in the **first browser that claims it** and
-nowhere else; a later browser, a private window that is closed, or cleared storage cannot get it
-back. To limit that, a browser that cannot keep what it writes (blocked or full storage, tested
-with a probe write) never claims, the claim id is stored before asking, and the grant is confirmed
-spent only after the wallet write is read back from storage; until then the reservation stays with
-that browser and its next visit pays and confirms it. Private windows are not detected.
-
-Known simplification: a co-op seat that joined by Catch Up is paid every boss of the run, because
-the leaderboard does not record when a seat joined.
-
-Rolling the room server back to a release from before the Shop drops `coinsLaunchedAt` and
-`coinGrants` on its next save (older servers do not write them); a later upgrade would then set a
-new cutoff and recompute unclaimed grants, so avoid such a rollback once grants are being claimed.
-
-To inspect the grants before deploying (names and amounts only, no tokens):
-
-```sh
-node --experimental-strip-types scripts/coin-grants-report.mjs --store .rooms/rooms.json [--cutoff <ISO date>]
-```
+The Shop server must deploy before its client to preserve the original cutoff. The old
+`/api/profile/coins` claim/confirm protocol remains available for cached clients, but a
+grant moved into the account wallet is marked claimed so those clients cannot claim it
+again. Avoid rolling back to a pre-Shop server: it does not preserve grant metadata.
+The read-only `scripts/coin-grants-report.mjs --store <file>` report prints names and
+amounts, never credentials.
 
 ## Packs in runs
 

@@ -113,10 +113,9 @@ import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
 import { coinsOwed } from '../game/coins.ts'
 import { isCardPackId } from '../game/packs.ts'
 import { enabledCardPacks, MAX_RUN_KEY_LENGTH, soloRunKey } from '../wallet.ts'
-import { creditRunCoins, currentWalletKey, savedWallet } from '../wallet-storage.ts'
+import { ACCOUNT_WALLETS, creditRunCoins, currentWalletKey, savedWallet, syncAccountWallet } from '../wallet-storage.ts'
 import { CoinGainToast, type CoinGain } from './Coins.tsx'
 import { onProfileChange, PROFILE_KEY } from '../profile.ts'
-import { COIN_GRANTS, settleLegacyCoins } from '../legacy-coins.ts'
 import {
   discardRunLog,
   downloadRunLog,
@@ -293,19 +292,26 @@ function campaignBeforePendingRun(run: RunState): CampaignProgress {
 
 export function App() {
   useWebMcp()
-  // Accounts that played before the Shop are paid once for the runs they recorded:
-  // checked on load and whenever an account signs in, quietly retried on failure.
-  const [pastRunsGain, setPastRunsGain] = useState<CoinGain | null>(null)
-  const clearPastRunsGain = useCallback(() => setPastRunsGain(null), [])
+  // Refresh the shared account wallet on visits, account changes and reconnects.
   useEffect(() => {
     let active = true
-    const settle = () => void settleLegacyCoins().then(({ coins, total }) => {
-      if (active && coins > 0) setPastRunsGain({ coins, total, id: Date.now(), source: 'pastRuns' })
-    })
-    if (!COIN_GRANTS) return () => { active = false }
+    const settle = () => { if (active && document.visibilityState !== 'hidden') void syncAccountWallet().catch(() => {}) }
+    if (!ACCOUNT_WALLETS) return () => { active = false }
     settle()
     const stop = onProfileChange(settle)
-    return () => { active = false; stop() }
+    const storage = (event: StorageEvent) => { if (event.key === 'sts-profile' || event.key === null) settle() }
+    const timer = window.setInterval(settle, 15_000)
+    window.addEventListener('focus', settle)
+    window.addEventListener('online', settle)
+    window.addEventListener('storage', storage)
+    document.addEventListener('visibilitychange', settle)
+    return () => {
+      active = false; stop(); window.clearInterval(timer)
+      window.removeEventListener('focus', settle)
+      window.removeEventListener('online', settle)
+      window.removeEventListener('storage', storage)
+      document.removeEventListener('visibilitychange', settle)
+    }
   }, [])
   const [online, setOnline] = useState(() => !SINGLE_PLAYER_ONLY && hasRoomSession())
   const [localOpen, setLocalOpen] = useState(false)
@@ -565,7 +571,6 @@ export function App() {
           settings={settings} onSettings={setSettings} active={!online} />
       </div>
       {online && OnlineGame ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
-      <CoinGainToast gain={pastRunsGain} onDone={clearPastRunsGain} placement="menu" />
     </Suspense>
   )
 }

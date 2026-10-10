@@ -514,18 +514,22 @@ check('the client, deploy archive and service unit agree with the server', () =>
     'the client and server disagree on the letter length')
   const deploy = readFileSync(new URL('../infra/deploy-local-server.sh', import.meta.url), 'utf8')
   assert(/ scripts\/lib\/mail\.mjs /.test(deploy), 'the server release archive omits the mail module')
-  // Every module the room server (transitively) imports from scripts/ must ship in the release archive.
-  const archived = new Set([...deploy.matchAll(/\bscripts\/[\w./-]+\.(?:mjs|sh|json)\b/g)].map((match) => match[0]))
+  // Both server modules and shared TypeScript rules must ship. Directory
+  // entries such as src/game cover all their descendants.
+  const archiveCommand = deploy.match(/git -C "\$root" archive HEAD -- ([\s\S]*?)\| tar/)[1]
+  const archived = [...archiveCommand.matchAll(/\b(?:scripts|src|infra)\/[\w./-]+/g)].map((match) => match[0])
+  const root = new URL('../', import.meta.url)
   const seen = new Set()
   const walk = (file) => {
     if (seen.has(file)) return
     seen.add(file)
-    for (const match of readFileSync(new URL(`../${file}`, import.meta.url), 'utf8').matchAll(/from '(\.[^']+\.mjs)'/g)) {
-      walk(new URL(match[1], new URL(`../${file}`, import.meta.url)).pathname.replace(/^.*\/(scripts\/.*)$/, '$1'))
+    const location = new URL(file, root)
+    for (const match of readFileSync(location, 'utf8').matchAll(/(?:from\s+|import\s+)['"](\.[^'"]+\.(?:mjs|ts))['"]/g)) {
+      walk(new URL(match[1], location).pathname.slice(root.pathname.length))
     }
   }
   walk('scripts/room-server.mjs')
-  const missing = [...seen].filter((file) => file.startsWith('scripts/') && !archived.has(file))
+  const missing = [...seen].filter((file) => !archived.some((entry) => file === entry || file.startsWith(entry + '/')))
   assert(missing.length === 0, `the server release archive omits: ${missing.join(', ')}`)
   const unit = readFileSync(new URL('../infra/systemd/sts-room-server.service', import.meta.url), 'utf8')
   assert(unit.includes('EnvironmentFile=-%h/.config/slay-the-spire-server/mail.env'), 'the service cannot load the mail admin token')

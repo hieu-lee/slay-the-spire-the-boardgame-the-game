@@ -227,7 +227,7 @@ globalThis.window = { dispatchEvent: () => { changeEvents += 1; return true } }
 const session = new Map()
 globalThis.sessionStorage = { getItem: (key) => session.get(key) ?? null, setItem: (key, value) => session.set(key, String(value)), removeItem: (key) => session.delete(key) }
 globalThis.Event = class { constructor(type) { this.type = type } }
-const { PAID_RUNS_KEY, WALLET_KEY, browserPaidAll, claimSeatOwner, creditRunCoins, savedWallet, storagePersists, updateWallet, walletKey, walletStoredPaid } =
+const { PAID_RUNS_KEY, WALLET_KEY, browserPaidAll, claimSeatOwner, creditRunCoins, savedWallet, updateWallet, walletKey } =
   await import('../src/wallet-storage.ts')
 // A second copy of the module stands in for the same tab after a reload: empty memory, same sessionStorage.
 const reloaded = await import('../src/wallet-storage.ts?reload')
@@ -460,19 +460,6 @@ check('with sessionStorage unavailable a seat still belongs to the account that 
 
 suite('wallet storage guards')
 
-check('storagePersists is false when storage throws or silently drops writes, true when it keeps them', () => {
-  assertEqual(storagePersists(), true)
-  storage.failWrites = true
-  assertEqual(storagePersists(), false, 'a write that throws')
-  storage.failWrites = false
-  storage.dropWrites = true
-  assertEqual(storagePersists(), false, 'a write that is accepted but not kept')
-  storage.dropWrites = false
-  storage.failReads = true
-  assertEqual(storagePersists(), false, 'a read that throws')
-  storage.failReads = false
-})
-
 check('browserPaidAll is true only once every award has been paid to some account', () => {
   signIn('Kit')
   const key = 'solo:paid-all:1:k'
@@ -484,19 +471,6 @@ check('browserPaidAll is true only once every award has been paid to some accoun
   signIn('Lou')
   assertEqual(browserPaidAll(key, awards(5, 6)), true, 'whichever account is signed in')
   assertEqual(browserPaidAll(key, awards(5, 6, 7)), false, 'a later boss is not yet paid')
-  signOut()
-})
-
-check('walletStoredPaid reads what is on disk, flushing a wallet an earlier failed write left in memory', () => {
-  signIn('Mae')
-  const key = 'solo:stored-paid:1:m'
-  storage.failWrites = true
-  creditRunCoins(key, awards(7))
-  assertEqual(walletStoredPaid(key), false, 'an unsaved payment is not stored')
-  storage.failWrites = false
-  assertEqual(walletStoredPaid(key), true, 'storage works again: the unsaved wallet is flushed and read back')
-  assertEqual(JSON.parse(store.get('sts-wallet:mae')).credited[key], 1)
-  assertEqual(walletStoredPaid('solo:never-paid'), false)
   signOut()
 })
 
@@ -519,11 +493,12 @@ check('while the wallet cannot be saved, a later flush never writes the paid rec
   signIn('Oz')
   storage.failKey = (key) => key.startsWith('sts-wallet')
   assertEqual(creditRunCoins('solo:oz-1:1:o', awards(6)).coins, 6)
-  assertEqual(walletStoredPaid('solo:oz-1:1:o'), false, 'still unsaved: the flush inside fails')
+  assertEqual(store.get('sts-wallet:oz'), undefined, 'the failed wallet write stays off disk')
   updateWallet((wallet) => wallet)
   assertEqual(JSON.parse(store.get(PAID_RUNS_KEY) ?? '{}')['solo:oz-1:1:o'], undefined, 'the record reached the disk ahead of its wallet')
   storage.failKey = null
-  assertEqual(walletStoredPaid('solo:oz-1:1:o'), true)
+  updateWallet((wallet) => wallet)
+  assertEqual(JSON.parse(store.get('sts-wallet:oz')).credited['solo:oz-1:1:o'], 1)
   assertEqual(JSON.parse(store.get(PAID_RUNS_KEY))['solo:oz-1:1:o'], 1, 'once the wallet is saved the record follows')
   signOut()
 })

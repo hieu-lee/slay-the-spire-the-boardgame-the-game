@@ -23,8 +23,8 @@ prepare_release() {
     git -C "$root" archive HEAD -- package.json scripts/room-server.mjs \
       scripts/lib/rooms.mjs scripts/lib/leaderboard.mjs scripts/lib/stats.mjs scripts/lib/codex-deck-classifier.mjs \
       scripts/lib/codex-deck-worker.sh scripts/lib/deck-type.schema.json scripts/lib/profiles.mjs scripts/lib/mail.mjs \
-      scripts/lib/coin-grants.mjs \
-      src/game infra/systemd/sts-room-server.service infra/validate-room-store.mjs | tar -x -C "$candidate"
+      scripts/lib/coin-grants.mjs scripts/lib/account-wallets.mjs \
+      src/game src/wallet.ts infra/systemd/sts-room-server.service infra/validate-room-store.mjs | tar -x -C "$candidate"
     mkdir -p "$candidate/node_modules/@openai"
     cp -aL "$root/node_modules/ws" "$candidate/node_modules/ws"
     cp -aL "$root/node_modules/@openai/codex-sdk" "$candidate/node_modules/@openai/codex-sdk"

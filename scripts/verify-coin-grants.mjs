@@ -1,6 +1,5 @@
 // Coins for runs recorded before the Shop: the deterministic computation, the
-// stored and frozen grant, the two-phase claim over HTTP, and the client paying
-// its wallet exactly once.
+// stored and frozen grant, and the compatibility claim/confirm HTTP protocol.
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
@@ -233,118 +232,6 @@ try {
     assertDeepEqual((await post('/api/profile/coins', { token: ann.token, claimId: winner })).body, { coins: 0 })
   })
 
-  // The client: a browser with Bo signed in claims Bo's grant into Bo's wallet, once.
-  addLeaderboardRun(service.store, run(21, { username: 'Bo', highestBossActDefeated: 2, ascension: 8 }), CUTOFF - 1)
-  const boCoins = legacyCoinGrant(service.store.leaderboardRuns, 'Bo', CUTOFF).coins
-  const store = new Map()
-  let failConfirm = true
-  globalThis.localStorage = {
-    getItem: (key) => store.get(key) ?? null, setItem: (key, value) => store.set(key, String(value)), removeItem: (key) => store.delete(key),
-  }
-  globalThis.window = { dispatchEvent: () => true, addEventListener: () => {}, removeEventListener: () => {} }
-  const session = new Map()
-  globalThis.sessionStorage = { getItem: (key) => session.get(key) ?? null, setItem: (key, value) => session.set(key, String(value)), removeItem: (key) => session.delete(key) }
-  globalThis.Event = class { constructor(type) { this.type = type } }
-  const realFetch = globalThis.fetch
-  globalThis.fetch = (url, init) => {
-    if (failConfirm && String(url).endsWith('/confirm')) return Promise.reject(new TypeError('network down'))
-    return realFetch(new URL(String(url), origin), init)
-  }
-  store.set('sts-profile', JSON.stringify({ username: 'Bo', token: bo.token, secured: true }))
-  const { settleLegacyCoins } = await import('../src/legacy-coins.ts')
-  const wallet = () => JSON.parse(store.get('sts-wallet:bo') ?? 'null')
-
-  await checkAsync('the client pays the grant before confirming, so a lost confirmation loses nothing and pays once', async () => {
-    const first = await settleLegacyCoins()
-    assertEqual(first.coins, boCoins)
-    assertEqual(wallet().coins, boCoins)
-    assert(store.has('sts-legacy-claim:bo'), 'the claim id was dropped before the server confirmed')
-    failConfirm = false
-    const retry = await settleLegacyCoins()
-    assertEqual(retry.coins, 0, 'the retry paid the wallet a second time')
-    assertEqual(wallet().coins, boCoins)
-    assertEqual(service.store.coinGrants.find((grant) => grant.username === 'bo').claimedAt !== null, true, 'the retry did not confirm')
-    assertEqual(store.has('sts-legacy-claim:bo'), false)
-    assertEqual((await settleLegacyCoins()).coins, 0, 'a spent grant paid again')
-    assertEqual(wallet().coins, boCoins)
-  })
-
-  await checkAsync('a browser that cannot keep the coins never takes the grant, and confirms only what reached the disk', async () => {
-    const cy = { username: 'Cy', token: crypto.randomUUID() }
-    await post('/api/profile', { ...cy, password: PASSWORD })
-    addLeaderboardRun(service.store, run(22, { username: 'Cy', highestBossActDefeated: 1 }), CUTOFF - 1)
-    store.set('sts-profile', JSON.stringify({ ...cy, secured: true }))
-    const realSet = globalThis.localStorage.setItem
-    globalThis.localStorage.setItem = () => { throw new Error('QuotaExceededError') }
-    assertEqual((await settleLegacyCoins()).coins, 0)
-    globalThis.localStorage.setItem = realSet
-    assertEqual(service.store.coinGrants.find((grant) => grant.username === 'cy')?.claimId ?? null, null, 'a browser without storage reserved the grant')
-    // Storage that accepts the probe and the claim id but then fails the wallet write: no confirmation.
-    let writes = 0
-    globalThis.localStorage.setItem = (key, value) => {
-      if (key.startsWith('sts-wallet')) throw new Error('QuotaExceededError')
-      writes += 1
-      return realSet(key, value)
-    }
-    await settleLegacyCoins()
-    globalThis.localStorage.setItem = realSet
-    const reserved = service.store.coinGrants.find((grant) => grant.username === 'cy')
-    assert(reserved.claimId && reserved.claimedAt === null, 'an unsaved payment was confirmed')
-    assert(writes > 0)
-    // A later visit with working storage pays it, writes it and confirms.
-    const later = await settleLegacyCoins()
-    assert(JSON.parse(store.get('sts-wallet:cy')).coins > 0, 'the reserved grant never reached the wallet')
-    assert(service.store.coinGrants.find((grant) => grant.username === 'cy').claimedAt !== null, 'the grant was never confirmed')
-    assert(later.coins >= 0)
-  })
-
-  await checkAsync('storage that accepts writes but keeps nothing never reserves the grant', async () => {
-    const kim = { username: 'Kim', token: crypto.randomUUID() }
-    await post('/api/profile', { ...kim, password: PASSWORD })
-    addLeaderboardRun(service.store, run(24, { username: 'Kim', highestBossActDefeated: 1 }), CUTOFF - 1)
-    store.set('sts-profile', JSON.stringify({ ...kim, secured: true }))
-    const realSet = globalThis.localStorage.setItem
-    globalThis.localStorage.setItem = () => {}
-    assertEqual((await settleLegacyCoins()).coins, 0)
-    globalThis.localStorage.setItem = realSet
-    assertEqual(service.store.coinGrants.find((grant) => grant.username === 'kim')?.claimId ?? null, null,
-      'a browser that keeps nothing reserved the grant')
-  })
-
-  await checkAsync('two settlements at once share one payment; an account that changed mid-request is not paid', async () => {
-    const dee = { username: 'Dee', token: crypto.randomUUID() }
-    await post('/api/profile', { ...dee, password: PASSWORD })
-    addLeaderboardRun(service.store, run(23, { username: 'Dee', highestBossActDefeated: 2 }), CUTOFF - 1)
-    const deeCoins = legacyCoinGrant(service.store.leaderboardRuns, 'Dee', CUTOFF).coins
-    store.set('sts-profile', JSON.stringify({ ...dee, secured: true }))
-    // Another account signs in while Dee's claim is out: nothing is paid to anyone.
-    const plain = globalThis.fetch
-    globalThis.fetch = async (url, init) => {
-      const reply = await plain(url, init)
-      if (String(url).endsWith('/api/profile/coins')) store.set('sts-profile', JSON.stringify({ username: 'Zed', token: crypto.randomUUID(), secured: true }))
-      return reply
-    }
-    assertEqual((await settleLegacyCoins()).coins, 0, 'the claim paid the account that signed in meanwhile')
-    globalThis.fetch = plain
-    assertEqual(store.get('sts-wallet:zed') ?? null, null)
-    assertEqual(store.get('sts-wallet:dee') ?? null, null)
-    // Dee comes back: two settlements at once (a remounted screen) both report the one payment.
-    store.set('sts-profile', JSON.stringify({ ...dee, secured: true }))
-    const [one, two] = await Promise.all([settleLegacyCoins(), settleLegacyCoins()])
-    assertEqual(one.coins, deeCoins)
-    assertEqual(two.coins, deeCoins, 'the second caller missed the payment')
-    assertEqual(JSON.parse(store.get('sts-wallet:dee')).coins, deeCoins, 'the grant was paid twice')
-  })
-
-  await checkAsync('an anonymous player and an account without past runs get nothing', async () => {
-    store.delete('sts-profile')
-    assertEqual((await settleLegacyCoins()).coins, 0)
-    const zed = { username: 'Zed', token: crypto.randomUUID() }
-    await post('/api/profile', { ...zed, password: PASSWORD })
-    store.set('sts-profile', JSON.stringify({ ...zed, secured: true }))
-    assertEqual((await settleLegacyCoins()).coins, 0)
-    assertEqual(store.get('sts-wallet:zed'), undefined)
-  })
 } finally {
   await service.close()
 }

@@ -156,7 +156,7 @@ try {
     assertEqual(await purse(), 'Shop · 33 coins', `${screen}: the first account did not adopt the anonymous purse`)
     await logOutHere()
     // The second account's name already has a run recorded before the Shop: creating it pays
-    // that run once, with a toast, and never the first account's coins.
+    // that run into its account wallet, and never the first account's coins.
     const second = `Purse${phone ? 'Phone' : 'Desktop'}B`
     const cutoff = rooms.store.coinsLaunchedAt
     addLeaderboardRun(rooms.store, { id: `past-run-${screen}`, username: second, character: 'ironclad', ascension: 5, mode: 'standard',
@@ -164,19 +164,14 @@ try {
     const pastRuns = legacyCoinGrant(rooms.store.leaderboardRuns, second, cutoff).coins
     assert(pastRuns > 0, 'precondition: the past run pays coins')
     await createAccount(second)
-    const pastRunsToast = walletPage.locator('.coin-gain__toast')
-    await pastRunsToast.waitFor()
-    assert(new RegExp(`\\+${pastRuns} coins[\\s\\S]*Your past runs · ${pastRuns} in your purse`).test(await pastRunsToast.innerText()),
-      `${screen}: the past-runs toast reads ${await pastRunsToast.innerText()}`)
     await walletPage.waitForFunction((label) => document.querySelector('.start-menu__purse')?.getAttribute('aria-label') === label,
       `Shop · ${pastRuns} coins`)
-    // Wait for the entry animations only: the delayed one is the toast's own fade-out.
-    await walletPage.evaluate(() => Promise.all(document.querySelector('.coin-gain__toast').getAnimations({ subtree: true })
-      .filter((animation) => animation.effect?.getTiming().delay === 0).map((animation) => animation.finished)))
-    await walletPage.screenshot({ path: join(output, `${screen}-past-runs-toast.png`) })
+    assertEqual(rooms.store.profiles.find((profile) => profile.username === second).wallet.coins, pastRuns,
+      `${screen}: the displayed coins were not saved to the account`)
+    await walletPage.screenshot({ path: join(output, `${screen}-past-runs-wallet.png`) })
     await walletPage.reload()
     await walletPage.locator('.start-menu__nav').waitFor()
-    await walletPage.waitForFunction(() => !localStorage.getItem('sts-legacy-claim:' + JSON.parse(localStorage.getItem('sts-profile')).username.toLowerCase()))
+    await walletPage.waitForFunction(() => JSON.parse(localStorage.getItem('sts-wallet:' + JSON.parse(localStorage.getItem('sts-profile')).username.toLowerCase() + ':sync'))?.migrated === true)
     assertEqual(await purse(), `Shop · ${pastRuns} coins`, `${screen}: the past runs paid twice, or the second account inherited coins`)
     await logOutHere()
     await walletPage.getByRole('button', { name: 'Already have an account? Log in' }).click()
@@ -303,26 +298,24 @@ try {
     await unknownPage.getByRole('alert').filter({ hasText: 'not registered on this server' }).waitFor()
     await unknownContext.close()
   }
-  // A stale or unknown profile token on a normal load: the past-run grant is still asked
-  // for, answers "nothing", and no request fails or logs a console error.
+  // A stale token gets a quiet unregistered reply: no account data is exposed,
+  // and its local cache is left intact until the player signs in again.
   {
     const strangerContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
     await strangerContext.addInitScript(() => localStorage.setItem('sts-profile', JSON.stringify({
       username: 'GhostAccount', token: '00000000-0000-4000-8000-00000000dead', secured: true })))
     const strangerPage = await strangerContext.newPage()
     const consoleErrors = []
-    const failed = []
     strangerPage.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()) })
-    strangerPage.on('response', (response) => { if (response.status() >= 400) failed.push(`${response.status()} ${response.url()}`) })
-    const claim = strangerPage.waitForResponse((response) => response.url().endsWith('/api/profile/coins'))
+    const wallet = strangerPage.waitForResponse((response) => response.url().endsWith('/api/profile/wallet'))
     await strangerPage.goto(origin)
-    const claimed = await claim
-    await strangerPage.waitForTimeout(500)
-    check('a load with an unknown profile token asks for its grant without a failed request or console error', () => {
-      assertEqual(claimed.status(), 200)
-      assertEqual(failed.join('\n'), '')
+    const reply = await wallet
+    check('an unknown token receives no wallet and causes no console error', () => {
+      assertEqual(reply.status(), 200)
       assertEqual(consoleErrors.join('\n'), '')
     })
+    assertEqual((await reply.json()).registered, false)
+    assertEqual(await strangerPage.evaluate(() => localStorage.getItem('sts-wallet:ghostaccount')), null)
     await strangerContext.close()
   }
 } finally {
