@@ -6,13 +6,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { assetPath, cardThumbPath } from '../game/assets.ts'
-import { bossCoinRange, CARD_PACK_PRICE } from '../game/coins.ts'
-import type { BossAct } from '../game/coins.ts'
+import { CARD_PACK_PRICE } from '../game/coins.ts'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
 import { CARD_PACK_IDS, CARD_PACKS } from '../game/packs.ts'
 import type { CardPackDef, CardPackId } from '../game/packs.ts'
-import { savedCampaign } from '../campaign-storage.ts'
 import { buyPack, coinsShort, ownsPack } from '../wallet.ts'
 import { updateWallet } from '../wallet-storage.ts'
 import { CardKeywordHelp, cardAccessibleName } from './Card.tsx'
@@ -43,7 +41,6 @@ const PACK_FAN: Record<CardPackId, readonly [string, string, string]> = {
 }
 
 const SKIN_TEASERS = ['ironclad', 'silent', 'defect', 'watcher'] as const
-const ACT_NUMERALS = ['I', 'II', 'III', 'IV'] as const
 
 const ownerLabel = (pack: CardPackDef) => pack.owner === 'colorless' ? 'Colorless' : CHARACTER_LABEL[pack.owner]
 const accentStyle = (id: CardPackId) => ({ '--pack-accent': PACK_ACCENT[id] }) as CSSProperties
@@ -226,7 +223,6 @@ function SkinsTeaser() {
   return <div className="shop-skins">
     <header className="shop__section-head">
       <h2 id="shop-skins-title">Skins</h2>
-      <p>New looks for your heroes are being stitched together. The wardrobe opens in a future update.</p>
     </header>
     <div className="shop-skins__display">
     <ul className="shop-skins__racks" aria-label="Skins on display">
@@ -249,7 +245,6 @@ export function ShopScreen({ onBack }: { onBack: () => void }) {
   const [buying, setBuying] = useState<CardPackId | null>(null)
   const [browsing, setBrowsing] = useState<CardPackId | null>(null)
   const tabs = useRef(new Map<Tab, HTMLButtonElement>())
-  const [ascension] = useState(() => savedCampaign().highestAscension)
   const short = coinsShort(wallet)
   useEffect(() => { tabs.current.get('packs')?.focus({ preventScroll: true }) }, [])
   useEffect(() => {
@@ -291,17 +286,6 @@ export function ShopScreen({ onBack }: { onBack: () => void }) {
           {tabButton('packs', 'Card Packs', `${wallet.packs.length}/${CARD_PACK_IDS.length}`)}
           {tabButton('skins', 'Skins', 'Soon')}
         </div>
-        <section className="shop__bounty" aria-labelledby="shop-bounty-title">
-          <h2 id="shop-bounty-title">Boss bounties</h2>
-          <p>Each boss you defeat pays coins{ascension > 0 ? `. At Ascension ${ascension}:` : ':'}</p>
-          <dl>
-            {([1, 2, 3, 4] as BossAct[]).map((act) => {
-              const { min, max } = bossCoinRange(act, ascension)
-              return <div key={act}><dt>Act {ACT_NUMERALS[act - 1]}</dt><dd><CoinIcon size={16} />{min}–{max}</dd></div>
-            })}
-          </dl>
-          <p className="shop__bounty-note">Higher Ascensions pay more. Daily Climbs pay nothing.</p>
-        </section>
       </aside>
 
       {/* One stable panel per tab, so each tab's aria-controls always names a real element. */}
@@ -309,7 +293,6 @@ export function ShopScreen({ onBack }: { onBack: () => void }) {
         hidden={tab !== 'packs'}>
           <header className="shop__section-head">
             <h2>The Slayer Pack</h2>
-            <p>Forty-five new cards in five packs. A pack you buy is yours for good: its cards are shuffled into the reward decks of your future runs.</p>
           </header>
           <ul className="shop__packs">
             {CARD_PACK_IDS.map((id) => <PackTile key={id} pack={CARD_PACKS[id]} owned={ownsPack(wallet, id)} short={short}

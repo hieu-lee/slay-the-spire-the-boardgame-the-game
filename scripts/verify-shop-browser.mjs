@@ -173,7 +173,7 @@ try {
     await page.locator('.shop-pack').first().waitFor()
     await settledImages(page, '.shop-fan__card')
     await assertTilesHoldTheirButtons(page, screen)
-    await assertUnclipped(page, '.shop-pack, .shop-button, .shop__bounty', `${screen} shelf`)
+    await assertUnclipped(page, '.shop-pack, .shop-button', `${screen} shelf`)
     const scrolls = await page.evaluate(() => Object.fromEntries(['.shop__packs', '.shop__rail'].map((selector) => {
       const element = document.querySelector(selector)
       return [selector, element.scrollHeight - element.clientHeight]
