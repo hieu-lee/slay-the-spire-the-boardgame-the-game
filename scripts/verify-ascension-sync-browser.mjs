@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/silent-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 

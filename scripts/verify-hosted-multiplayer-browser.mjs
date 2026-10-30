@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
-import { chromium } from 'playwright'
+import { chromium } from './lib/silent-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { chromium, devices, webkit } from 'playwright'
+import { chromium, devices, webkit } from './lib/silent-browser.mjs'
 import { preview } from 'vite'
 import { createRoomServer } from './room-server.mjs'
 

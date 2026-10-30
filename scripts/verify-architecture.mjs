@@ -116,6 +116,26 @@ const show = (file) => relative(repoRoot, file)
 
 suite('architecture')
 
+check('browser automation cannot bypass the silent launcher', () => {
+  const scriptsRoot = join(repoRoot, 'scripts')
+  const violations = []
+  for (const file of readdirSync(scriptsRoot, { recursive: true }).filter(file => /\.(mjs|js|ts)$/.test(file))) {
+    if (file.replaceAll('\\', '/') === 'lib/silent-browser.mjs') continue
+    const source = ts.createSourceFile(file, readFileSync(join(scriptsRoot, file), 'utf8'), ts.ScriptTarget.Latest, true)
+    const visit = node => {
+      const specifier = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
+        : ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
+          ts.isIdentifier(node.expression) && node.expression.text === 'require') ? node.arguments[0] : undefined
+      if (specifier && ts.isStringLiteral(specifier) && /^(?:playwright(?:-core)?|@playwright\/test)(?:\/|$)/.test(specifier.text)) {
+        violations.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`)
+      }
+      ts.forEachChild(node, visit)
+    }
+    visit(source)
+  }
+  assertEqual(violations.length, 0, `use silent-browser.mjs or profile-browser.mjs instead: ${violations.join(', ')}`)
+})
+
 check('src/game has no import cycles', () => {
   const cycle = findCycle(buildGraph(join(srcRoot, 'game'), runtimeImportsOf))
   assert(cycle === null, `import cycle: ${cycle?.map(show).join(' -> ')}`)

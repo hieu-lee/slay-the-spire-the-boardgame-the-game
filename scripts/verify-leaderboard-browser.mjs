@@ -2,7 +2,7 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
+import { chromium } from './lib/silent-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createCombat } from '../src/game/combat.ts'
 import { createRoomServer } from './room-server.mjs'
