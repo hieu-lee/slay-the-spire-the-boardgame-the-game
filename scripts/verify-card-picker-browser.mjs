@@ -128,6 +128,7 @@ try {
     debug.setRun(run)
   })
   await page.locator('.campfire').waitFor()
+  assert.equal((await page.locator('.campfire').getByRole('button', { name: /Rest/ }).locator('.muted').innerText()).trim(), '+3 HP')
 
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
@@ -216,6 +217,22 @@ try {
   })
   const campfire = page.locator('.campfire')
   await campfire.waitFor()
+  const rest = campfire.getByRole('button', { name: /Rest/ })
+  for (const [screen, viewport] of [
+    ['desktop', { width: 1920, height: 1080 }],
+    ['horizontal-phone', { width: 844, height: 390 }],
+  ]) {
+    await page.setViewportSize(viewport)
+    assert.equal((await rest.locator('.muted').innerText()).trim(), '+3 HP · may remove a card (Peace Pipe)')
+    assert(await rest.evaluate(button => {
+      const box = button.getBoundingClientRect()
+      const text = button.querySelector('.muted').getBoundingClientRect()
+      return box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight &&
+        text.left >= box.left && text.right <= box.right && text.bottom <= box.bottom
+    }), `${screen}: the Peace Pipe explanation must fit the Rest button`)
+    await page.screenshot({ path: resolve(root, 'artifacts/card-picker-browser', `${screen}-peace-pipe-rest.png`) })
+  }
+  await page.setViewportSize({ width: 1920, height: 1080 })
   await campfire.getByRole('button', { name: /Rest/ }).click()
   await picker.waitFor()
   assert.equal(await picker.getAttribute('aria-label'), 'Choose a card to remove')

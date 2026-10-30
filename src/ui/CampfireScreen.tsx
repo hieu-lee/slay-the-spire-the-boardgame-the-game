@@ -116,7 +116,7 @@ export function CampfireScreen({ players, onResolve, rubyAvailable = false, rest
                 >
                   <img src={assetPath('noncombat/campfire/rest.webp')} alt="" />
                   <strong>Rest</strong>
-                  <span className="muted"> +{restHeal} HP{!restAllowed ? ' · blocked by Night Terrors' : coffee ? ' · blocked by Coffee Dripper' : ''}</span>
+                  <span className="muted"> +{restHeal} HP{peacePipe ? ' · may remove a card (Peace Pipe)' : ''}{!restAllowed ? ' · blocked by Night Terrors' : coffee ? ' · blocked by Coffee Dripper' : ''}</span>
                 </button>
                 {rubyAvailable ? <button
                   type="button"
