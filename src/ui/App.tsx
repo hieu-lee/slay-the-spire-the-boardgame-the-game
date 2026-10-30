@@ -309,7 +309,7 @@ export function App() {
     settle()
     const changedAccount = () => {
       const next = savedProfile()?.token
-      if (next !== account) { setLocalOpen(false); setAccount(next) }
+      if (next !== account) setAccount(next)
       settle()
     }
     const stop = onProfileChange(changedAccount)
@@ -338,7 +338,6 @@ export function App() {
     }, () => { if (active) setOnline(false) })
     return () => { active = false }
   }, [online])
-  const [localOpen, setLocalOpen] = useState(false)
   const [settings, setSettings] = useGameSettings()
   useEffect(() => settings.sfxVolume > 0 ? installSoundEffects(true) : undefined, [settings.sfxVolume])
   useEffect(() => {
@@ -593,7 +592,7 @@ export function App() {
     <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       {online === null ? <main className="app-loading" role="status">Loading…</main> : <>
       <div className="game-mode" hidden={online}>
-        <LocalGame key={account} open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={SINGLE_PLAYER_ONLY ? undefined : () => setOnline(true)}
+        <LocalGame key={account} onOnline={SINGLE_PLAYER_ONLY ? undefined : () => setOnline(true)}
           settings={settings} onSettings={setSettings} active={!online} />
       </div>
       {online && OnlineGame ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
@@ -603,15 +602,16 @@ export function App() {
   )
 }
 
-function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, active }: {
-  open: boolean
-  onOpen: () => void
-  onClose: () => void
+function LocalGame({ onOnline, settings, onSettings, active }: {
   onOnline?: () => void
   settings: GameSettings
   onSettings: (settings: GameSettings) => void
   active: boolean
 }) {
+  // A remount must return to the menu, not autosave an unstarted replacement run.
+  const [open, setOpen] = useState(false)
+  const onOpen = () => setOpen(true)
+  const onClose = () => setOpen(false)
   const [seedText, setSeedText] = useState<string>(() => crypto.randomUUID())
   const [ascension, setAscension] = useState(0)
   const [characters, setCharacters] = useState<CharacterId[]>(() => [...DEFAULT_CHARACTERS])

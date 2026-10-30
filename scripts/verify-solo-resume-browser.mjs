@@ -9,7 +9,19 @@ import { assert, assertDeepEqual, assertEqual, check, report, suite } from './li
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const output = join(root, 'artifacts/solo-resume-browser')
 mkdirSync(output, { recursive: true })
-const server = await createServer({ root, logLevel: 'silent', server: { port: 0 } })
+let remountLocalGame = false
+const server = await createServer({ root, logLevel: 'silent', server: { port: 0 }, plugins: [{
+  name: 'resume-remount-fixture',
+  enforce: 'pre',
+  transform: {
+    order: 'pre',
+    handler(code, id) {
+      if (remountLocalGame && id === join(root, 'src/ui/App.tsx')) {
+        return code.replace('const [seedText, setSeedText]', 'useState(null)\n  const [seedText, setSeedText]')
+      }
+    },
+  },
+}] })
 await server.listen()
 const address = server.httpServer?.address()
 if (!address || typeof address === 'string') throw new Error('Vite did not report a port')
@@ -172,6 +184,20 @@ try {
     assertEqual(resumed.players[0].skin, 'kratos')
     assertEqual(resumed.combat.players[0].skin, 'kratos')
   })
+
+  await waitForSavedRun('combat')
+  const beforeHotReload = await page.evaluate(() => localStorage.getItem('sts-solo-run'))
+  const appModule = server.moduleGraph.getModuleById(join(root, 'src/ui/App.tsx'))
+  assert(appModule, 'the App module was not loaded')
+  remountLocalGame = true
+  await server.reloadModule(appModule)
+  await page.getByRole('button', { name: 'Single Player', exact: true }).waitFor()
+  assertEqual(await page.evaluate(() => localStorage.getItem('sts-solo-run')), beforeHotReload,
+    'a LocalGame remount must not overwrite the saved run')
+  await page.getByRole('button', { name: 'Resume', exact: true }).click()
+  await page.locator('.combat').waitFor()
+  assertDeepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun()), JSON.parse(beforeHotReload).run,
+    'Resume must still restore the saved mid-turn state')
 
   // Recorded attacks are history on Resume, not a fresh queue of Hermit volleys.
   await page.evaluate(() => {
