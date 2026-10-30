@@ -11,23 +11,26 @@ type CardCollectionOverlayProps = {
   children: ReactNode
   dataPile?: 'draw' | 'discard' | 'exhaust'
   ordered?: boolean
+  stanceChangedThisTurn?: boolean
 }
 
 /** One read-only card viewer for the deck and combat piles. */
 export function CardCollectionOverlay({
-  cards, label, triggerClassName, children, dataPile, ordered = true,
+  cards, label, triggerClassName, children, dataPile, ordered = true, stanceChangedThisTurn,
 }: CardCollectionOverlayProps) {
   const [open, setOpen] = useState(false)
   return <>
     <button type="button" className={triggerClassName} data-pile={dataPile}
       aria-label={`${label}, ${cards.length} card${cards.length === 1 ? '' : 's'}`}
       title={label} onClick={() => setOpen(true)}>{children}</button>
-    <CardCollectionDialog cards={cards} label={label} open={open} ordered={ordered} onClose={() => setOpen(false)} />
+    <CardCollectionDialog cards={cards} label={label} open={open} ordered={ordered}
+      stanceChangedThisTurn={stanceChangedThisTurn} onClose={() => setOpen(false)} />
   </>
 }
 
-export function CardCollectionDialog({ cards, label, onClose, open = true, ordered = true }: {
+export function CardCollectionDialog({ cards, label, onClose, open = true, ordered = true, stanceChangedThisTurn }: {
   cards: readonly CardInstance[]; label: string; onClose: () => void; open?: boolean; ordered?: boolean
+  stanceChangedThisTurn?: boolean
 }) {
   const [sort, setSort] = useState<'obtained' | 'type' | 'cost' | 'name'>(() => ordered ? 'obtained' : 'name')
   const [ascending, setAscending] = useState(true)
@@ -82,7 +85,8 @@ export function CardCollectionDialog({ cards, label, onClose, open = true, order
             </button>)}
         </div>
         <div className="choice-modal__cards">
-          {open ? sortedCards.map((card) => <Card key={card.uid} card={card} playable={false} />) : null}
+          {open ? sortedCards.map((card) => <Card key={card.uid} card={card} playable={false}
+            stanceChangedThisTurn={stanceChangedThisTurn} />) : null}
           {open && cards.length === 0 ? <span className="muted">No cards.</span> : null}
         </div>
         <footer className="card-collection__footer">

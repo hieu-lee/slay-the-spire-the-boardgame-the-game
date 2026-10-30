@@ -189,6 +189,30 @@
   pointer-events: none;
 }
 
+.card__stance-bonus {
+  position: absolute;
+  z-index: 2;
+  top: 42%;
+  left: 10%;
+  right: 10%;
+  padding: 0.2em 0.35em;
+  border: 1px solid #8a939c;
+  border-radius: 0.35em;
+  background: rgb(24 29 35 / 0.95);
+  color: #e5e9ed;
+  font-size: calc(var(--card-width) * 0.06);
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  pointer-events: none;
+}
+
+.card__stance-bonus[data-active='true'] {
+  border-color: #9dde94;
+  background: rgb(27 68 39 / 0.95);
+  color: #dcffd6;
+}
+
 .card--selected {
   border-color: var(--gold);
   transform: translateY(-10px);

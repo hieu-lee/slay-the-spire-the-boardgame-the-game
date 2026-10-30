@@ -61,7 +61,7 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-run-replay-browser.mjs', 'verify-unload-shivs-browser.mjs',
     'verify-boss-heavy-attacks-browser.mjs', 'verify-double-tap-recover-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
-  assertEqual(combat.length, 41, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 42, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))

@@ -6102,6 +6102,7 @@ function redactCombat(combat, viewerId) {
         : null,
     } : undefined,
     playedCardsThisTurn: structuredClone(combat.playedCardsThisTurn ?? []),
+    viewerStanceChangedThisTurn: combat.stanceChangedThisTurn.includes(viewerId),
     presentationEvents: (combat.presentationEvents ?? []).map((event) => ({
       seq: event.seq,
       kind: event.kind,

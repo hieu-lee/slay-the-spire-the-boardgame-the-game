@@ -502,6 +502,7 @@ function CombatScreenView({
   onCourierReveal,
   mutationsEnabled = true,
   drawCount,
+  viewerStanceChangedThisTurn,
   decidedPlayerIds,
   requiredEndTurnPlayerIds,
   endTurnTopPlayerIds,
@@ -703,6 +704,7 @@ function CombatScreenView({
   }
   const forcedAutoAttempt = useRef<string | null>(null)
   const viewer = state.players.find((player) => player.id === viewerId)
+  const stanceChangedThisTurn = onAction ? viewerStanceChangedThisTurn : state.stanceChangedThisTurn.includes(viewerId)
   const viewerVisual = viewer ? playerVisualId(viewer) : undefined
   const skinOrb = viewerVisual !== undefined && skinTraits(viewerVisual)?.energyOrb === true
   // Hand Attacks show what they would deal now: to the enemy being dragged onto or last
@@ -6232,7 +6234,7 @@ function CombatScreenView({
             {(pendingPotion === 'liquid_memories' ? viewer.discard
               : pendingPotion === 'liquid_void' ? viewer.exhaust : viewer.hand)
               .filter((card) => pendingPotion !== 'transforming_brew' || !cardIsCurse(card.defId)).map((card) => (
-              <Card key={card.uid} card={card} selected={potionCardUids.includes(card.uid)}
+              <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} selected={potionCardUids.includes(card.uid)}
                 onClick={() => pendingPotion === 'liquid_memories'
                   ? consumePotion(pendingPotion, { recoverDiscardUid: card.uid })
                   : pendingPotion === 'liquid_void'
@@ -6318,7 +6320,7 @@ function CombatScreenView({
             if (held.defId === 'gambling_chip') return [simpleAction]
             if (held.defId === 'fuel_canister') return [<details key={relicIndex}>
               <summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
-              <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
+              <div className="campfire__deck">{viewer.hand.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
                 selected={relicCardUids[0] === card.uid} onClick={() => setRelicCardUids([card.uid])} />)}</div>
               <button type="button" disabled={relicCardUids.length !== 1}
                 onClick={() => useRelic(relicIndex, { cardUids: relicCardUids })}>Exhaust and gain Energy</button>
@@ -6332,7 +6334,7 @@ function CombatScreenView({
             </details>]
             if (held.defId === 'blue_candle' || held.defId === 'runic_pyramid') return [<details key={relicIndex}>
               <summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
-              <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
+              <div className="campfire__deck">{viewer.hand.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
                 selected={relicCardUids.includes(card.uid)} onClick={() => setRelicCardUids((current) =>
                   current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) :
                     held.defId === 'blue_candle' && current.length >= 2 ? current : [...current, card.uid])} />)}</div>
@@ -6341,7 +6343,7 @@ function CombatScreenView({
               </button>
             </details>]
             if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
-              <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
+              <div className="campfire__deck">{viewer.hand.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
                 selected={relicCardUids[0] === card.uid} onClick={() => setRelicCardUids([card.uid])} />)}</div>
               {state.enemies.filter((enemy) => !enemy.dead).map((enemy) => <button type="button" key={enemy.uid}
                 disabled={relicCardUids.length !== 1}
@@ -6394,7 +6396,7 @@ function CombatScreenView({
           onCancel={(event) => event.preventDefault()}>
           <h2 id="gem-finder-title">Gem Finder — Scry {pendingPower?.upgraded ? 4 : 3}</h2>
           <p>Select any revealed non-Gem cards to discard.</p>
-          <div className="distilled-choice__cards">{powerChoiceCards.map((card) => <Card key={card.uid} card={card}
+          <div className="distilled-choice__cards">{powerChoiceCards.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
             playable={cardDef(card.defId).guardian?.printedType.startsWith('Gem') !== true}
             selected={powerScryDiscardUids.includes(card.uid)} onClick={() => setPowerScryDiscardUids((current) =>
               current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid])} />)}</div>
@@ -6410,7 +6412,7 @@ function CombatScreenView({
           <h2 id="golden-eye-title">Golden Eye — Scry 3</h2>
           {relicScry.playerId === viewerId ? <>
             <p>Select any revealed cards to discard.</p>
-            <div className="distilled-choice__cards">{relicScry.cards.map((card) => <Card key={card.uid} card={card}
+            <div className="distilled-choice__cards">{relicScry.cards.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
               selected={relicCardUids.includes(card.uid)} onClick={() => setRelicCardUids((current) =>
                 current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid])} />)}</div>
             <button type="button" className="prompt__mode"
@@ -6430,7 +6432,7 @@ function CombatScreenView({
               <p>Choose the next revealed card to play for 0 Energy.</p>
               <div className="distilled-choice__cards">
                 {visibleDistilled.cards.map((card) => (
-                  <Card key={card.uid} card={card} cost={0} playable
+                  <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} cost={0} playable
                     onClick={() => onAction
                       ? void onAction({ kind: 'chooseDistilledCard', cardUid: card.uid })
                       : onChange?.(chooseDistilledCard(state, viewerId, card.uid))} />
@@ -6451,7 +6453,7 @@ function CombatScreenView({
             <p>Select any revealed cards to discard; unselected cards stay on top in order.</p>
             <div className="choice-modal__cards">
               {activeStartTurnScry.cards.map((card) => (
-                <Card key={card.uid} card={card} selected={startTurnScryPicked.includes(card.uid)}
+                <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} selected={startTurnScryPicked.includes(card.uid)}
                   onClick={chooseStartTurnScryCard} />
               ))}
               {activeStartTurnScry.cards.length === 0 ? <span className="muted">No cards were revealed.</span> : null}
@@ -6475,7 +6477,7 @@ function CombatScreenView({
             <p>Choose a card from your hand. This choice is private.</p>
             <div className="choice-modal__cards">
               {activeStartTurnDiscard.cards.map((card) => (
-                <Card key={card.uid} card={card} onClick={() => void finishStartTurnDiscard(card)} />
+                <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} onClick={() => void finishStartTurnDiscard(card)} />
               ))}
             </div>
           </div>
@@ -6566,7 +6568,7 @@ function CombatScreenView({
             <div className="choice-modal__cards">
               {pending.choiceCards.map((card) => <div key={card.uid}
                 className={pending.choice?.kind === 'scryToHand' ? 'choice-modal__card-option' : undefined}>
-                <Card card={card} selected={pending.picked.includes(card.uid) || pending.scryToHandUid === card.uid}
+                <Card stanceChangedThisTurn={stanceChangedThisTurn} card={card} selected={pending.picked.includes(card.uid) || pending.scryToHandUid === card.uid}
                   onClick={onChoiceCardClick} />
                 {pending.choice?.kind === 'scryToHand' && (scryPlay
                   ? scryPlayEligible(card) || pending.scryToHandUid === card.uid : effectiveCombatCardDef(
@@ -6640,7 +6642,7 @@ function CombatScreenView({
           </p>
           <div className="start-turn-effects__source" inert={!startTurnEffectDraggable}>
           {startTurnEffectCard ? (
-            <Card
+            <Card stanceChangedThisTurn={stanceChangedThisTurn}
               className="end-turn-effect end-turn-effect--card"
               card={startTurnEffectCard}
               playable={canResolveStartTurn}
@@ -6721,7 +6723,7 @@ function CombatScreenView({
               : `Waiting for ${state.players.find((player) => player.id === endTurnEffect.playerId)?.name ?? 'its owner'}`}
           </p>
           {endTurnEffectCard ? (
-            <Card
+            <Card stanceChangedThisTurn={stanceChangedThisTurn}
               className="end-turn-effect end-turn-effect--card"
               card={endTurnEffectCard}
               playable={canResolveEndTurn && endTurnChoiceTargets.length === 0}
@@ -7483,7 +7485,7 @@ function CombatScreenView({
             {discard ? 'discard' : 'Exhaust'} {required}</> : null}</strong>
           {effect ? viewer.hand.map((card) => {
             const selected = dieRelicCardUids.includes(card.uid)
-            return <Card key={card.uid} card={card} selected={selected} onClick={() => setDieRelicCardUids((current) =>
+            return <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} selected={selected} onClick={() => setDieRelicCardUids((current) =>
               selected ? current.filter((uid) => uid !== card.uid) : current.length < required
                 ? [...current, card.uid] : current)} />
           }) : null}
@@ -7528,7 +7530,7 @@ function CombatScreenView({
             <p>Choose a card from your hand. This choice is private.</p>
             <div className="choice-modal__cards">
               {viewer.hand.map((card) => (
-                <Card key={card.uid} card={card} onClick={() => submitPlayerChoice({ discardUid: card.uid })} />
+                <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} onClick={() => submitPlayerChoice({ discardUid: card.uid })} />
               ))}
             </div>
             <button type="button" className="prompt__mode" disabled={usingPlayerChoice}
@@ -7562,7 +7564,7 @@ function CombatScreenView({
           // A panel over the board: the revealed card at reading size beside its two answers.
           <section className="distilled-choice slayer-reveal" role="dialog" aria-labelledby="slayer-reveal-title"
             data-slayer-choice="ritualDagger">
-            <Card card={{ uid: `slayer-reveal-${slayerChoice.cardUid}`, defId: slayerChoice.revealed, upgraded: false }}
+            <Card stanceChangedThisTurn={stanceChangedThisTurn} card={{ uid: `slayer-reveal-${slayerChoice.cardUid}`, defId: slayerChoice.revealed, upgraded: false }}
               immediateArt accessibleNote="revealed only to you" />
             <div className="slayer-reveal__text">
               <h2 id="slayer-reveal-title">Ritual Dagger+</h2>
@@ -7629,7 +7631,7 @@ function CombatScreenView({
                 : 'Continue after unavailable Chamber card'}
             </button>
           ) : null}
-          <CardCollectionOverlay cards={viewer.draw} label="Draw pile" dataPile="draw" ordered={false}
+          <CardCollectionOverlay stanceChangedThisTurn={stanceChangedThisTurn} cards={viewer.draw} label="Draw pile" dataPile="draw" ordered={false}
             triggerClassName={['pile', motionActive.has('draw')
               ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}>
             <img className="pile__stack" src={assetPath('combat/piles/draw.webp')} alt="" />
@@ -7641,7 +7643,7 @@ function CombatScreenView({
               ['discard', 'Discard pile', viewer.discard],
               ['exhaust', 'Exhaust pile', viewer.exhaust],
             ] as const).map(([kind, label, cards]) => (
-              <CardCollectionOverlay key={kind} cards={cards} label={label} dataPile={kind}
+              <CardCollectionOverlay stanceChangedThisTurn={stanceChangedThisTurn} key={kind} cards={cards} label={label} dataPile={kind}
                 triggerClassName={['pile', motionActive.has(kind)
                   ? `motion-pulse-${motionBeats[kind] % 2}` : ''].filter(Boolean).join(' ')}>
                 <img className="pile__stack" src={assetPath(`combat/piles/${kind}.webp`)} alt="" />
@@ -7680,7 +7682,7 @@ function CombatScreenView({
               (chamberCardCanStartDrag(card) || chamberCancelable)
             const exhaustChoice = !chamberCard && handExhaustChoiceUids.has(card.uid)
             const handPicksOnly = hermitSetupPending || exhaustChoice
-            return <Card
+            return <Card stanceChangedThisTurn={stanceChangedThisTurn}
               key={card.uid}
               className={[drawnCards.has(card.uid) ? 'card--drawn' : '',
                 cardDrag?.card.uid === card.uid ? 'card--dragging' : '',
@@ -7749,7 +7751,7 @@ function CombatScreenView({
       {slimeCardZoom ? createPortal(
         <span className="power__zoom slime-party__zoom" role="tooltip"
           style={{ left: slimeCardZoom.x, top: slimeCardZoom.y }}>
-          <Card card={slimeCardZoom.card} playable={false} immediateArt />
+          <Card stanceChangedThisTurn={stanceChangedThisTurn} card={slimeCardZoom.card} playable={false} immediateArt />
         </span>,
         document.body,
       ) : null}
@@ -7763,7 +7765,7 @@ function CombatScreenView({
           '--chamber-return-y': `${flight.y}px`,
           '--chamber-return-index': flight.index,
         } as React.CSSProperties} aria-hidden="true" inert>
-          <Card card={flight.card} playable={false} immediateArt />
+          <Card stanceChangedThisTurn={stanceChangedThisTurn} card={flight.card} playable={false} immediateArt />
         </div>
       ))}
       {cardDrag ? (
@@ -7786,7 +7788,7 @@ function CombatScreenView({
             '--drag-y': `${Math.max(0, cardDrag.y - cardDrag.startY + 210)}px`,
             '--drag-turn': `${Math.max(-8, Math.min(8, (cardDrag.x - cardDrag.startX) / 24))}deg`,
           } as React.CSSProperties} aria-hidden="true" inert>
-            <Card card={cardDrag.card} playable={false} immediateArt />
+            <Card stanceChangedThisTurn={stanceChangedThisTurn} card={cardDrag.card} playable={false} immediateArt />
           </div>
         </>
       ) : null}
@@ -7808,7 +7810,7 @@ function CombatScreenView({
             className={endTurnEffectDragCard ? 'end-turn-effect-drag end-turn-effect-drag--card' : 'end-turn-effect-drag'}
             style={{ left: endTurnEffectDrag.startX, top: endTurnEffectDrag.startY } as React.CSSProperties}
             aria-hidden="true" inert>
-            {endTurnEffectDragCard ? <Card card={endTurnEffectDragCard} playable={false} immediateArt />
+            {endTurnEffectDragCard ? <Card stanceChangedThisTurn={stanceChangedThisTurn} card={endTurnEffectDragCard} playable={false} immediateArt />
               : endTurnEffectDragRelicId ? (
                 <img className="item-icon-image" src={relicIconPath(endTurnEffectDragRelicId)} alt="" />
               )

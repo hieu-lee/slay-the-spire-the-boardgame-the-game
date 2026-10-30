@@ -34,6 +34,7 @@ type CardProps = {
   fan?: number
   /** Damage the card would deal now, against the same play with no Strength, Weak or Vulnerable. */
   liveDamage?: { damage: number, baseline: number }
+  stanceChangedThisTurn?: boolean
   /** Removes an otherwise-real card button from sequential keyboard navigation. */
   tabIndex?: number
   /** Appended to the accessible name, e.g. to tell a just-drawn duplicate apart. */
@@ -742,6 +743,7 @@ export function Card({
   gemPowerDamage,
   fan = 0,
   liveDamage,
+  stanceChangedThisTurn,
   tabIndex,
   accessibleNote,
   onClick,
@@ -754,6 +756,13 @@ export function Card({
   const touchNeedsInspection = useRef(false)
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
+  const showStanceBonus = def.id === 'flurry_of_blows' && stanceChangedThisTurn !== undefined
+  const stanceTips = useMemo(() => showStanceBonus ? [{
+    name: 'Stance bonus',
+    text: stanceChangedThisTurn
+      ? 'You changed stance this turn. Flurry of Blows gains its extra hits, even if you return to your original stance.'
+      : 'You have not changed stance this turn. Change stance to activate Flurry of Blows\' extra hits. Entering your current stance does not count.',
+  }] : [], [showStanceBonus, stanceChangedThisTurn])
   const skin = useCardSkin(def)
   const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined, skin)
   const hasPublisherScan = def.publisherScan !== false
@@ -770,6 +779,7 @@ export function Card({
     .join(' ')
 
   return <CardKeywordHelp def={def} additionalDef={attachedGem}
+    extraTips={stanceTips}
     gemPowerDamage={gemPowerDamage}>{(keywordHelpProps) => (
     <button
       {...keywordHelpProps}
@@ -838,6 +848,9 @@ export function Card({
         }}
       /> : null}
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
+      {showStanceBonus ? <span className="card__stance-bonus" data-active={stanceChangedThisTurn} aria-hidden="true">
+        {stanceChangedThisTurn ? 'Stance changed' : 'No stance change'}
+      </span> : null}
       {attachedGem && scanUnavailable ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
         draggable={false} title={`${attachedGem.name}: ${cardRuleDescription(attachedGem)}`} /> : null}
       {liveDamage ? (

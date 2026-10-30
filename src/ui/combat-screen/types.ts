@@ -31,6 +31,8 @@ export type CombatScreenProps = {
   onCourierReveal?: (kind: 'relic' | 'potion') => void
   mutationsEnabled?: boolean
   drawCount?: number
+  /** Authoritative own-seat stance bonus; absent on older room servers. */
+  viewerStanceChangedThisTurn?: boolean
   decidedPlayerIds?: string[]
   requiredEndTurnPlayerIds?: string[]
   endTurnTopPlayerIds?: string[]
