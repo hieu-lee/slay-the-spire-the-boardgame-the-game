@@ -2603,6 +2603,8 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /\[Bet\]/ }).click()
+await page.getByRole('button', { name: 'Pay 2 Gold', exact: true }).click()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingRolls?.[window.__STS_DEBUG__.getRun().players[0].id]))
 const exactJoustPayment = {
   gold: await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold),

@@ -796,6 +796,7 @@ function EventScreen({
   const [tradeCardDraft, setTradeCardDraft] = useState({ stage: "", uid: "" });
   const [relicId, setRelicId] = useState("");
   const [potionIndexes, setPotionIndexes] = useState<number[]>([]);
+  const [goldPaymentSelected, setGoldPaymentSelected] = useState(false);
   const [potionRecipientIds, setPotionRecipientIds] = useState<string[]>([]);
   const [potionReplacementIds, setPotionReplacementIds] = useState<(string | null)[]>([]);
   const [rewardItemChoices, setRewardItemChoices] = useState<('take' | 'skip' | '')[]>([]);
@@ -843,6 +844,7 @@ function EventScreen({
     setPickerCardUids([]);
     setRelicId("");
     setPotionIndexes([]);
+    setGoldPaymentSelected(false);
     setPotionRecipientIds([]);
     setPotionReplacementIds([]);
     setRewardItemChoices([]);
@@ -1029,6 +1031,7 @@ function EventScreen({
     setCards([]);
     setRelicId("");
     setPotionIndexes([]);
+    setGoldPaymentSelected(false);
     setTargetPlayerId("");
     setRoomId("");
     setSelectedOptions([]);
@@ -1059,17 +1062,23 @@ function EventScreen({
     sum + (effect.tag === "pay-gold" && typeof effect.amount === "number" ? effect.amount : 0), 0);
   const paymentLocked = Boolean(pendingDecision && room.pendingRolls?.[player.id] &&
     draftOptionIds.every((id) => pendingDecision.optionIds.includes(id)));
-  const selectedItemPayment = effects.some((effect) => effect.filter?.includes("or lose one Relic or Potion")) &&
+  const hasPaymentChoice = effects.some((effect) => effect.tag === "pay-gold" &&
+    effect.filter?.includes("or lose one Relic or Potion"));
+  const selectedItemPayment = hasPaymentChoice &&
     (Boolean(effectiveRelicId) || effectivePotionIds.length > 0);
+  const availableGold = livingPlayers.reduce((sum, candidate) => sum + candidate.gold, 0);
+  const selectedMissingPayment = hasPaymentChoice && !paymentLocked &&
+    Number(goldPaymentSelected) + Number(player.relics.some((relic) => relic.defId === effectiveRelicId)) +
+      effectivePotionIds.length !== 1;
   const selectedUnaffordable = !paymentLocked && !selectedItemPayment && selectedCost >
-    players.filter((candidate) => !candidate.dead).reduce((sum, candidate) => sum + candidate.gold, 0);
+    availableGold;
   const selectedOptionInvalidated = room.card.id === "big_fish" && draftOptionIds.some((id) =>
     Object.entries({ ...room.decisions, ...room.pendingDecisions })
       .some(([playerId, decision]) => playerId !== player.id && decision.optionIds.includes(id)));
   const selectedOptionUnavailable = draftOptionIds.some((id) =>
     unavailableEventOptionIds.includes(id) || Boolean(room.partyOptionIds && !room.partyOptionIds.includes(id)));
   const nonCardSelectionReady = !selectedMissingTarget && !selectedMissingRelic && !selectedMissingPotion &&
-    !selectedPrismaticSourcesMissing && !selectedUnaffordable && !selectedOptionInvalidated && !selectedOptionUnavailable &&
+    !selectedPrismaticSourcesMissing && !selectedMissingPayment && !selectedUnaffordable && !selectedOptionInvalidated && !selectedOptionUnavailable &&
     (room.card.id !== "secret_portal" || Boolean(effectiveRoomId));
   const selectionReady = effectiveCardUids.length === maximumCards && !selectedCardsInvalid && nonCardSelectionReady;
   const paymentFor = (optionIds: string[]) => {
@@ -1470,12 +1479,20 @@ function EventScreen({
                 .map((character) => <option key={character} value={character}>{rewardSourceLabel(character)} reward deck</option>) : null}
             </select>
           </label> : null}
+          {hasPaymentChoice && !paymentLocked ? <fieldset className="event-cards"><legend>Gold payment</legend>
+            <button type="button" aria-pressed={goldPaymentSelected} disabled={selectedCost > availableGold}
+              onClick={() => {
+                setGoldPaymentSelected((current) => !current);
+                setRelicId("");
+                setPotionIndexes([]);
+              }}>Pay <Price value={selectedCost} /></button>
+          </fieldset> : null}
           {needsRelic && !paymentLocked && player.relics.length ? (
             <fieldset className="event-cards"><legend>Your relic</legend>
               {player.relics.map((relic, index) => <button type="button" key={`${relic.defId}-${index}`}
                 disabled={Boolean(pendingDecision?.relicIds?.length)}
                 aria-pressed={effectiveRelicId === relic.defId} title={relicTitle(relic.defId, paysRelicCost)}
-                onClick={() => { setRelicId((current) => current === relic.defId ? '' : relic.defId); setPotionIndexes([]); }}>
+                onClick={() => { setGoldPaymentSelected(false); setRelicId((current) => current === relic.defId ? '' : relic.defId); setPotionIndexes([]); }}>
                 <ItemImage kind="relic" id={relic.defId} />{relicDef(relic.defId).name}
                 <RelicOptionText id={relic.defId} withCost={paysRelicCost} />
               </button>)}
@@ -1483,7 +1500,7 @@ function EventScreen({
           ) : null}
           {needsPotion && !paymentLocked && player.potions.length ? (
             <fieldset className="event-cards"><legend>Your potions</legend>
-              {player.potions.map((id, index) => <button type="button" disabled={Boolean(pendingDecision?.potionIds?.length)} aria-pressed={pendingDecision?.potionIds?.length ? effectivePotionIds.includes(id) : potionIndexes.includes(index)} key={`${id}-${index}`} onClick={() => { setRelicId(""); setPotionIndexes((current) => current.includes(index) ? current.filter((value) => value !== index) : maximumPotions === 1 ? [index] : [...current, index].slice(-maximumPotions)); }}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}
+              {player.potions.map((id, index) => <button type="button" disabled={Boolean(pendingDecision?.potionIds?.length)} aria-pressed={pendingDecision?.potionIds?.length ? effectivePotionIds.includes(id) : potionIndexes.includes(index)} key={`${id}-${index}`} onClick={() => { setGoldPaymentSelected(false); setRelicId(""); setPotionIndexes((current) => current.includes(index) ? current.filter((value) => value !== index) : maximumPotions === 1 ? [index] : [...current, index].slice(-maximumPotions)); }}><ItemImage kind="potion" id={id} />{potionDef(id).name}</button>)}
             </fieldset>
           ) : null}
           {resolverOpen && room.card.id === "secret_portal" && eventMap ? (
@@ -1530,6 +1547,7 @@ function EventScreen({
             const choiceUnavailable = unavailableEventOptionIds.includes(choice.id) || lockedOption || uniqueOptionTaken ||
               missingRedMask || unaffordable || missingRequiredItem || unavailablePrismaticSources;
             const needsResolver = cardSlots.length > 0 || choiceNeedsTarget ||
+              choiceEffects.some((effect) => effect.tag === "pay-gold" && effect.filter?.includes("or lose one Relic or Potion")) ||
               choiceEffects.some((effect) => effect.tag === "lose-relic" && !effect.random &&
                 !(room.card.id === "face_trader" && choice.id === "take_and_give" && !pendingDecision) ||
                 effect.tag === "lose-potion" || effect.filter?.includes("Relic") && player.relics.length > 0 ||

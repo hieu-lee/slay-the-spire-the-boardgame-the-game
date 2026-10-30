@@ -104,7 +104,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/MailBox.tsx', ['verify-mail-browser.mjs']],
   ['src/ui/MapScreen.tsx', ['verify-wing-focus-browser.mjs']],
-  ['src/ui/RoomScreen.tsx', ['verify-scrap-ooze-browser.mjs', 'verify-event-panels-browser.mjs']],
+  ['src/ui/RoomScreen.tsx', ['verify-joust-browser.mjs', 'verify-scrap-ooze-browser.mjs', 'verify-event-panels-browser.mjs']],
   ['src/ui/chrome/event-phone.css', ['verify-event-panels-browser.mjs', 'verify-scrap-ooze-browser.mjs']],
   ['src/ui/chrome/event-loot.css', ['verify-event-panels-browser.mjs', 'verify-scrap-ooze-browser.mjs']],
   ['src/ui/chrome/merchant-arrival.css', ['verify-event-panels-browser.mjs', 'verify-merchant-overflow-browser.mjs', 'verify-assets.mjs']],
