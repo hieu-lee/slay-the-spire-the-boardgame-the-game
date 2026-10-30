@@ -141,6 +141,7 @@ export function activateRelic(
 
   const cards = context.cardUids ?? []
   if (new Set(cards).size !== cards.length || cards.some((uid) => !player.hand.some((card) => card.uid === uid))) return state
+  if (heldId === 'runic_pyramid' && cards.length === 0) return state
   if (heldId === 'blue_candle' && cards.length > 2) return state
   if (heldId === 'centennial_puzzle' && !player.lostHpThisCombat) return state
   if (heldId === 'mummified_hand' && !player.powerPlayedThisTurn) return state
@@ -204,7 +205,11 @@ export function activateRelic(
     if (shivContext.invalidShivTarget) return state
   }
   else if (heldId === 'red_skull') actor.strength = gainStrength(actor.strength, 1)
-  else if (heldId === 'runic_pyramid') actor.retainCardsThisTurn = cards.length
+  else if (heldId === 'runic_pyramid') {
+    for (const card of actor.hand) {
+      if (cards.includes(card.uid)) card.retainThisTurn = true
+    }
+  }
   else if (heldId === 'self_forming_clay' && playerCanGainBlock(actor)) actor.block = gainBlock(actor.block, 3)
   else if (heldId === 'charons_ashes') {
     const card = actor.hand.find((candidate) => candidate.uid === cards[0])!

@@ -71,6 +71,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/shop.css', ['verify-shop-browser.mjs']],
   ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
+    'verify-runic-pyramid-browser.mjs',
     'verify-act-four-facing-browser.mjs', 'verify-combat-video-browser.mjs',
     'verify-unload-shivs-browser.mjs',
     'verify-start-turn-party-browser.mjs',
@@ -90,6 +91,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/combat-screen/hooks.ts', ['verify-card-damage-preview-browser.mjs', 'verify-skin-attack-browser.mjs']],
   ['src/ui/combat-screen/staged-attacks.ts', ['verify-assets.mjs', 'verify-skin-attack-browser.mjs']],
   ['src/ui/chrome/campfire.css', ['verify-art-scenes-browser.mjs', 'verify-card-picker-browser.mjs']],
+  ['src/ui/chrome/combat-relic-actions.css', ['verify-runic-pyramid-browser.mjs']],
   ['src/ui/styles/staged-attacks.css', ['verify-skin-attack-browser.mjs']],
   ['src/ui/styles/attack-timing.css', ['verify-defect-chan-evoke-browser.mjs']],
   ['src/ui/SettingsDialog.tsx', ['verify-card-damage-preview-browser.mjs']],

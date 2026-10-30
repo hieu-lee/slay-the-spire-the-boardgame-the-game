@@ -11022,6 +11022,32 @@ check('ordinary player-turn relic activations do not create start-turn work', ()
   assertEqual(activateRelic(starting, 'p1', 1).players[0].relics[1].cubes, 1)
 })
 
+check('Runic Pyramid retains the selected cards without replacing another Retain allowance', () => {
+  const kept = instance('strike_ironclad')
+  const discarded = instance('defend_ironclad')
+  const state = combat([makePlayer({
+    hand: [kept, discarded],
+    relics: [{ defId: 'runic_pyramid', spent: false }],
+  })], [makeEnemy()])
+  state.players[0].retainCardsThisTurn = 2
+  for (const cardUids of [[], ['missing'], [kept.uid, kept.uid]]) {
+    assertEqual(activateRelic(state, 'p1', 0, { cardUids }), state)
+  }
+  const activated = activateRelic(state, 'p1', 0, { cardUids: [kept.uid] })
+  assertEqual(activated.players[0].relics[0].spent, true)
+  assertEqual(activated.players[0].retainCardsThisTurn, 2)
+  assertEqual(activated.players[0].hand[0].retainThisTurn, true)
+  assert(!activated.players[0].hand[1].retainThisTurn)
+  assert(!state.players[0].hand[0].retainThisTurn, 'activation mutated the original state')
+  assertEqual(activateRelic(activated, 'p1', 0, { cardUids: [discarded.uid] }), activated)
+  const ended = endPlayerTurn(activated)
+  assertDeepEqual(ended.players[0].hand.map((card) => card.uid), [kept.uid])
+  assert(ended.players[0].discard.some((card) => card.uid === discarded.uid))
+  assert(!ended.players[0].hand[0].retainThisTurn, 'Retain must expire after this turn')
+  const following = endPlayerTurn({ ...ended, phase: 'player' })
+  assertEqual(following.players[0].hand.length, 0)
+})
+
 check('a changed die drives the Mystic action that actually resolves', () => {
   const starting = { ...combat(
     [makePlayer({ potions: ['gamblers_brew'] })],

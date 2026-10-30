@@ -6332,12 +6332,14 @@ function CombatScreenView({
             </details>]
             if (held.defId === 'blue_candle' || held.defId === 'runic_pyramid') return [<details key={relicIndex}>
               <summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
+              {held.defId === 'runic_pyramid' ? <p className="room-item-text">Choose the cards to keep for your next turn.</p> : null}
               <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
                 selected={relicCardUids.includes(card.uid)} onClick={() => setRelicCardUids((current) =>
                   current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) :
                     held.defId === 'blue_candle' && current.length >= 2 ? current : [...current, card.uid])} />)}</div>
-              <button type="button" onClick={() => useRelic(relicIndex, { cardUids: relicCardUids })}>
-                Activate
+              <button type="button" disabled={held.defId === 'runic_pyramid' && relicCardUids.length === 0}
+                onClick={() => useRelic(relicIndex, { cardUids: relicCardUids })}>
+                {held.defId === 'runic_pyramid' ? `Retain ${relicCardUids.length} card${relicCardUids.length === 1 ? '' : 's'}` : 'Activate'}
               </button>
             </details>]
             if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
