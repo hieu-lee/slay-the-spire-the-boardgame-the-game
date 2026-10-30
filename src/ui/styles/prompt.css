@@ -195,6 +195,15 @@
   backdrop-filter: blur(3px);
 }
 
+.combat .choice-modal::backdrop {
+  background: rgb(8 6 5 / 30%);
+  backdrop-filter: none;
+}
+
+@media (max-height: 30rem) {
+  .combat .choice-modal { width: min(760px, calc(100vw - 10rem)); }
+}
+
 .choice-modal__panel {
   max-height: calc(100vh - 2rem);
   overflow: auto;
