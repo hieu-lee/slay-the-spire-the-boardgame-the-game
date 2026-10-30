@@ -4,7 +4,7 @@
 // definition id, so a player could see that they owned six relics and read what
 // none of them did.
 //
-// RelicBar and RelicOptionText are exported; RelicChip is deliberately not, because
+// RelicBar, RelicOptionText and RelicTooltipAnchor are exported; RelicChip is not, because
 // the tooltip is positioned against the BAR rather than against its own chip —
 // see the comment on `.relic-bar` in src/ui/chrome/tooltips.css — so a lone chip
 // outside a bar would place its tooltip against whatever happened to be
@@ -12,6 +12,7 @@
 // formatter, no DOM. `RelicOptionText` is the prose those option buttons print
 // on a device that cannot open a `title`.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { relicDef } from '../game/relics.ts'
 import type { RelicDef } from '../game/relics.ts'
 import type { RelicInstance } from '../game/types.ts'
@@ -68,17 +69,46 @@ function distinctRule(def: RelicDef): string | undefined {
  * `aria-describedby` is inert anyway.
  */
 function RelicTooltip({ id, note }: { id: string; note?: string }) {
+  return <span className="relic-tip" aria-hidden="true"><RelicTooltipContent id={id} note={note} /></span>
+}
+
+function RelicTooltipContent({ id, note }: { id: string; note?: string }) {
   const def = relicDef(id)
   const rule = distinctRule(def)
   return (
-    <span className="relic-tip" aria-hidden="true">
+    <>
       <strong className="relic-tip__name">{def.name}</strong>
       <span className="relic-tip__pool">{RELIC_POOL_LABEL[def.pool]}</span>
       <span className="relic-tip__text">{def.text}</span>
       {rule ? <span className="relic-tip__rule">{rule}</span> : null}
       {note ? <span className="relic-tip__note">{note}</span> : null}
-    </span>
+    </>
   )
+}
+
+function relicNote(relic: RelicInstance): string | undefined {
+  return relic.spent ? 'Face down — already used.'
+    : relic.uses === 0 ? 'Used up.'
+      : relic.uses !== undefined ? `${relic.uses} use${relic.uses === 1 ? '' : 's'} remaining.`
+        : undefined
+}
+
+/** The bar's exact tooltip content, portalled out of scrollable relic choices. */
+export function RelicTooltipAnchor({ relic, children, className, focusable = false, hoverable = false }: {
+  relic: RelicInstance
+  children: ReactNode
+  className?: string
+  focusable?: boolean
+  hoverable?: boolean
+}) {
+  const def = relicDef(relic.defId)
+  const note = relicNote(relic)
+  return <PotionTooltipAnchor id={relic.defId} name={def.name} kindLabel={RELIC_POOL_LABEL[def.pool]}
+    text={[def.text, distinctRule(def), note].filter(Boolean).join(' ')}
+    tooltipContent={<RelicTooltipContent id={relic.defId} note={note} />}
+    className={className} focusable={focusable} hoverable={hoverable}>
+    {children}
+  </PotionTooltipAnchor>
 }
 
 /**
@@ -223,17 +253,13 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
   // The engine drops a finite-use relic on its last use rather than leaving it
   // at zero, so this branch is defensive: if one ever does reach 0 it reads as
   // spent, not as "0 uses remaining".
-  const note = relic.spent ? 'Face down — already used.'
-    : relic.uses === 0 ? 'Used up.'
-      : relic.uses !== undefined ? `${relic.uses} use${relic.uses === 1 ? '' : 's'} remaining.`
-        : undefined
+  const note = relicNote(relic)
   if (unclipped) return (
-    <PotionTooltipAnchor id={relic.defId} name={def.name} kindLabel={rarity}
-      text={[def.text, distinctRule(def), note].filter(Boolean).join(' ')} focusable hoverable>
+    <RelicTooltipAnchor relic={relic} focusable hoverable>
       <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`}>
         <img className="item-icon-image" src={relicIconPath(relic.defId)} alt="" />
       </span>
-    </PotionTooltipAnchor>
+    </RelicTooltipAnchor>
   )
   return (
     <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`} data-relic={relic.defId} tabIndex={0} role="img"

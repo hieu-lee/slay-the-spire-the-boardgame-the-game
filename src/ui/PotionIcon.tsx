@@ -7,6 +7,7 @@ import { POINTER_CLICK_WINDOW_MS, useHoverUnavailable } from './touch-input.ts'
 type AnchorProps = {
   id: string
   children: React.ReactNode
+  className?: string
   focusable?: boolean
   decorative?: boolean
   name?: string
@@ -33,7 +34,7 @@ const tooltipListeners = new Set<(owner: object) => void>()
 
 /** An unclipped Potion tooltip anchor for either an icon or an action button. */
 export function PotionTooltipAnchor({
-  id, children, focusable = false, decorative = false, name, text, kindLabel = 'Potion', confirmLabel, tooltipContent, hoverable = false,
+  id, children, className, focusable = false, decorative = false, name, text, kindLabel = 'Potion', confirmLabel, tooltipContent, hoverable = false,
 }: AnchorProps) {
   const def = name === undefined || text === undefined ? potionDef(id) : undefined
   const itemName = name ?? def!.name
@@ -153,7 +154,7 @@ export function PotionTooltipAnchor({
 
   useEffect(() => () => window.clearTimeout(leaveTimer.current), [])
 
-  return <span ref={anchor} className="potion-chip" tabIndex={focusable ? 0 : undefined}
+  return <span ref={anchor} className={className ? `potion-chip ${className}` : 'potion-chip'} tabIndex={focusable ? 0 : undefined}
     role={focusable ? 'img' : undefined} aria-hidden={decorative ? 'true' : undefined}
     aria-label={focusable ? `${itemName}. ${kindLabel}. ${itemText}` : undefined}
     onMouseEnter={enterAnchor} onMouseLeave={leaveAnchor}

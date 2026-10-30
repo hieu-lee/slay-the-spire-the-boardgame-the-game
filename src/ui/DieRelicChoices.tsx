@@ -8,6 +8,7 @@ import type { CombatState } from '../game/combat.ts'
 import { relicIconPath } from '../game/assets.ts'
 import { chosenDieRelicAbilities, relicDef } from '../game/relics.ts'
 import type { Enemy, Player } from '../game/types.ts'
+import { relicOptionLabel, RelicTooltipAnchor } from './RelicChip.tsx'
 
 export type DieRelicChoice = {
   owner: Player
@@ -64,11 +65,12 @@ export function DieRelicChoiceList({ state, choices, pressed, onChoose }: {
     <div className={shared ? 'die-relic-list die-relic-list--shared' : 'die-relic-list'}>
       {[...groups].map(([key, group]) => {
         const first = group[0]!
+        const held = first.owner.relics[first.relicIndex]!
         const name = relicDef(first.defId).name
         const faces = first.faces.join('/')
         const heading = <>
           <img className="die-relic__icon" src={relicIconPath(first.defId)} alt="" />
-          <span className="die-relic__name" title={name}>{name}</span>
+          <span className="die-relic__name">{name}</span>
           {shared ? <span className="die-relic__owner">{first.owner.name}</span> : null}
           <span className="die-relic__faces">die {faces}</span>
         </>
@@ -77,14 +79,17 @@ export function DieRelicChoiceList({ state, choices, pressed, onChoose }: {
           return `${first.owner.name}: ${name} · die ${faces}${target ? ` → ${target}` : ''}`
         }
         if (group.length === 1 && !first.enemy && !first.targetPlayer) {
-          return <button type="button" key={key} className="die-relic die-relic--single"
+          return <RelicTooltipAnchor key={key} relic={held} className="die-relic-choice">
+            <button type="button" className="die-relic die-relic--single"
+            aria-description={relicOptionLabel(first.defId)}
             aria-pressed={pressed?.(first)} onClick={() => onChoose(first)}>
             {heading}
-          </button>
+            </button>
+          </RelicTooltipAnchor>
         }
         return (
           <div className="die-relic die-relic--group" key={key} role="group" aria-label={`${shared ? `${first.owner.name}: ` : ''}${name} · die ${faces}`}>
-            <div className="die-relic__head">{heading}</div>
+            <RelicTooltipAnchor relic={held} className="die-relic__head" focusable>{heading}</RelicTooltipAnchor>
             <div className="die-relic__targets">
               {group.map((choice) => (
                 <button type="button" key={`${choice.enemy?.uid ?? ''}:${choice.targetPlayer?.id ?? ''}`}
