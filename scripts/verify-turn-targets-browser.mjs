@@ -84,7 +84,7 @@ try {
 
     // A card Evoke chooses the Orb on the hero, then aims each Lightning Evoke.
     await load({ player: { hand: [c('dual', 'dual_cast')], orbs: ['lightning', 'frost', 'dark'] } })
-    await page.locator('.hand .card[title="Dual Cast"]').click()
+    await page.locator('.hand .card[data-card-name="Dual Cast"]').click()
     await orbButton('lightning', 1).waitFor()
     assert.equal(await page.locator('.orbs__target').count(), 3)
     assert(await orbsVisibleAndClear(), `${name}: the hero's Orbs are covered while choosing an Evoke`)
@@ -120,7 +120,7 @@ try {
     // Row-targeting Lightning aims at rows; a boss stands in every row and cannot be picked alone.
     await load({ boss: true, player: { hand: [c('dual-row', 'dual_cast')], orbs: ['lightning', 'frost', 'dark'],
       powers: [c('electro', 'electrodynamics')] } })
-    await page.locator('.hand .card[title="Dual Cast"]').click()
+    await page.locator('.hand .card[data-card-name="Dual Cast"]').click()
     await orbButton('lightning', 1).click()
     await evokeTarget.waitFor()
     await drag(evokeTarget.locator('button'), 'boss')

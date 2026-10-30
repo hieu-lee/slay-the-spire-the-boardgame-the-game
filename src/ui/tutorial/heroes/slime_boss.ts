@@ -49,7 +49,7 @@ const plan: TutorialPlan = {
 
 const party = spot('.slime-party')
 // The coach's selector check rejects the "!" in at.shopCard's exact title match.
-const pileOnInShop = spot('.merchant-cards [title^="Pile On"]')
+const pileOnInShop = spot('.merchant-cards [data-card-name^="Pile On"]')
 const bruiserChoice = spot('.prompt__mode', 'Bruiser Slime')
 const tauntingSlime = spot('.slime-party__actor[data-slime-def="slime_boss_taunting_slime"]')
 /** The end-of-turn Command waits for a target once two or more enemies stand. */

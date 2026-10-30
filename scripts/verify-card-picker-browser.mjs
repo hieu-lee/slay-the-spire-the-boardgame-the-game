@@ -32,6 +32,14 @@ try {
   })
   const neowPicker = page.locator('.card-picker')
   await neowPicker.waitFor()
+  assert.equal(await neowPicker.locator('.card[title]').count(), 0, 'cards must not show redundant native name tooltips')
+  assert(await neowPicker.locator('.card').evaluateAll(cards => cards.every(card =>
+    card.getAttribute('aria-label')?.startsWith(`${card.getAttribute('data-card-name')},`))),
+  'card names must remain accessible')
+  assert(await page.evaluate(async () => {
+    const { at } = await import('/src/ui/tutorial/helpers.ts')
+    return document.querySelector(at.offeredCard('strike_ironclad').css) !== null
+  }), 'tutorial card selectors must still locate cards')
   assert.equal(await neowPicker.getAttribute('aria-label'), 'Choose 2 cards to upgrade')
   assert((await neowPicker.locator('.card-picker__grid > .card').allTextContents()).every((text) => text.includes('Strike')))
   const neowBack = neowPicker.locator('.card-picker__back')

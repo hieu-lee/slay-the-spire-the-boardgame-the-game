@@ -148,7 +148,7 @@ try {
       run.combat.players[0].hand = [{ uid: 'tracking-hand', defId: 'hermit_tracking_shots', upgraded: false }]
       window.__STS_DEBUG__.setRun(run)
     })
-    await page.locator('.hand .card[title="Tracking Shots"]').click()
+    await page.locator('.hand .card[data-card-name="Tracking Shots"]').click()
     assert.match(await page.locator('.prompt').innerText(), /Load Tracking Shots after playing it\?/,
       `${name}: a hand-played Tracking Shots must still offer Load self`)
 
@@ -166,7 +166,7 @@ try {
     })
     const recovery = page.getByRole('button', { name: 'Continue after unavailable Chamber card' })
     await recovery.waitFor()
-    const defend = page.locator('.hand .card[title="Defend"]')
+    const defend = page.locator('.hand .card[data-card-name="Defend"]')
     assert.equal(await defend.getAttribute('aria-disabled'), 'true')
     await page.waitForTimeout(650)
     await page.screenshot({ path: `${out}/${name}-stale-chamber-recovery.png` })

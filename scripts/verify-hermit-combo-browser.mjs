@@ -47,8 +47,8 @@ try {
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
     }
     const dialog = page.getByRole('dialog', { name: "Hermit's Combo" })
-    const loadCard = (title) => dialog.locator(`section[aria-labelledby="hermit-trigger-choice-load"] .card[title="${title}"]`)
-    const chamberCard = (title) => dialog.locator(`section[aria-labelledby="hermit-trigger-choice-chamber"] .card[title="${title}"]`)
+    const loadCard = (title) => dialog.locator(`section[aria-labelledby="hermit-trigger-choice-load"] .card[data-card-name="${title}"]`)
+    const chamberCard = (title) => dialog.locator(`section[aria-labelledby="hermit-trigger-choice-chamber"] .card[data-card-name="${title}"]`)
     const confirm = dialog.locator('.hermit-trigger-choice__confirm')
     const allVisible = (drawnCount) => dialog.evaluate((element, drawnCount) => {
       const options = [...element.querySelectorAll('section[aria-labelledby="hermit-trigger-choice-load"] .hermit-trigger-choice__option')]
@@ -160,7 +160,7 @@ try {
     await barrel.getByText('You may discard 1 Chamber card to draw 3').waitFor()
     const barrelConfirm = barrel.locator('.hermit-trigger-choice__confirm')
     assert.equal(await barrelConfirm.textContent(), 'Continue without choosing')
-    await barrel.locator('.card[title="Defend"]').click()
+    await barrel.locator('.card[data-card-name="Defend"]').click()
     assert.equal(await barrelConfirm.textContent(), 'Discard Defend, draw 3')
     await page.screenshot({ path: `${out}/${name}-smoking-barrel.png` })
     await barrelConfirm.click()

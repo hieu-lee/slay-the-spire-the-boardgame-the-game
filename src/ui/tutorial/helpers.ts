@@ -16,7 +16,7 @@ export const potionName = (id: string) => potionDef(id).name
 /** Cards show their upgraded name ("Bash+") once upgraded, so match either. */
 const titled = (scope: string, defId: string) => {
   const name = cardName(defId)
-  return `${scope} [title=${quoted(name)}], ${scope} [title=${quoted(`${name}+`)}]`
+  return `${scope} [data-card-name=${quoted(name)}], ${scope} [data-card-name=${quoted(`${name}+`)}]`
 }
 
 /** Screen spots the scripts point at. */

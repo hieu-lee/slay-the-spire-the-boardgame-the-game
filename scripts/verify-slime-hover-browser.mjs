@@ -107,7 +107,7 @@ try {
         if (phone) await actor.tap()
         else await page.mouse.move(point.x, point.y)
         await page.locator('.slime-party__zoom .card').waitFor()
-        assert.equal(await page.locator('.slime-party__zoom .card').getAttribute('title'), label)
+        assert.equal(await page.locator('.slime-party__zoom .card').getAttribute('data-card-name'), label)
         const zoom = await page.locator('.slime-party__zoom').boundingBox()
         const viewportSize = await page.evaluate(() => ({ width: innerWidth, height: innerHeight }))
         assert(zoom.x >= 0 && zoom.y >= 0 && zoom.x + zoom.width <= viewportSize.width + 1 &&
@@ -118,7 +118,7 @@ try {
       const first = page.locator('.slime-party__actor').first()
       await first.evaluate(element => element.scrollIntoView({ block: 'nearest', inline: 'nearest' }))
       await first.focus()
-      assert.equal(await page.locator('.slime-party__zoom .card').getAttribute('title'), 'Bruiser Slime')
+      assert.equal(await page.locator('.slime-party__zoom .card').getAttribute('data-card-name'), 'Bruiser Slime')
       await page.screenshot({ path: resolve(output, name + '-card.png') })
       await first.evaluate(element => element.blur())
       await page.mouse.move(0, 0)
@@ -131,7 +131,7 @@ try {
       await power.click()
       await first.evaluate(element => element.blur())
       await first.focus()
-      assert.equal(await page.locator('.slime-party__zoom .card').getAttribute('title'), 'Bruiser Slime')
+      assert.equal(await page.locator('.slime-party__zoom .card').getAttribute('data-card-name'), 'Bruiser Slime')
       assert.deepEqual(errors, [], name + ': browser errors')
       console.log(name + ': visible slime artwork, card preview, keyboard/touch and Power coexistence passed')
     } finally { await context.close() }

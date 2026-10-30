@@ -813,7 +813,7 @@ export function Card({
         ? `, socketed with ${attachedGem.name}: ${cardRuleDescription(attachedGem)}` : ''}${
         accessibleNote ? `, ${accessibleNote}` : ''}`}
       aria-pressed={selected || picked}
-      title={def.name}
+      data-card-name={def.name}
     >
       {hasPublisherScan ? <img
         className="card__art"

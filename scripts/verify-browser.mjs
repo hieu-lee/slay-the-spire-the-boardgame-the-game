@@ -880,14 +880,14 @@ const neowRewardCards = await page.locator('.neow-action--offer .card').evaluate
   const box = card.getBoundingClientRect()
   return { top: box.top, bottom: box.bottom, visible: box.top >= 0 && box.bottom <= innerHeight }
 }))
-const baseNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('title')
+const baseNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('data-card-name')
 await page.evaluate(() => {
   const run = structuredClone(window.__STS_DEBUG__.getRun())
   Object.values(run.neow.players)[0].redReward.upgraded = true
   window.__STS_DEBUG__.setRun(run)
 })
-await page.waitForFunction(() => document.querySelector('.neow-action--offer .card')?.getAttribute('title')?.endsWith('+'))
-const upgradedNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('title')
+await page.waitForFunction(() => document.querySelector('.neow-action--offer .card')?.getAttribute('data-card-name')?.endsWith('+'))
+const upgradedNeowRewardTitle = await page.locator('.neow-action--offer .card').first().getAttribute('data-card-name')
 const staleNeowRewardLabel = await page.getByText('Resolve face-up reward', { exact: true }).count()
 await shot('00b-neow-card-reward')
 check('Neow shows complete private reward cards on the desktop stage', () => {
@@ -1626,7 +1626,7 @@ for (const fixture of [
     slimeHoverHelp = await mechanicChips.first().evaluate((element) => ({
       cursor: getComputedStyle(element).cursor,
       tooltipOpen: document.getElementById(element.dataset.keywordHelpId)?.hasAttribute('data-open') === true,
-      card: document.querySelector('.slime-party__zoom .card')?.getAttribute('title'),
+      card: document.querySelector('.slime-party__zoom .card')?.getAttribute('data-card-name'),
     }))
     await page.keyboard.down('Shift')
     await mechanicChips.first().hover()
@@ -2611,7 +2611,7 @@ await slimeCardPage.evaluate((run) => {
     : { hp: 0, block: 0, dead: true }))
   window.__STS_DEBUG__.setRun(next)
 }, combatAppearanceRun)
-const divideCard = slimeCardPage.locator('.hand .card[title="Divide & Conquer"]')
+const divideCard = slimeCardPage.locator('.hand .card[data-card-name="Divide & Conquer"]')
 await divideCard.click()
 divideXChoices = (await slimeCardPage.locator('.prompt .prompt__mode').allInnerTexts())
   .filter((label) => label.startsWith('Spend '))
@@ -2626,14 +2626,14 @@ await slimeCardPage.evaluate(() => {
   next.combat.players[0].hand[0].upgraded = true
   window.__STS_DEBUG__.setRun(next)
 })
-dividePlusDisabled = await slimeCardPage.locator('.hand .card[title="Divide & Conquer+"]')
+dividePlusDisabled = await slimeCardPage.locator('.hand .card[data-card-name="Divide & Conquer+"]')
   .getAttribute('aria-disabled')
 await slimeCardPage.evaluate(() => {
   const next = structuredClone(window.__STS_DEBUG__.getRun())
   next.combat.players[0].slimes[1].commandsThisTurn = 0
   window.__STS_DEBUG__.setRun(next)
 })
-const dividePlus = slimeCardPage.locator('.hand .card[title="Divide & Conquer+"]')
+const dividePlus = slimeCardPage.locator('.hand .card[data-card-name="Divide & Conquer+"]')
 await dividePlus.click()
 const dividePlusSlimesBeforeEnergy = await slimeCardPage.locator('.prompt .prompt__mode')
   .filter({ hasText: 'Slime · level' }).count()
@@ -2641,7 +2641,7 @@ await slimeCardPage.getByRole('button', { name: 'Spend 1', exact: true }).click(
 await slimeCardPage.getByRole('button', { name: 'Armored Slime · level 1', exact: true }).click()
 await slimeCardPage.getByRole('button', { name: 'Bruiser Slime · level 1', exact: true }).click()
 await slimeCardPage.locator('.enemy:not(.enemy--dead) .enemy__hit-area').click()
-await slimeCardPage.waitForFunction(() => !document.querySelector('.hand .card[title="Divide & Conquer+"]'))
+await slimeCardPage.waitForFunction(() => !document.querySelector('.hand .card[data-card-name="Divide & Conquer+"]'))
 dividePlusFlow = await slimeCardPage.evaluate((beforeEnergy) => {
   const combat = window.__STS_DEBUG__.getRun().combat
   return {
@@ -2673,7 +2673,7 @@ await slimeCardPage.evaluate(() => {
     index < 3 ? { hp: 10, maxHp: 10, block: 0, dead: false } : { hp: 0, block: 0, dead: true }))
   window.__STS_DEBUG__.setRun(next)
 })
-await slimeCardPage.locator('.hand .card[title="Slime Brawl"]').click()
+await slimeCardPage.locator('.hand .card[data-card-name="Slime Brawl"]').click()
 await slimeCardPage.getByRole('button', { name: 'Leeching Slime · level 1', exact: true }).click()
 await slimeCardPage.getByText('Choose Leeching Slime · level 1 · 1 Strength Command target 1/1').waitFor()
 const slimeBrawlEnemyUid = await slimeCardPage.evaluate(() =>
@@ -2747,12 +2747,12 @@ await slimeCardPage.evaluate(() => {
   })
   window.__STS_DEBUG__.setRun(next)
 })
-await slimeCardPage.locator('.hand .card[title="Ooze Bath"]').click()
+await slimeCardPage.locator('.hand .card[data-card-name="Ooze Bath"]').click()
 const zeroCommandArmored = slimeCardPage.getByRole('button', { name: 'Armored Slime · level 1', exact: true })
 await zeroCommandArmored.waitFor()
 const zeroCommandArmoredEnabled = !(await zeroCommandArmored.isDisabled())
 await zeroCommandArmored.click()
-await slimeCardPage.waitForFunction(() => !document.querySelector('.hand .card[title="Ooze Bath"]'))
+await slimeCardPage.waitForFunction(() => !document.querySelector('.hand .card[data-card-name="Ooze Bath"]'))
 oozeZeroCommand = await slimeCardPage.evaluate((enabled) => {
   const actor = window.__STS_DEBUG__.getRun().combat.players[0]
   return { enabled, energy: actor.energy, commands: actor.slimes[0].commandsThisTurn }
@@ -2805,14 +2805,14 @@ await slimeCardPage.evaluate(() => {
   })
   window.__STS_DEBUG__.setRun(next)
 })
-const spentLick = slimeCardPage.locator('.hand .card[title="Lick"]')
+const spentLick = slimeCardPage.locator('.hand .card[data-card-name="Lick"]')
 const baseSpentLick = await spentLick.getAttribute('aria-disabled')
 await slimeCardPage.evaluate(() => {
   const next = structuredClone(window.__STS_DEBUG__.getRun())
   next.combat.players[0].hand[0].upgraded = true
   window.__STS_DEBUG__.setRun(next)
 })
-const optionalSpentLick = await slimeCardPage.locator('.hand .card[title="Lick+"]').getAttribute('aria-disabled')
+const optionalSpentLick = await slimeCardPage.locator('.hand .card[data-card-name="Lick+"]').getAttribute('aria-disabled')
 spentLickAvailability = { base: baseSpentLick, optional: optionalSpentLick }
 check('Downfall player status icons stay below HP with accessible Power targets', () => {
   assertDeepEqual(Object.keys(downfallStatusLayouts).sort(), ['guardian', 'hexaghost', 'slime_boss'])
@@ -3121,7 +3121,7 @@ const loadedHermitLayout = await page.evaluate(() => {
       '/assets/icons/hermit-chamber.png',
     expanded: document.querySelector('.hermit-chamber-trigger')?.getAttribute('aria-expanded') === 'true',
     allCardsInHand: cards.length === 3,
-    chamberFirst: cards[0]?.classList.contains('card--chamber-drawn') === true && cards[0]?.title === 'Snapshot',
+    chamberFirst: cards[0]?.classList.contains('card--chamber-drawn') === true && cards[0]?.dataset.cardName === 'Snapshot',
     chamberDealAnimated: getComputedStyle(cards[0]).animationName === 'card-draw',
     cardsContained: boxes.every((card) => card.left < innerWidth && card.right > 0 &&
       card.top >= 0 && card.bottom <= innerHeight),
@@ -3178,11 +3178,11 @@ await page.evaluate((run) => {
 if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
   await page.locator('.hermit-chamber-trigger').click()
 }
-const chamberHeadshot = page.locator('.hand .card--chamber-drawn[title="Headshot"]')
+const chamberHeadshot = page.locator('.hand .card--chamber-drawn[data-card-name="Headshot"]')
 await chamberHeadshot.waitFor()
 const headshotHpBeforeClick = (await readRun()).combat.enemies[0].hp
 await chamberHeadshot.click()
-await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Headshot"]')
+await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[data-card-name="Headshot"]')
   ?.getAttribute('aria-pressed') === 'true')
 await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
 await page.waitForFunction((hp) => {
@@ -3205,11 +3205,11 @@ await page.evaluate((run) => {
 if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
   await page.locator('.hermit-chamber-trigger').click()
 }
-const multiChamberHeadshot = page.locator('.hand .card--chamber-drawn[title="Headshot"]')
+const multiChamberHeadshot = page.locator('.hand .card--chamber-drawn[data-card-name="Headshot"]')
 await multiChamberHeadshot.waitFor()
 const multiHeadshotHpBeforeClick = (await readRun()).combat.enemies[1].hp
 await multiChamberHeadshot.click()
-await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Headshot"]')
+await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[data-card-name="Headshot"]')
   ?.getAttribute('aria-pressed') === 'true')
 await page.locator('.enemy[data-enemy-id="e1"]:not(.enemy--dead) .enemy__hit-area').click()
 await page.waitForFunction((hp) => {
@@ -3270,14 +3270,14 @@ await page.evaluate((run) => {
 if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') !== 'true') {
   await page.locator('.hermit-chamber-trigger').click()
 }
-const chamberQuickdraw = page.locator('.hand .card--chamber-drawn[title="Quickdraw"]')
+const chamberQuickdraw = page.locator('.hand .card--chamber-drawn[data-card-name="Quickdraw"]')
 await chamberQuickdraw.waitFor()
 await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
 await chamberQuickdraw.click()
 await page.waitForTimeout(100)
 const quickdrawPreviewBeforeTarget = await page.locator('.choice-modal[open]').count()
 await chamberQuickdraw.click()
-await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[title="Quickdraw"]')
+await page.waitForFunction(() => document.querySelector('.hand .card--chamber-drawn[data-card-name="Quickdraw"]')
   ?.getAttribute('aria-pressed') === 'false')
 const quickdrawTargetCanceled = await page.locator('.choice-modal[open]').count() === 0
 await chamberQuickdraw.click()
@@ -3304,7 +3304,7 @@ if (await page.locator('.hermit-chamber-trigger').getAttribute('aria-expanded') 
   await page.locator('.hermit-chamber-trigger').click()
 }
 await page.waitForTimeout(400)
-const chamberQuickdrawDrag = page.locator('.hand .card--chamber-drawn[title="Quickdraw"]')
+const chamberQuickdrawDrag = page.locator('.hand .card--chamber-drawn[data-card-name="Quickdraw"]')
 const chamberQuickdrawDragBox = await chamberQuickdrawDrag.boundingBox()
 const chamberQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().boundingBox()
 assert(chamberQuickdrawDragBox && chamberQuickdrawTargetBox, 'Chamber Quickdraw drag fixture is not visible')
@@ -3336,7 +3336,7 @@ await page.evaluate((run) => {
   window.__STS_DEBUG__.setRun(next)
 }, oneLoadedHermitRun)
 await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
-const handQuickdraw = page.locator('.hand .card[title="Quickdraw"]')
+const handQuickdraw = page.locator('.hand .card[data-card-name="Quickdraw"]')
 await handQuickdraw.waitFor()
 await handQuickdraw.click()
 await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().click()
@@ -3372,7 +3372,7 @@ await page.evaluate((run) => {
 }, oneLoadedHermitRun)
 await page.waitForFunction(() => !document.querySelector('.choice-modal[open]'))
 await page.waitForTimeout(400)
-const handQuickdrawDrag = page.locator('.hand .card[title="Quickdraw"]')
+const handQuickdrawDrag = page.locator('.hand .card[data-card-name="Quickdraw"]')
 const handQuickdrawDragBox = await handQuickdrawDrag.boundingBox()
 const handQuickdrawTargetBox = await page.locator('.enemy:not(.enemy--dead) .enemy__hit-area').first().boundingBox()
 assert(handQuickdrawDragBox && handQuickdrawTargetBox, 'hand Quickdraw drag fixture is not visible')
@@ -6160,15 +6160,15 @@ await page.mouse.move(5, 5)
 await keywordCard.focus()
 await page.keyboard.down('Shift')
 await aoeCard.focus()
-const focusShiftPinned = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.title))
+const focusShiftPinned = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.dataset.cardName))
 await page.keyboard.up('Shift')
 await keywordCard.hover()
 await aoeCard.focus()
 await page.keyboard.down('Shift')
-const focusWinsHover = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.title))
+const focusWinsHover = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.dataset.cardName))
 await page.mouse.move(5, 5)
 await keywordCard.hover()
-const pointerFollowsFocus = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.title))
+const pointerFollowsFocus = await page.locator('.card[data-keyword-help]').evaluateAll((cards) => cards.map((card) => card.dataset.cardName))
 await page.keyboard.up('Shift')
 await page.mouse.move(5, 5)
 await aoeCard.hover()
@@ -10887,7 +10887,7 @@ await page.locator('[data-pile="exhaust"]').click()
 const exhaustPileDialog = page.getByRole('dialog', { name: 'Exhaust pile' })
 await exhaustPileDialog.waitFor()
 const exhaustedCardTitles = await exhaustPileDialog.locator('.card').evaluateAll((cards) =>
-  cards.map((card) => card.getAttribute('title')))
+  cards.map((card) => card.getAttribute('data-card-name')))
 check('the Exhaust pile opens the same read-only card viewer', () => {
   assertDeepEqual(exhaustedCardTitles, ['Strike', 'Sentinel', 'Daze', 'Fiend Fire+'])
 })
@@ -10911,7 +10911,7 @@ await drawPile.click()
 const drawPileDialog = page.getByRole('dialog', { name: 'Draw pile' })
 await drawPileDialog.waitFor()
 const drawPileCards = await drawPileDialog.locator('.card').evaluateAll((cards) => cards.map((card) => ({
-  title: card.getAttribute('title'),
+  title: card.getAttribute('data-card-name'),
   art: card.querySelector('img')?.getAttribute('src') ?? '',
 })))
 const drawPileTitles = drawPileCards.map(({ title }) => title)
@@ -11454,7 +11454,7 @@ await page.locator('[data-pile="discard"]').click()
 const discardPileDialog = page.getByRole('dialog', { name: 'Discard pile' })
 await discardPileDialog.waitFor()
 const discountedDiscardTitles = await discardPileDialog.locator('.card').evaluateAll((cards) =>
-  cards.map((card) => card.getAttribute('title')))
+  cards.map((card) => card.getAttribute('data-card-name')))
 check('discounted attacks spend their current cost and still resolve', () => {
   assertEqual(discountedPlay.players[0].energy, 0)
   assertEqual(discountedPlay.players[0].hand.length, 0)
