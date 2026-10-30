@@ -77,6 +77,37 @@ try {
       await page.waitForFunction((name) => document.querySelector('#event-title')?.textContent === name, name)
       const opening = await page.evaluate(measure)
       if (opening.missing || !opening.onScreen || !opening.contained) failures.push(`${id} opening ${JSON.stringify(opening)}`)
+      if (id === 'purifier') {
+        for (const [count, bane] of [[0, false], [1, false], [2, false], [2, true]]) {
+          await page.evaluate(({ deck, count, bane }) => {
+            const run = structuredClone(window.__STS_DEBUG__.getRun())
+            run.players[0].deck = [
+              ...deck,
+              { uid: 'not-a-curse', defId: 'daze', upgraded: false },
+              ...Array.from({ length: count }, (_, index) => ({ uid: `curse-${index}`, defId: 'injury', upgraded: false })),
+              ...bane ? [{ uid: 'bane', defId: 'ascenders_bane', upgraded: false }] : [],
+            ]
+            window.__STS_DEBUG__.setRun(run)
+          }, { deck: base.players[0].deck, count, bane })
+          const total = count + Number(bane)
+          const expected = `Remove all Curses from your deck. (Currently ${total} ${total === 1 ? 'curse' : 'curses'}.${
+            bane ? " Ascender's Bane cannot be removed." : ''})`
+          const cleanse = page.locator('[data-event-option="cleanse"]')
+          await page.waitForFunction(text =>
+            document.querySelector('[data-event-option="cleanse"] span')?.textContent === text, expected)
+          const layout = await page.evaluate(measure)
+          if (!layout.onScreen || !layout.contained) failures.push(`${id} curse count ${JSON.stringify(layout)}`)
+          assertEqual(await cleanse.isEnabled(), true, 'Cleanse remains available even without curses')
+        }
+        await page.screenshot({ path: `artifacts/event-panels/${screen}-purifier.png` })
+        await page.locator('[data-event-option="cleanse"]').click()
+        await page.waitForFunction(() => window.__STS_DEBUG__.getRun().phase === 'map')
+        const remaining = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck.map(card => card.defId))
+        assertEqual(remaining.filter(id => id === 'injury').length, 0)
+        assertEqual(remaining.includes('ascenders_bane'), true)
+        assertEqual(remaining.includes('daze'), true, 'Status cards are not curses')
+        continue
+      }
       const first = page.locator('.event-panel .event-options button:not(:disabled)').first()
       if (!await first.count()) continue
       await first.click()
