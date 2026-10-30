@@ -126,6 +126,15 @@ try {
     await page.evaluate(() => window.__NEOW_SOCKETS__.at(-1).close())
     await page.locator('.connection--reconnecting').waitFor()
     await capture('party-disconnected')
+    const relic = page.locator('.app-shell__header .relic-chip').first()
+    await relic.focus()
+    await relic.locator('.relic-tip').waitFor({ state: 'visible' })
+    assert(await relic.locator('.relic-tip').evaluate(tip => {
+      const box = tip.getBoundingClientRect()
+      return box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
+    }), 'reconnecting must not push the relic explanation outside the viewport')
+    await page.keyboard.press('Escape')
+    await relic.evaluate(element => element.blur())
     assert.equal(await page.locator('.neow-action button:enabled').count(), 0)
     await context.setOffline(false)
     // Reconnect preserves the viewer and pending choices in the same bounded shell.

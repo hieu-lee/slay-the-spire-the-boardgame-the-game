@@ -148,7 +148,8 @@
 .relic-bar { position: relative; }
 .relic-bar .relic-tip { left: 0; }
 
-/* Below roughly 768px the 320px box no longer fits to the right of the bar's
+/* Below roughly 1024px, inventory slots and connection status leave too little
+   room for the 320px box to the right of the bar's
    left edge, which sits ~215px into the HUD, so it ran past the window: at
    380px, 155px of it. Nothing scrolled — the `html { overflow-x: clip }` in
    chrome/tokens-and-base.css sees
@@ -166,7 +167,7 @@
    `position: fixed` was tried first and rejected: `fixed` cannot see the bar,
    so the box fell to its static position over the header — at 600px it covered
    the title and gold outright. */
-@media (max-width: 50rem) {
+@media (max-width: 64rem) {
   .run-status { position: relative; }
   .relic-bar { position: static; }
 

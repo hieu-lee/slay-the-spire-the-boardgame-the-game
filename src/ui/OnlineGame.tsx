@@ -21,6 +21,7 @@ import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
+import { PotionSlots } from './PotionSlots.tsx'
 import { RelicBar } from './RelicChip.tsx'
 import { RunSummary } from './RunSummary.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
@@ -786,10 +787,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {/* See App.tsx: HP belongs in the header on every screen, not only in combat. */}
           {headerViewer ? <span className="pip pip--hp" role="img" aria-label={`Health ${headerViewer.hp} of ${headerViewer.maxHp}`}>{headerViewer.hp}/{headerViewer.maxHp}</span> : null}
           {headerViewer ? <span className="pip"><IconValue name="gold" value={headerViewer.gold} size={20} /></span> : null}
-          {run.phase === 'combat' && combat ? <CourierPeek placement="header" players={combat.players} viewerId={snapshot.you.playerId} usedBy={run.courier.usedBy}
-            active={!run.courier.offer && courierPeekPhase(combat) && room.connection === 'connected' && !foreignInteractionLock && !giveUpStartPending}
-            onReveal={revealCourierOnline} /> : null}
-          {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} /> : null}
           {viewer && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
           !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
             <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
@@ -798,7 +795,11 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
               disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock}
               onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
               onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
-          ) : null}
+          ) : headerViewer ? <PotionSlots player={headerViewer} ascension={run.ascension} /> : null}
+          {run.phase === 'combat' && combat ? <CourierPeek placement="header" players={combat.players} viewerId={snapshot.you.playerId} usedBy={run.courier.usedBy}
+            active={!run.courier.offer && courierPeekPhase(combat) && room.connection === 'connected' && !foreignInteractionLock && !giveUpStartPending}
+            onReveal={revealCourierOnline} /> : null}
+          {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} /> : null}
         </div>
         <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
           volume={settings.voiceVolume} compact />
