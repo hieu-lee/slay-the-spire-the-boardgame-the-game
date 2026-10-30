@@ -2820,7 +2820,7 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   run.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
   run.roomState = { kind: 'event', card: { id: 'cursed_tome', instanceId: 'browser-prismatic-event', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Cursed Tome', scope: 'player', options: [
-    { id: 'take', label: 'Take', description: 'Gain a Rare Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
+    { id: 'take', label: 'Take', description: 'Gain a Rare Card Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
     { id: 'skim', label: 'Skim', description: 'Gain a Card Reward. Lose 1 HP.', effects: [{ tag: 'card-reward' }, { tag: 'lose-hp', amount: 1 }] },
   ] }, decisions: {}, dieRolls: {}, availableRewardSources: {
     card: ['silent', 'defect', 'watcher', 'colorless'],
@@ -3947,7 +3947,7 @@ liveRoom.run.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
 liveRoom.run.phase = 'room'
 liveRoom.run.roomState = {
   kind: 'event', card: { id: 'cursed_tome', instanceId: 'browser-online-prismatic-event', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Cursed Tome', scope: 'player', options: [
-    { id: 'take', label: 'Take', description: 'Gain a Rare Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
+    { id: 'take', label: 'Take', description: 'Gain a Rare Card Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
     { id: 'skim', label: 'Skim', description: 'Gain a Card Reward. Lose 1 HP.', effects: [{ tag: 'card-reward' }, { tag: 'lose-hp', amount: 1 }] },
   ] }, decisions: {}, dieRolls: {}, availableRewardSources: {
     card: ['ironclad', 'silent', 'defect', 'watcher', 'colorless'],
