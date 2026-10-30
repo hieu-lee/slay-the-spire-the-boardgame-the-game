@@ -11,13 +11,16 @@ fi
 codex_script=$(readlink -f "$codex_bin")
 if [ ! -f "$codex_script" ] || [ ! -x "${NODE_BINARY:-}" ]; then exit 66; fi
 node_binary=$(readlink -f "$NODE_BINARY")
+node_command=$node_binary
 node_mount=()
 case "$node_binary" in
   /opt/*/bin/node)
     node_root=$(dirname "$(dirname "$node_binary")")
     node_mount=(--ro-bind "$node_root" "$node_root") ;;
   /usr/*) ;;
-  *) exit 66 ;;
+  *)
+    node_mount=(--dir /node-runtime --ro-bind "$node_binary" /node-runtime/node)
+    node_command=/node-runtime/node ;;
 esac
 codex_package=$(dirname "$(dirname "$codex_script")")
 if [ "$codex_script" != "$codex_package/bin/codex.js" ]; then exit 66; fi
@@ -49,7 +52,7 @@ run_codex() {
     --ro-bind "$PWD/src/game" /workspace/src/game \
     --ro-bind "$PWD/package.json" /workspace/package.json --ro-bind "$codex_package" /codex-cli \
     --setenv TMPDIR /tmp --setenv HOME /codex-home --setenv CODEX_HOME /codex-home --unsetenv OPENAI_API_KEY \
-    --chdir /workspace "${NODE_BINARY}" /codex-cli/bin/codex.js "$@"
+    --chdir /workspace "$node_command" /codex-cli/bin/codex.js "$@"
 }
 
 if [ -n "${OPENAI_API_KEY:-}" ] && ! "${NODE_BINARY}" -e '

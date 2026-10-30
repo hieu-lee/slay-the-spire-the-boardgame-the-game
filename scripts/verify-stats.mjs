@@ -867,6 +867,22 @@ try {
     assert(mounts.includes('/etc/ssl/certs'))
     if (process.execPath.startsWith('/opt/')) assert(mounts.includes(join(process.execPath, '..', '..')))
   })
+  const portableNode = join(isolatedHome, 'portable-node')
+  writeFileSync(portableNode, '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  const portableStatus = spawnSync('bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
+    cwd: process.cwd(), stdio: 'ignore', env: { ...fakeEnvironment(), NODE_BINARY: portableNode },
+  }).status
+  check('a user-managed Node installation exposes only its executable to the sandbox', () => {
+    if (process.platform !== 'linux') return assertEqual(portableStatus, 66)
+    assertEqual(portableStatus, 0)
+    const mounts = readFileSync(join(isolatedHome, 'bwrap-args'), 'utf8').split('\n')
+    const source = mounts.indexOf(portableNode)
+    assert(source > 0)
+    assertEqual(mounts[source - 1], '--ro-bind')
+    assertEqual(mounts[source + 1], '/node-runtime/node')
+    assert(mounts.includes('/node-runtime/node'))
+    assert(!mounts.includes(isolatedHome), 'the user home must not be mounted')
+  })
   const envKeyStatus = spawnSync('bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
     cwd: process.cwd(), stdio: 'ignore', env: { ...fakeEnvironment(), OPENAI_API_KEY: 'sk-fixture-env-only' },
   }).status
