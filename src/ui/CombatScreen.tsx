@@ -6835,7 +6835,8 @@ function CombatScreenView({
                 onThrowPrepared={onCultistThrowPrepared}
                 onThrowStart={onCultistThrowStart}
                 onThrowSkipped={onCultistThrowSkipped}
-                stageIndex={stageEnemies.length + index}
+                // Stage slots count from the right; bosses retain printed left-to-right order.
+                stageIndex={stageEnemies.length + bosses.length - 1 - index}
                 // A boss stands in every row, so the only reading that means
                 // anything to the person looking at the screen is their own.
                 defender={viewer}
