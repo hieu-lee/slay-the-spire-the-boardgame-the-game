@@ -3,7 +3,8 @@
 // used to print as its own sentence-long button, so a deep relic bar buried the
 // panel in near-identical rows. Here one row is one Relic ability; its targets
 // are short chips under it, and a Relic with nothing to aim is a single button.
-import { enemyLabel, livingEnemies, reachesEnemy } from '../game/combat.ts'
+import { enemyLabel, reachesEnemy } from '../game/combat.ts'
+import { livingEnemiesInStageOrder } from './board-signals.ts'
 import type { CombatState } from '../game/combat.ts'
 import { relicIconPath } from '../game/assets.ts'
 import { chosenDieRelicAbilities, relicDef } from '../game/relics.ts'
@@ -35,7 +36,7 @@ export function dieRelicChoices(
       if (skip?.(owner, relicIndex, faces)) return []
       const enemies = (needsEnemyForAll || (ability.target ?? 'enemy') !== 'allEnemies') &&
         ability.effects.some((effect) => reachesEnemy(effect, owner))
-        ? livingEnemies(state) : [undefined]
+        ? livingEnemiesInStageOrder(state.enemies) : [undefined]
       const players = ability.supportTarget === 'anyPlayer'
         ? state.players.filter((player) => !player.dead) : [undefined]
       return enemies.flatMap((enemy) => players.map((targetPlayer): DieRelicChoice =>

@@ -60,6 +60,7 @@ try {
             import('/src/game/run.ts'), import('/src/game/combat.ts'), import('/src/game/rng.ts'),
             import('/src/ui/styles.css'), import('/src/ui/chrome.css'),
           ])
+          const { buildEncounter, createEnemyDecks } = await import('/src/game/run/encounters.ts')
           const player = createPlayer(createRng(47), 'p1', 'Defect', 'defect', 0)
           Object.assign(player, { hp: 8, maxHp: 8, relics: [], draw: [], discard: [],
             hand: [], powers: [{ uid: 'combust', defId: 'combust', upgraded: true }] })
@@ -99,8 +100,11 @@ try {
           }
           fixture.bossPair = () => {
             fixture.state = structuredClone(state)
-            fixture.state.enemies = ['donu', 'deca'].map(uid => ({
-              ...enemy, uid, defId: uid, row: 0, isBoss: true, hp: 20, maxHp: 20, dead: false,
+            const rng = createRng(50)
+            const encounter = buildEncounter(rng, createEnemyDecks(rng, 3, 0), 3, fixture.state.players,
+              'boss', false, 0, 'donu')
+            fixture.state.enemies = encounter.enemies.map(enemy => ({
+              ...enemy, uid: enemy.defId, hp: 20, maxHp: 20,
             }))
             Object.assign(fixture.state.players[0], {
               hand: [], orbs: ['lightning', null, null],
@@ -162,6 +166,16 @@ try {
           `${screen}: boss click also hit another row`)
 
         await page.evaluate(() => window.fixture.bossPair())
+        await page.locator('[data-enemy-id="deca"]').waitFor()
+        assert.deepEqual(await page.evaluate(() => window.fixture.state.enemies.map(enemy => enemy.defId)),
+          ['deca', 'donu'], 'the encounter must preserve the printed acting order')
+        const bossPositions = await page.evaluate(() => {
+          const deca = document.querySelector('[data-enemy-id="deca"] .bar').getBoundingClientRect()
+          const donu = document.querySelector('[data-enemy-id="donu"] .bar').getBoundingClientRect()
+          return { decaRight: deca.right, donuLeft: donu.left }
+        })
+        assert(bossPositions.decaRight <= bossPositions.donuLeft,
+          `${screen}: Deca must stand to the left of Donu: ${JSON.stringify(bossPositions)}`)
         await page.getByRole('button', { name: 'End turn', exact: true }).click()
         await page.locator('.end-turn-effects button.end-turn-effect--orb').click()
         await page.locator('[data-enemy-id="deca"].enemy--targeted').waitFor()

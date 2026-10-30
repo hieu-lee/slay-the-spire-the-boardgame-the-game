@@ -24,10 +24,10 @@ try {
     await page.waitForFunction(() => window.__STS_DEBUG__?.getRun()?.phase === 'neow')
     const viewerId = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].id)
     const run = createRun(931, [{ id: viewerId, name: 'Ironclad', character: 'ironclad' }])
-    const enemy = { uid: 'e0', defId: 'jaw_worm', row: 0, isBoss: false, hp: 30, maxHp: 30,
+    const enemy = { uid: 'e0', defId: 'centurion_b3', row: 0, isBoss: false, hp: 30, maxHp: 30,
       block: 0, strength: 0, vulnerable: 0, weak: 0, poison: 0, goldReward: 0, cardReward: null,
       actionIndex: 0, abilityUsed: true, dead: false }
-    const second = { ...enemy, uid: 'e1' }
+    const second = { ...enemy, uid: 'e1', defId: 'mystic' }
     run.combat = createCombat({ seed: 931, calls: 0 }, run.players, [enemy, second], `die-relic-${name}`)
     Object.assign(run.combat.players[0], { hand: [], powers: [], potions: [], relics: [
       { defId: 'dollys_mirror', spent: false }, { defId: 'red_mask', spent: false },
@@ -39,12 +39,49 @@ try {
       startTurnProgress: undefined, pendingTriggers: [], presentationEvents: [] })
     run.phase = 'combat'
     run.neow = null
+    const tooltipRun = structuredClone(run)
+    tooltipRun.phase = 'map'
+    tooltipRun.combat = null
+    tooltipRun.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
+    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), tooltipRun)
+    const snecko = page.locator('.relic-chip[data-relic="snecko_eye"]')
+    await snecko.hover()
+    const sneckoTip = snecko.locator('.relic-tip')
+    await sneckoTip.waitFor({ state: 'visible' })
+    const sneckoText = await sneckoTip.innerText()
+    assert(sneckoText.includes('On a 5: your next card this turn costs 2 Energy.'),
+      `${name}: Snecko Eye does not explain roll 5`)
+    assert(sneckoText.includes('On a 6: your next card this turn costs 0 Energy.'),
+      `${name}: Snecko Eye does not explain roll 6`)
+    const sneckoBox = await sneckoTip.boundingBox()
+    assert(sneckoBox && sneckoBox.x >= 0 && sneckoBox.y >= 0 &&
+      sneckoBox.x + sneckoBox.width <= width && sneckoBox.y + sneckoBox.height <= height,
+    `${name}: Snecko Eye's complete rules are clipped`)
+    await page.screenshot({ path: `${out}/${name}-snecko-tooltip.png` })
+    await page.mouse.move(2, 2)
+    const ashesRun = structuredClone(run)
+    ashesRun.combat.players[0].relics = [{ defId: 'charons_ashes', spent: false }]
+    ashesRun.combat.players[0].hand = [{ uid: 'fuel', defId: 'defend_ironclad', upgraded: false }]
+    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), ashesRun)
+    const ashes = page.locator('.relic-actions details').filter({ hasText: "Charon's Ashes" })
+    await ashes.locator('summary').click()
+    const hits = ashes.getByRole('button', { name: /^Hit / })
+    assert.deepEqual((await hits.allTextContents()).map(text => text.trim()), ['Hit Mystic', 'Hit Centurion'])
+    assert.deepEqual(await page.locator('.enemy:not(.enemy--dead)').evaluateAll(enemies =>
+      enemies.map(enemy => ({ id: enemy.dataset.enemyId, x: enemy.getBoundingClientRect().x }))
+        .sort((a, b) => a.x - b.x).map(enemy => enemy.id)), ['e1', 'e0'])
+    await ashes.locator('.card').click()
+    await page.screenshot({ path: `${out}/${name}-ashes-target-order.png` })
+    await hits.first().click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[1].hp === 28)
+    assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].hp), 30)
     await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
     const mirror = page.locator('.relic-actions details').filter({ hasText: "Dolly's Mirror" })
     await mirror.locator('summary').click()
     const redMaskGroup = mirror.getByRole('group', { name: /Red Mask · die 5\/6/ })
     await redMaskGroup.waitFor({ state: 'visible' })
-    const redMask = redMaskGroup.getByRole('button').first()
+    const redMask = redMaskGroup.getByRole('button', { name: /Centurion$/ })
+    assert.deepEqual(await redMaskGroup.getByRole('button').allTextContents(), ['Mystic', 'Centurion'])
     assert.equal(await redMaskGroup.getByRole('button').count(), 2, `${name}: Red Mask should offer one chip per enemy`)
     assert.equal(await mirror.locator('.die-relic').count(), 7, `${name}: expected one tile per die Relic ability`)
     await redMask.scrollIntoViewIfNeeded()
@@ -112,29 +149,11 @@ try {
     await cheatPick.waitFor({ state: 'visible' })
     await page.screenshot({ path: `${out}/${name}-cheat.png` })
     assert.equal(await cheatPick.getByRole('button').count(), 2, `${name}: Cheat should offer one chip per enemy`)
-    await cheatPick.getByRole('button').first().click()
+    await cheatPick.getByRole('button', { name: /Centurion$/ }).click()
     await page.locator('.enemy:not(.enemy--dead) .enemy__head').first().click()
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[0].weak === 1)
     await page.screenshot({ path: `${out}/${name}-cheat-picked.png` })
 
-    run.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
-    run.combat.players[0].relics = run.players[0].relics
-    run.combat.players[0].potions = []
-    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
-    const snecko = page.locator('.relic-chip[data-relic="snecko_eye"]')
-    await snecko.hover()
-    const sneckoTip = snecko.locator('.relic-tip')
-    await sneckoTip.waitFor({ state: 'visible' })
-    const sneckoText = await sneckoTip.innerText()
-    assert(sneckoText.includes('On a 5: your next card this turn costs 2 Energy.'),
-      `${name}: Snecko Eye does not explain roll 5`)
-    assert(sneckoText.includes('On a 6: your next card this turn costs 0 Energy.'),
-      `${name}: Snecko Eye does not explain roll 6`)
-    const sneckoBox = await sneckoTip.boundingBox()
-    assert(sneckoBox && sneckoBox.x >= 0 && sneckoBox.y >= 0 &&
-      sneckoBox.x + sneckoBox.width <= width && sneckoBox.y + sneckoBox.height <= height,
-    `${name}: Snecko Eye's complete rules are clipped`)
-    await page.screenshot({ path: `${out}/${name}-snecko-tooltip.png` })
     await page.close()
   }
   assert.deepEqual(errors, [])

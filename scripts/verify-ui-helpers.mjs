@@ -29,6 +29,7 @@ import {
   displayedEnemies,
   drawnCardUids,
   healthBand,
+  livingEnemiesInStageOrder,
   pendingUiSurvivesContext,
   shouldAnimateOnlineOpeningHand,
   shouldDisarmCardFlight,
@@ -41,6 +42,20 @@ import { EVENT_DEFINITIONS } from '../src/game/events.ts'
 import { suite, check, assert, assertDeepEqual, assertEqual, report } from './lib/harness.mjs'
 
 suite('ui helpers')
+
+check('enemy target order follows stage slots without mutating combat order', () => {
+  const enemies = [
+    { uid: 'centurion', isBoss: false, dead: false },
+    { uid: 'donu', isBoss: true, dead: false },
+    { uid: 'defeated', isBoss: false, dead: true },
+    { uid: 'mystic', isBoss: false, dead: false },
+    { uid: 'deca', isBoss: true, dead: false },
+  ]
+  const original = enemies.map(enemy => enemy.uid)
+  assertDeepEqual(livingEnemiesInStageOrder(enemies).map(enemy => enemy.uid),
+    ['donu', 'deca', 'mystic', 'centurion'])
+  assertDeepEqual(enemies.map(enemy => enemy.uid), original)
+})
 
 check('enemy projectiles respect row, facing, area and living targets', () => {
   const players = [{id:'p1',row:0,dead:false,facingEnemyUid:'e'},
