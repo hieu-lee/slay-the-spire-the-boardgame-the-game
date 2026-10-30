@@ -40,10 +40,34 @@ try {
     run.phase = 'combat'
     run.neow = null
     await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
+    const relicsClearOfBar = () => page.waitForFunction(() => {
+      const bar = document.querySelector('.combat__bar')?.getBoundingClientRect()
+      const actions = document.querySelector('.relic-actions > section')?.getBoundingClientRect()
+      return bar && actions && actions.height > 0 && actions.top >= bar.bottom + 4 &&
+        actions.left >= 0 && actions.right <= innerWidth && actions.bottom <= innerHeight
+    })
+    await relicsClearOfBar()
+    const barHeight = (await page.locator('.combat__bar').boundingBox()).height
+    const stackedRun = structuredClone(run)
+    stackedRun.combat.phase = 'player'
+    stackedRun.combat.players[0].relics.push({ defId: 'holy_water', spent: false, cubes: 2 })
+    Object.assign(stackedRun.combat.players[0], { shivs: 2, miracles: 2 })
+    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), stackedRun)
+    await page.getByRole('button', { name: 'Use Shiv', exact: true }).waitFor()
+    await relicsClearOfBar()
+    if (name === 'phone-landscape') {
+      assert((await page.locator('.combat__bar').boundingBox()).height > barHeight,
+        `${name}: the fixture must exercise a turn bar taller than its minimum height`)
+    }
+    await page.screenshot({ path: `${out}/${name}-relic-toolbar-clearance.png` })
+    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
+    await page.getByRole('button', { name: 'Use Shiv', exact: true }).waitFor({ state: 'detached' })
+    await relicsClearOfBar()
     const mirror = page.locator('.relic-actions details').filter({ hasText: "Dolly's Mirror" })
     await mirror.locator('summary').click()
     const redMaskGroup = mirror.getByRole('group', { name: /Red Mask · die 5\/6/ })
     await redMaskGroup.waitFor({ state: 'visible' })
+    await relicsClearOfBar()
     const redMask = redMaskGroup.getByRole('button').first()
     assert.equal(await redMaskGroup.getByRole('button').count(), 2, `${name}: Red Mask should offer one chip per enemy`)
     assert.equal(await mirror.locator('.die-relic').count(), 7, `${name}: expected one tile per die Relic ability`)

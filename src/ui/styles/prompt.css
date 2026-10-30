@@ -156,7 +156,7 @@
 
 .relic-actions {
   position: absolute;
-  top: var(--combat-bar-height);
+  top: calc(var(--combat-bar-bottom, var(--combat-bar-height)) + 0.35rem);
   left: 0;
   z-index: 70;
   max-width: calc(100vw - 2rem);
