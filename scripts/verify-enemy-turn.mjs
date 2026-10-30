@@ -344,7 +344,7 @@ check('the printed Act I and II enemy corrections stay distinct', () => {
 
   for (const ascension of [0, 10]) {
     assertDeepEqual(actionsFor(enemyDef('the_champ', ascension), 1, 1), [
-      { kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'actsLast' },
+      { kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 },
     ], `The Champ's middle action is printed correctly at Ascension ${ascension}`)
   }
 
@@ -353,6 +353,27 @@ check('the printed Act I and II enemy corrections stay distinct', () => {
   assertDeepEqual(createSummonSupply(createRng(9)).jaw_worm_act3.sort(), [
     'jaw_worm_summon', 'jaw_worm_summon_3b4',
   ], 'both distinct physical Act III Jaw Worm summon cards are present')
+})
+
+check('The Champ gains persistent Strength on its second action and weakens every player', () => {
+  for (const ascension of [0, 10]) {
+    const state = inEnemyPhase(
+      [player({ id: 'p1', row: 0 }), player({ id: 'p2', row: 1 })],
+      [enemy({ defId: 'the_champ', isBoss: true, ascension, actionIndex: 1, hp: 80, maxHp: 80 })],
+    )
+    state.turn = 2
+    const next = enemyTurn(state)
+    assertEqual(next.enemies[0].strength, 1, `Ascension ${ascension}: the second action grants Strength`)
+    assertDeepEqual(next.players.map((player) => player.weak), [1, 1], 'Weak reaches every player')
+    assertDeepEqual(next.players.map((player) => player.hp), [10, 10], 'the buff action does not attack')
+
+    const started = startPlayerTurn(next)
+    assertEqual(started.enemies[0].strength, 1, 'Strength persists into the following turn')
+    const attacked = enemyTurn(endPlayerTurn(started))
+    const damage = ascension >= 10 ? 7 : 6
+    assertEqual(attacked.players[0].hp, 10 - damage, 'the following attack includes the gained Strength')
+    assertEqual(attacked.enemies[0].strength, 1, 'attacking does not consume Strength')
+  }
 })
 
 check('base Corrupt Heart shuffles Slimed into only the draw pile', () => {
