@@ -117,14 +117,44 @@ try {
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[0].weak === 1)
     await page.screenshot({ path: `${out}/${name}-cheat-picked.png` })
 
-    run.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
-    run.combat.players[0].relics = run.players[0].relics
-    run.combat.players[0].potions = []
-    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
+    await page.evaluate(() => {
+      const current = window.__STS_DEBUG__.getRun()
+      current.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
+      current.combat.players[0].relics = current.players[0].relics
+      current.combat.players[0].potions = []
+      window.__STS_DEBUG__.setRun(current)
+    })
+    await page.locator('.card-morph').waitFor({ state: 'hidden' })
     const snecko = page.locator('.relic-chip[data-relic="snecko_eye"]')
     await snecko.hover()
     const sneckoTip = snecko.locator('.relic-tip')
     await sneckoTip.waitFor({ state: 'visible' })
+    const tipImage = await sneckoTip.screenshot({ path: `${out}/${name}-chamfer.png`, animations: 'disabled' })
+    const corners = await sneckoTip.evaluate(async (tip, png) => {
+      const image = new Image()
+      image.src = `data:image/png;base64,${png}`
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width; canvas.height = image.height
+      const context = canvas.getContext('2d')
+      context.drawImage(image, 0, 0)
+      const style = getComputedStyle(tip)
+      context.fillStyle = style.getPropertyValue('--trim-dim')
+      context.fillRect(0, 0, 1, 1)
+      const expected = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3)
+      const box = tip.getBoundingClientRect()
+      const inset = parseFloat(style.getPropertyValue('--chamfer')) / 2 + 1
+      return [[false, false], [true, false], [false, true], [true, true]].map(([right, bottom]) => {
+        const x = Math.floor((right ? box.width - inset : inset) * image.width / box.width)
+        const y = Math.floor((bottom ? box.height - inset : inset) * image.height / box.height)
+        const pixels = context.getImageData(x - 1, y - 1, 3, 3).data
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (expected.every((channel, index) => Math.abs(pixels[i + index] - channel) <= 15)) return true
+        }
+        return false
+      })
+    }, tipImage.toString('base64'))
+    assert(corners.every(Boolean), `${name}: all four cut corners must retain visible trim: ${JSON.stringify(corners)}`)
     const sneckoText = await sneckoTip.innerText()
     assert(sneckoText.includes('On a 5: your next card this turn costs 2 Energy.'),
       `${name}: Snecko Eye does not explain roll 5`)

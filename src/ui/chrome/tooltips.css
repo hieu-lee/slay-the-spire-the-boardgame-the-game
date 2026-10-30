@@ -15,13 +15,7 @@
   max-width: calc(100vw - 2rem);
   padding: 0.7rem 22px 0.8rem;
   border: 0;
-  background:
-    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
-    linear-gradient(180deg, #2b1f1a, #15100c 72%);
-  box-shadow:
-    inset 0 0 0 2px var(--trim-dim),
-    inset 0 0 0 3px rgb(0 0 0 / 0.7),
-    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  background: var(--trim-dim);
   filter: drop-shadow(var(--hard-shadow-lg));
   color: var(--tip-body);
   font-family: 'Kreon', Georgia, serif;
@@ -52,6 +46,22 @@
     opacity var(--motion-lerp) var(--ease-lerp),
     transform var(--motion-lerp) var(--ease-lerp),
     visibility var(--motion-lerp);
+}
+
+/* Inset the fill, not a rectangular shadow, so the trim follows the cut corners. */
+.relic-tip::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 2px;
+  clip-path: inherit;
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
+    linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  pointer-events: none;
 }
 
 .relic-chip:hover > .relic-tip,

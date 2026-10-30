@@ -57,6 +57,7 @@ const focusedEngineOwners = ownerMap([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = ownerMap([
+  ['src/ui/chrome/tooltips.css', ['verify-die-relic-browser.mjs']],
   ['src/ui/App.tsx', ['verify-ascension-sync-browser.mjs', 'verify-restricted-browser.mjs', 'verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
     'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs', 'verify-skin-browser.mjs']],
   ['src/ui/CampfireScene.tsx', ['verify-art-scenes-browser.mjs', 'verify-skin-browser.mjs']],
