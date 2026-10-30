@@ -230,7 +230,8 @@ function MerchantScreen({
   const canPledge = (funding: ReturnType<typeof pledge>) => merchantPledges[funding.key]
     ? additional(funding.remaining, funding.key, funding.mine) > 0
     : buyer.id === player.id && players.reduce((sum, candidate) => sum + unpledgedGold(candidate, funding.key), 0) >= funding.remaining;
-  const removalUnavailable = removalUsed || Boolean(onWithdraw && buyer.id !== player.id &&
+  const removalAffordable = players.reduce((sum, candidate) => sum + unpledgedGold(candidate, removalKey), 0) >= removalRemaining;
+  const removalUnavailable = removalUsed || (!removalPending && !removalAffordable) || Boolean(onWithdraw && buyer.id !== player.id &&
     (!removalPending || additional(removalRemaining, removalKey) <= 0));
   const sharedReserved = (section: MerchantPurchase["section"], slot: number, key: string) =>
     ["relic", "potion", "colorless"].includes(section) && Object.entries(merchantPledges).some(([pendingKey, pending]) =>
@@ -549,7 +550,7 @@ function MerchantScreen({
           </div>
           <button type="button" className="merchant-removal-dialog__confirm"
             disabled={
-              (!removalPending && (!removeUid || Boolean(onWithdraw && buyer.id !== player.id) || players.reduce((sum, candidate) => sum + unpledgedGold(candidate, removalKey), 0) < removalRemaining)) ||
+              (!removalPending && (!removeUid || Boolean(onWithdraw && buyer.id !== player.id) || !removalAffordable)) ||
               (additional(removalRemaining, removalKey) <= 0 && (onWithdraw ? buyer.id !== player.id || Boolean(removalPending) : true)) ||
               removalUsed
             }
