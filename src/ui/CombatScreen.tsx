@@ -196,6 +196,7 @@ import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { Card, slimeCommandText } from './Card.tsx'
+import { relicTooltipText } from './RelicChip.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
@@ -6304,9 +6305,10 @@ function CombatScreenView({
           <section aria-label="Relic abilities">
           {viewer.relics.flatMap((held, relicIndex) => {
             const def = relicDef(held.defId)
+            const description = relicTooltipText(held.defId, state.die)
             const simpleAction = <PotionTooltipAnchor id={held.defId} key={`${held.defId}-${relicIndex}`}
-              name={def.name} text={def.text} kindLabel="Relic" confirmLabel="use">
-              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${def.text}`}
+              name={def.name} text={description} kindLabel="Relic" confirmLabel="use">
+              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${description}`}
                 onClick={() => useRelic(relicIndex)}>
                 <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />
               </button>

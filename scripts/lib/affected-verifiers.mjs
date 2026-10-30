@@ -112,7 +112,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/non-combat-rooms.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/chrome/mailbox.css', ['verify-mail-browser.mjs']],
   ['src/multiplayer/useRoomSession.ts', ['verify-ascension-sync-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']],
-  ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs', 'verify-toolbox-browser.mjs']],
   ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']],
   ['src/ui/OnlineCampfireScreen.tsx', ['verify-art-scenes-browser.mjs', 'verify-monogatari-online-browser.mjs']],
   ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-skin-browser.mjs']],
