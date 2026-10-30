@@ -58,6 +58,25 @@ function submit(room, index, picks = {}) {
   return apply(room, token(room, index), { kind: 'resolveStartTurn', choices })
 }
 
+check('copied Snecko Eye cost faces are authoritative and visible to both players', () => {
+  for (const [abilityIndex, cost] of [[2, 2], [3, 0]]) {
+    const room = makeRoom(['ironclad', 'watcher'], [
+      player => { player.relics = [{ defId: 'dollys_mirror', spent: false }] },
+      player => { player.relics = [{ defId: 'snecko_eye', spent: false }] },
+    ], count => [enemy('e0', 'cultist', 0, count)], { die: 1 })
+    const ownerId = room.run.combat.players[1].id
+    apply(room, token(room, 0), {
+      kind: 'activateRelic', relicIndex: 0,
+      targetRelicPlayerId: ownerId, targetRelicIndex: 0, targetAbilityIndex: abilityIndex,
+    })
+    assertEqual(room.run.combat.players[1].nextCardCost, cost)
+    assertEqual(room.run.combat.players[0].nextCardCost ?? null, null)
+    for (const seat of [0, 1]) {
+      assertEqual(snapshotFor(room, token(room, seat)).run.combat.players.find(player => player.id === ownerId).nextCardCost, cost)
+    }
+  }
+})
+
 check('a non-coordinator may stage overflow Shiv targets before the shared order is committed', () => {
   const room = makeRoom(['guardian', 'defect', 'silent'], [
     null,

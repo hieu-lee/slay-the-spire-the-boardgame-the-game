@@ -144,9 +144,6 @@ export function finishStartTurnDraw(next: CombatState, drewFrom: number, roll: b
     const confusion = snecko && enemyAbilities(enemyDef(snecko.defId, snecko.ascension))
       .find((ability) => ability.kind === 'confusion')
     if (confusion?.kind === 'confusion') player.enemyNextCardCost = confusion.byRoll[next.die] ?? null
-    if (player.relics.some((relic) => relic.defId === 'snecko_eye') && next.die >= 5) {
-      player.nextCardCost = next.die === 5 ? 2 : 0
-    }
   }
   next.log = [
     ...next.log.slice(0, drewFrom),
@@ -1824,6 +1821,7 @@ export function startTurnOrderChoicePlayerId(
       inGroup('hit', 'rowHit', 'hitChoices'))
     if (strengthBeforeHit) definiteOrderOwner ??= player.id
     const possible = canDraw && kinds.some((set) => set.has('drawAndPlayFree')) && owned.length > 1 ||
+      distinct(inGroup('setNextCardCost'), inGroup('setNextCardCost')) ||
       distinct(inGroup('advance', 'retract', 'branch'), inGroup('advance', 'retract', 'branch')) ||
       distinct(inGroup('load', 'discountChamber', 'discardChamber', 'playChamber'),
         inGroup('load', 'discountChamber', 'discardChamber', 'playChamber')) ||

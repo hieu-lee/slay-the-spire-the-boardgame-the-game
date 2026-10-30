@@ -269,7 +269,7 @@ type EffectKind =
   | { kind: 'preventCardPlay' }
   /** The next card played this turn costs 0 Energy. */
   | { kind: 'discountNextCard' }
-  | { kind: 'setNextCardCost'; amount: 1 }
+  | { kind: 'setNextCardCost'; amount: 0 | 1 | 2 }
   /** The next Attack played this turn costs 0 Energy. */
   | { kind: 'discountNextAttack' }
   /** Every card currently in the caster's hand costs 0 this turn. */

@@ -117,6 +117,36 @@ try {
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[0].weak === 1)
     await page.screenshot({ path: `${out}/${name}-cheat-picked.png` })
 
+    for (const [source, die] of [['loaded_die', 6], ['dollys_mirror', 1]]) {
+      for (const [face, cost] of [[5, 2], [6, 0]]) {
+        const next = structuredClone(run)
+        next.campaign.runId = `snecko-choice-${name}-${source}-${face}`
+        next.combat.combatId = `snecko-choice-${name}-${source}-${face}`
+        Object.assign(next.combat, { phase: 'start', die, turn: 2, startTurnStage: 'effects',
+          startTurnProgress: undefined, pendingTriggers: [], powerTriggersUsedThisTurn: [] })
+        next.combat.players[0].nextCardCost = null
+        next.combat.players[0].potions = ['gamblers_brew']
+        next.combat.players[0].relics = [
+          { defId: source, spent: false }, { defId: 'snecko_eye', spent: false },
+        ]
+        next.players[0].relics = structuredClone(next.combat.players[0].relics)
+        await page.evaluate(run => window.__STS_DEBUG__.setRun(run), next)
+        await page.locator('.card-morph').waitFor({ state: 'detached' })
+        const open = page.locator('.relic-actions details')
+          .filter({ hasText: source === 'loaded_die' ? 'Loaded Die' : "Dolly's Mirror" }).locator('summary')
+        await open.click()
+        const choices = page.locator('.relic-actions .die-relic-list').getByRole('button')
+        const five = choices.filter({ hasText: 'Snecko Eye' }).filter({ hasText: 'die 5' })
+        const six = choices.filter({ hasText: 'Snecko Eye' }).filter({ hasText: 'die 6' })
+        await five.waitFor()
+        await six.waitFor()
+        assert(await five.isEnabled() && await six.isEnabled(), 'both cost faces must be selectable')
+        await page.screenshot({ path: `${out}/${name}-${source}-snecko-${face}.png` })
+        await (face === 5 ? five : six).click()
+        await page.waitForFunction(cost => window.__STS_DEBUG__.getRun().combat.players[0].nextCardCost === cost, cost)
+        assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].relics[0].spent), true)
+      }
+    }
     run.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
     run.combat.players[0].relics = run.players[0].relics
     run.combat.players[0].potions = []

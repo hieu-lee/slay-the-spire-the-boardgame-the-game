@@ -250,7 +250,7 @@ function effectText(effect: Effect): string {
     case 'preventDraw': return 'cannot draw more cards this turn'
     case 'preventCardPlay': return 'cannot play additional cards this turn'
     case 'discountNextCard': return 'your next card this turn costs 0'
-    case 'setNextCardCost': return `your next card this turn costs ${effect.amount}`
+    case 'setNextCardCost': return `your next card this turn costs ${effect.amount} Energy`
     case 'discountNextAttack': return 'your next Attack this turn costs 0'
     case 'discountHand': return 'cards currently in your hand cost 0 this turn'
     case 'discountRetainedCards': return `cards Retained last turn cost ${effect.amount} less this turn`
