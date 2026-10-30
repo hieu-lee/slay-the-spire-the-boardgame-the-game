@@ -71,7 +71,7 @@ try {
             { ...enemy, uid: 'living', row: 1, hp: 10, dead: false },
             { ...enemy, uid: 'boss', defId: 'the_champ', row: 0, hp: 20, maxHp: 20, isBoss: true, dead: false }])
           Object.assign(state, { phase: 'player', die: 1, presentationEvents: [] })
-          const fixture = window.fixture = { state }
+          const fixture = window.fixture = { state, original: structuredClone(state) }
           const root = (ReactDom.createRoot ?? ReactDom.default.createRoot)(node)
           fixture.render = () => root.render((React.createElement ?? React.default.createElement)(CombatScreen, {
             state: structuredClone(fixture.state), viewerId: 'p1', act: 2, autoAdvance: false,
@@ -123,6 +123,26 @@ try {
           }
           fixture.render()
         })
+        await page.evaluate(() => {
+          const f = window.fixture
+          f.state = { ...f.state, enemies: ['jaw_worm', 'jaw_worm_first', 'jaw_worm_act3', 'cultist']
+            .map((defId, index) => ({ ...f.state.enemies[1], defId, uid: `named-${index}`, row: index % 2 })) }
+          f.render()
+        })
+        for (const [index, label] of ['Jaw Worm #1', 'Jaw Worm #2', 'Jaw Worm #3', 'Cultist'].entries()) {
+          const enemy = page.locator(`[data-enemy-id="named-${index}"]`)
+          await enemy.waitFor()
+          assert.equal(await enemy.locator('.enemy__name').innerText(), label)
+          assert((await enemy.getAttribute('aria-label')).includes(label))
+        }
+        await page.evaluate(() => {
+          const f = window.fixture
+          f.state = { ...f.state, enemies: f.state.enemies.map((enemy, index) => index ? enemy : { ...enemy, hp: 0, dead: true }) }
+          f.render()
+        })
+        assert.equal(await page.locator('[data-enemy-id="named-1"] .enemy__name').innerText(), 'Jaw Worm #2',
+          'a survivor must keep its number after another copy dies')
+        await page.evaluate(() => { const f = window.fixture; f.state = structuredClone(f.original); f.render() })
         await page.getByRole('button', { name: 'Use Combust+' }).click()
         await page.locator('[data-enemy-id="living"].enemy--targeted').waitFor()
         assert.equal(await page.locator('.row__lane-target').count(), 0,

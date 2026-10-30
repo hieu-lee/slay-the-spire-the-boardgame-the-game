@@ -153,11 +153,8 @@ export function resolveEnemyTargets(
 }
 
 /**
- * What to call an enemy in the log.
- *
- * A four-player board routinely spawns two of the same creature, and "Cultist
- * is dead" then names a tile nobody can identify. The row disambiguates only
- * when it needs to, so a single Cultist stays "Cultist".
+ * Shared board, target-picker and log names. Include defeated enemies so
+ * surviving duplicates keep their numbers when a neighbour dies.
  */
 type LabeledEnemy = Pick<Enemy, 'uid' | 'defId' | 'row' | 'ascension'>
 
@@ -165,13 +162,7 @@ export function enemyLabel(enemies: readonly LabeledEnemy[], enemy: LabeledEnemy
   const name = enemyDef(enemy.defId, enemy.ascension).name
   const sameName = enemies.filter((other) => enemyDef(other.defId).name === name)
   if (sameName.length <= 1) return name
-  const sameRow = sameName.filter((other) => other.row === enemy.row)
-  // The row is the natural way to tell two of a creature apart, but a row card
-  // routinely puts both of them in the SAME row -- and then both print
-  // "Cultist (row 1)" and the log reads as striking a corpse. Fall back to a
-  // position within the row, which is the only thing left that separates them.
-  if (sameRow.length <= 1) return `${name} (row ${enemy.row + 1})`
-  return `${name} (row ${enemy.row + 1}, #${sameRow.findIndex((other) => other.uid === enemy.uid) + 1})`
+  return `${name} #${sameName.findIndex((other) => other.uid === enemy.uid) + 1}`
 }
 
 /**

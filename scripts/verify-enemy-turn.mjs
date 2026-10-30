@@ -2,6 +2,7 @@ import {
   createCombat,
   endPlayerTurn,
   enemyActingOrder,
+  enemyLabel,
   enemyTurn,
   playCard,
   startPlayerTurn,
@@ -767,15 +768,29 @@ check('two of the same enemy can be told apart in the log', () => {
     ),
   )
   assert(
-    twins.log.some((line) => /Green Louse \(row \d\)/.test(line)),
+    twins.log.some((line) => /Green Louse #1/.test(line)) &&
+      twins.log.some((line) => /Green Louse #2/.test(line)),
     `two identical enemies need distinguishing: ${twins.log.join(' | ')}`,
   )
 
   const lone = enemyTurn(inEnemyPhase([player()], [enemy({ defId: 'green_louse' })]))
   assert(
-    !lone.log.some((line) => /\(row \d\)/.test(line)),
-    `a single enemy needs no row: ${lone.log.join(' | ')}`,
+    !lone.log.some((line) => /Green Louse #\d/.test(line)),
+    `a single enemy needs no number: ${lone.log.join(' | ')}`,
   )
+})
+
+check('printed-name variants share stable encounter-wide numbers', () => {
+  const foes = [
+    enemy({ uid: 'one', defId: 'jaw_worm', row: 0 }),
+    enemy({ uid: 'two', defId: 'jaw_worm_first', row: 1 }),
+    enemy({ uid: 'three', defId: 'jaw_worm_act3', row: 0 }),
+    enemy({ uid: 'unique', defId: 'cultist', row: 1 }),
+  ]
+  const names = ['Jaw Worm #1', 'Jaw Worm #2', 'Jaw Worm #3', 'Cultist']
+  assertDeepEqual(foes.map(foe => enemyLabel(foes, foe)), names)
+  foes[0].dead = true
+  assertDeepEqual(foes.map(foe => enemyLabel(foes, foe)), names)
 })
 
 check('an ongoing effect is credited to itself, not to the player', () => {

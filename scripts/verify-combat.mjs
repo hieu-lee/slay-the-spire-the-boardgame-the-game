@@ -9140,7 +9140,7 @@ check('two of the same enemy in ONE row can still be told apart', () => {
     `a position within the row is what separates them: ${next.log.join(' | ')}`,
   )
 
-  // And two in DIFFERENT rows still use the row alone -- no needless "#1".
+  // Numbers also disambiguate enemies in different rows.
   const split = combat(
     [makePlayer({ character: 'silent', hand: [instance('dagger_spray')] })],
     [
@@ -9153,8 +9153,8 @@ check('two of the same enemy in ONE row can still be told apart', () => {
     playerId: null,
   })
   assert(
-    !apart.log.some((line) => /#\d/.test(line)),
-    `the row alone already separates these: ${apart.log.join(' | ')}`,
+    apart.log.some((line) => /Green Louse #1/.test(line)),
+    `the log must match the numbered board label: ${apart.log.join(' | ')}`,
   )
 })
 
