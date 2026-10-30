@@ -34,7 +34,7 @@ import { addBurningElite, currentRoom, generateMap, isActComplete, moveTo } from
 import type { Room, SpireMap } from '../map.ts'
 import type { DailyModifierId } from '../meta.ts'
 import { createMerchant, createRelicReward } from '../noncombat.ts'
-import { bossRelicOfferSize, relicDef } from '../relics.ts'
+import { bossRelicOfferSize, refreshCombatRelic, relicDef } from '../relics.ts'
 import { nextInt, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
 import type { Player } from '../types.ts'
@@ -280,6 +280,7 @@ export function resolveCombat(state: RunState): RunState {
       phase: 'defeat',
       players: combat.players.map((player) => ({
         ...player,
+        relics: player.relics.map(refreshCombatRelic),
         deck: player.deck.filter((card) => CARDS[card.defId]?.owner !== 'status'),
       })),
       combat: null,
@@ -331,7 +332,7 @@ export function resolveCombat(state: RunState): RunState {
       rareRewards: after.rareRewards,
       row: after.row,
       potions: after.potions,
-      relics: after.relics,
+      relics: after.relics.map(refreshCombatRelic),
       damageStats: after.damageStats,
       lootChests: after.lootChests,
       dead: after.dead,

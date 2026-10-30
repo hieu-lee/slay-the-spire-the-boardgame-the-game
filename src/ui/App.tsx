@@ -75,7 +75,7 @@ import { MapOverlay } from './MapOverlay.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
-import { relicDef } from '../game/relics.ts'
+import { refreshCombatRelic, relicDef } from '../game/relics.ts'
 import { IconValue } from './Icon.tsx'
 import { RelicBar } from './RelicChip.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
@@ -731,7 +731,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setLastStand(resume.built.lastStand)
     setMode(resume.built.meta.mode ?? 'standard')
     setBuilt(resume.built)
-    setRun(resume.run)
+    setRun(resume.run.phase === 'combat' ? resume.run : {
+      ...resume.run,
+      players: resume.run.players.map(player => ({ ...player, relics: player.relics.map(refreshCombatRelic) })),
+    })
     terminalRun.current = resume.terminalRun ? structuredClone(resume.terminalRun) : null
     setRecordRunId(resume.recordRunId ?? null)
     setRunLogExtractedRunId(resume.runLogExtractedRunId ?? null)

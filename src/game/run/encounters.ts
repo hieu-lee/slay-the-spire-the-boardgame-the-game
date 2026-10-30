@@ -6,7 +6,7 @@
 import type { EncounterCard, EnemyDecks } from './types.ts'
 import { createSummonSupply, drawSummon, enemyDef, startingHp } from '../enemies.ts'
 import type { SummonSupply } from '../enemies.ts'
-import { relicDef } from '../relics.ts'
+import { refreshCombatRelic } from '../relics.ts'
 import { createRng, nextInt, shuffle } from '../rng.ts'
 import type { RngState } from '../rng.ts'
 import type { Enemy, Player } from '../types.ts'
@@ -449,9 +449,7 @@ export function readyForCombat(rng: RngState, player: Player): Player {
     starterDefendBlockBonus: 0,
     calipersArmed: false,
     damageDealtZeroThisTurn: false,
-    relics: player.relics.map((relic) => relicDef(relic.defId).activation === 'oncePerCombat' ||
-      ['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'loaded_die'].includes(relic.defId)
-      ? { ...relic, spent: false }
-      : relic.defId === 'holy_water' ? { ...relic, cubes: 2 } : relic),
+    // Keep setup compatible with older saves that carried spent combat relics between rooms.
+    relics: player.relics.map(refreshCombatRelic),
   }
 }

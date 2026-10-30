@@ -363,13 +363,49 @@ import {
   MAX_HP,
   TINY_HOUSE_REWARD_CARD_UID,
 } from '../src/game/run.ts'
-import { BOSS_RELIC_IDS, ORDINARY_RELIC_IDS, RELICS, POTIONS, STARTING_RELIC } from '../src/game/relics.ts'
+import { BOSS_RELIC_IDS, ORDINARY_RELIC_IDS, RELICS, POTIONS, STARTING_RELIC, TURN_REFRESH_RELICS, createRelicInstance } from '../src/game/relics.ts'
 import { activatePotion } from '../src/game/combat.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
 import { postNeowRun } from './lib/post-neow-run.mjs'
 import { leaderboardSnapshot, normalizeLeaderboardRun, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
 
 suite('run')
+
+check('combat completion refreshes combat relics without replenishing room or finite-use limits', () => {
+  const refreshing = [...new Set([
+    ...Object.values(RELICS).filter(relic => relic.activation === 'oncePerCombat').map(relic => relic.id),
+    ...TURN_REFRESH_RELICS,
+  ])]
+  for (const phase of ['won', 'lost']) {
+    const run = postNeowRun(917, [{ id: 'p1', name: 'Watcher', character: 'watcher' }])
+    const entered = enterRoom(run, roomChoices(run)[0].id)
+    entered.combat.players[0].relics = [
+      ...refreshing.map(defId => ({ ...createRelicInstance(defId), spent: true })),
+      { defId: 'holy_water', spent: false, cubes: 0 },
+      ...['gambling_chip', 'toolbox', 'the_abacus'].map(defId => ({ defId, spent: true })),
+      { defId: 'wing_boots', spent: false, uses: 1 },
+      { defId: 'molten_egg', spent: false, uses: 0 },
+      { defId: 'war_paint', spent: false, pending: true, pendingId: 7 },
+    ]
+    assertEqual(resolveCombat(entered), entered, 'an active fight must not refresh anything')
+    entered.combat.phase = phase
+    const before = structuredClone(entered)
+    const resolved = resolveCombat(entered)
+    assertEqual(resolved.combat, null)
+    for (const id of refreshing) {
+      assertEqual(resolved.players[0].relics.find(relic => relic.defId === id).spent, false, `${phase}: ${id}`)
+    }
+    assertEqual(resolved.players[0].relics.find(relic => relic.defId === 'holy_water').cubes, 2)
+    for (const id of ['gambling_chip', 'toolbox', 'the_abacus']) {
+      assertEqual(resolved.players[0].relics.find(relic => relic.defId === id).spent, true, `${id} is once per room`)
+    }
+    assertEqual(resolved.players[0].relics.find(relic => relic.defId === 'wing_boots').uses, 1)
+    assertEqual(resolved.players[0].relics.find(relic => relic.defId === 'molten_egg').uses, 0)
+    assertDeepEqual(resolved.players[0].relics.find(relic => relic.defId === 'war_paint'),
+      { defId: 'war_paint', spent: false, pending: true, pendingId: 7 })
+    assertDeepEqual(entered, before, 'cleanup must not mutate the finished combat snapshot')
+  }
+})
 
 const claimGoldRewards = (run) => run.rewards.reduce((next, offer) => offer.gold ? resolveGoldReward(next, offer.playerId) : next, run)
 

@@ -66,7 +66,7 @@ import type { Enemy, OrbType, Player } from '../types.ts'
 import { clearSlimeTurn } from '../downfall/slime-boss.ts'
 import { shiftGuardianMode } from '../downfall/guardian.ts'
 import { downfallRelicBaseId } from '../downfall/items.ts'
-import { chosenDieRelicAbilities, relicDef } from '../relics.ts'
+import { chosenDieRelicAbilities, relicDef, TURN_REFRESH_RELICS } from '../relics.ts'
 
 const START_TURN_RELIC_ACTIVATIONS = new Set([
   'charons_ashes', 'dollys_mirror', 'fuel_canister', 'gambling_chip',
@@ -159,7 +159,7 @@ function continueStartTurnDraw(next: CombatState, drewFrom: number, pauseAfterDr
   for (const player of next.players) {
     if (player.dead) continue
     for (const relic of player.relics) {
-      if (['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'downfall_nilrys_codex', 'loaded_die', 'fuel_canister'].includes(relic.defId)) relic.spent = false
+      if (TURN_REFRESH_RELICS.has(relic.defId)) relic.spent = false
     }
     drawInto(next, player, 5)
   }
