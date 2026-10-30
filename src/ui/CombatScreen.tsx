@@ -6339,6 +6339,14 @@ function CombatScreenView({
               <button type="button" onClick={() => useRelic(relicIndex, { cardUids: relicCardUids })}>
                 Activate
               </button>
+              <button type="button" onClick={(event) => {
+                setRelicCardUids([])
+                const details = event.currentTarget.closest('details')
+                if (details) {
+                  details.open = false
+                  details.querySelector('summary')?.focus()
+                }
+              }}>Cancel</button>
             </details>]
             if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
               <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}

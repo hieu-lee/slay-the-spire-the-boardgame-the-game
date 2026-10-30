@@ -135,6 +135,36 @@ try {
       sneckoBox.x + sneckoBox.width <= width && sneckoBox.y + sneckoBox.height <= height,
     `${name}: Snecko Eye's complete rules are clipped`)
     await page.screenshot({ path: `${out}/${name}-snecko-tooltip.png` })
+    for (const [id, label] of [['blue_candle', 'Blue Candle'], ['runic_pyramid', 'Runic Pyramid']]) {
+      const fixture = structuredClone(run)
+      Object.assign(fixture.combat, { phase: 'player', combatId: `cancel-${name}-${id}`,
+        pendingTriggers: [], startTurnProgress: undefined })
+      Object.assign(fixture.combat.players[0], {
+        relics: [{ defId: id, spent: false }], potions: [], energy: 3,
+        hand: [{ uid: 'cancel-card', defId: 'strike_ironclad', upgraded: false }],
+      })
+      await page.evaluate(run => window.__STS_DEBUG__.setRun(run), fixture)
+      const panel = page.locator('.relic-actions details').filter({ hasText: label })
+      const summary = panel.locator('summary')
+      await summary.click()
+      const before = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
+      for (const select of [false, true]) {
+        if (select) await panel.locator('.card').click()
+        await panel.getByRole('button', { name: 'Cancel', exact: true }).click()
+        assert.equal(await panel.getAttribute('open'), null)
+        assert(await summary.evaluate(element => element === document.activeElement))
+        assert.equal(await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun())), before,
+          'cancelling must not consume cards or the relic')
+        await summary.click()
+        assert.equal(await panel.locator('.card--selected').count(), 0)
+      }
+      if (id === 'blue_candle') {
+        await panel.locator('.card').click()
+        await panel.getByRole('button', { name: 'Activate', exact: true }).click()
+        await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].relics[0].spent)
+        assert(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.some(card => card.uid === 'cancel-card')))
+      }
+    }
     await page.close()
   }
   assert.deepEqual(errors, [])
