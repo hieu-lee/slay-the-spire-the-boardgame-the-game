@@ -2274,6 +2274,22 @@ function CombatScreenView({
     ? player.orbs.length > 0 : player.orbs.some(Boolean))
   const stagePresentationBusy = !prefersReducedMotion && (stageAttacksActive || falling.size > 0 || state.phase === 'enemy')
   const largestSlimeParty = Math.max(0, ...state.players.map(player => player.character === 'slime_boss' ? player.slimes.length : 0))
+  const statusPlayerIds = state.players.map(player => player.id).join('\0')
+
+  useLayoutEffect(() => {
+    const statuses = boardRef.current?.querySelectorAll<HTMLElement>('.seat__meta') ?? []
+    // Keep Orbs above wrapped statuses without moving the hero.
+    const measure = (element: HTMLElement) => {
+      element.parentElement?.style.setProperty('--temporary-status-height', `${element.offsetHeight}px`)
+    }
+    statuses.forEach(measure)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) if (entry.target instanceof HTMLElement) measure(entry.target)
+    })
+    statuses.forEach(element => observer.observe(element))
+    return () => observer.disconnect()
+  }, [state.combatId, statusPlayerIds])
 
   useLayoutEffect(() => {
     const board = boardRef.current
