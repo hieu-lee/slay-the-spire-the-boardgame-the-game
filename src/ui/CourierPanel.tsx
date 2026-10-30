@@ -10,7 +10,8 @@ import { ItemImage } from './ItemImage.tsx'
 const hasSozu = (player: Player) => player.relics.some((relic) => relic.defId === 'sozu')
 
 export const courierReady = (player: Player | undefined, usedBy: string[]) =>
-  Boolean(player && !player.dead && !usedBy.includes(player.id) && player.relics.some((relic) => relic.defId === 'the_courier'))
+  Boolean(player && !player.dead && player.gold > 0 && !usedBy.includes(player.id) &&
+    player.relics.some((relic) => relic.defId === 'the_courier'))
 
 export const courierPeekPhase = (combat: CombatState) =>
   (combat.phase === 'player' || combat.phase === 'start' || combat.phase === 'discard') && !mandatoryChoicePending(combat) &&
@@ -31,13 +32,15 @@ export function CourierPeek({ players, viewerId, usedBy, onReveal, placement, ac
   active?: boolean
 }) {
   const [menuOpen, setOpen] = useState(false)
-  const open = menuOpen && active
+  const ready = courierReady(players.find((player) => player.id === viewerId), usedBy)
+  const available = active && ready
+  const open = menuOpen && available
   const rulesId = useId()
   const root = useRef<HTMLDivElement>(null)
   const choicesId = useId()
   useEffect(() => {
-    if (!active) setOpen(false)
-  }, [active])
+    if (!available) setOpen(false)
+  }, [available])
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent) => {
@@ -59,10 +62,11 @@ export function CourierPeek({ players, viewerId, usedBy, onReveal, placement, ac
     }
   }, [open])
   const reveal = (kind: CourierOffer['kind']) => {
+    if (!available) return
     setOpen(false)
     onReveal(kind)
   }
-  if (!courierReady(players.find((player) => player.id === viewerId), usedBy)) return null
+  if (!ready) return null
   return <div ref={root} className={`courier courier--available courier--${placement}`} role="group" aria-label="The Courier" data-open={open || undefined}
     onBlur={(event) => { if (event.relatedTarget && !event.currentTarget.contains(event.relatedTarget)) setOpen(false) }}>
     {placement === 'header' ? <>

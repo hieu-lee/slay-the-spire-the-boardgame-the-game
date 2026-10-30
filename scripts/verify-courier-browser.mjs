@@ -222,6 +222,21 @@ async function localFlow(page, name, pause = 0) {
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat?.phase === 'player')
   const available = page.getByRole('group', { name: 'The Courier', exact: true })
   await available.waitFor()
+  const headerKey = available.getByRole('button', { name: 'Courier choices' })
+  if (await headerKey.isVisible()) {
+    await headerKey.click()
+    await page.getByRole('button', { name: 'Look at Relic', exact: true }).waitFor()
+  }
+  const beforeZeroGold = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun().courier))
+  await setRun(page, `run.players[0].gold = 0; run.combat.players[0].gold = 0`)
+  await available.waitFor({ state: 'detached' })
+  assertEqual(await liveCourierControls(page), 0, 'a zero-Gold owner must not see Courier shopping controls')
+  assertEqual(await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun().courier)), beforeZeroGold,
+    'hiding the Courier must not reveal or consume its offer')
+  await setRun(page, partyGold)
+  await available.waitFor()
+  if (await headerKey.isVisible()) assertEqual(await headerKey.getAttribute('aria-expanded'), 'false',
+    'regaining Gold must not reopen an old Courier popup')
   await setRun(page, fullHand)
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${output}/${name}-available.png` })
@@ -387,7 +402,7 @@ async function localFlow(page, name, pause = 0) {
   const peekDuringOtherOffer = await liveCourierControls(page)
   check(`${name}: a second Courier owner cannot peek while a teammate's offer is open`, () => assertEqual(peekDuringOtherOffer, 0))
 
-  const duo = courierCombat(8801, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }, { id: 'p2', name: 'Silent', character: 'silent' }], [0, 0])
+  const duo = courierCombat(8801, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }, { id: 'p2', name: 'Silent', character: 'silent' }], [1, 0])
   duo.combat.turn = 12
   duo.combat.players.forEach((player) => { player.potions = ['fire_potion', 'swift_potion', 'block_potion'] })
   const lateRunRelics = ORDINARY_RELIC_IDS.filter((id) => id !== 'the_courier' && id !== 'sozu' && relicAbilities(relicDef(id)).length === 0).slice(0, 12)
@@ -411,7 +426,7 @@ async function localFlow(page, name, pause = 0) {
 async function autoAdvanceLock(page) {
   const phase = () => page.evaluate(() => window.__STS_DEBUG__.getRun().combat?.phase)
   await startLocal(page)
-  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), courierCombat(8804, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], [0]))
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), courierCombat(8804, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], [1]))
   await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat?.phase === 'player')
   await setRun(page, idleTurn)
   await page.getByRole('group', { name: 'The Courier', exact: true }).waitFor()
@@ -429,6 +444,16 @@ async function autoAdvanceLock(page) {
     assertEqual(offerPhase, 'player', 'an open Courier offer let an idle turn auto-advance')
     assert(advanced, 'the idle turn never auto-advanced after the Courier was resolved')
   })
+  const broke = courierCombat(8805, [{ id: 'p1', name: 'Ironclad', character: 'ironclad' }], [0])
+  await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), broke)
+  await page.waitForFunction(id => window.__STS_DEBUG__.getRun().combat?.combatId === id, broke.combat.combatId)
+  await page.getByRole('group', { name: 'The Courier', exact: true }).waitFor({ state: 'detached' })
+  const turn = await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.turn)
+  await setRun(page, idleTurn)
+  await page.waitForFunction(turn => {
+    const combat = window.__STS_DEBUG__.getRun().combat
+    return combat.phase !== 'player' || combat.turn > turn
+  }, turn)
 }
 
 try {
@@ -463,7 +488,7 @@ try {
   startRun(room, create.token, { seed: 8802 })
   const party = room.seats.map((seat) => ({ id: seat.playerId, name: seat.name, character: seat.character }))
   const publish = (run) => { room.run = run; room.courierPledge = undefined; room.version += 1; rooms.publishRoom(room.code) }
-  publish(courierCombat(8802, party, [0, 3, 3]))
+  publish(courierCombat(8802, party, [1, 3, 3]))
   const pages = []
   for (const [index, seat] of seats.entries()) {
     const context = await browser.newContext({ viewport: index === 1 ? { width: 844, height: 390 } : { width: 1440, height: 900 } })
@@ -518,6 +543,11 @@ try {
   await onlinePhoneKey.click()
   await ann.getByRole('button', { name: 'Look at Relic' }).click()
   await ann.getByRole('dialog', { name: 'The Courier' }).waitFor()
+  room.run.players[0].gold = 0
+  room.run.combat.players[0].gold = 0
+  room.version += 1
+  rooms.publishRoom(room.code)
+  await ann.getByRole('button', { name: 'Ask party', exact: true }).waitFor()
   await ann.setViewportSize({ width: 1440, height: 900 })
   const onlineLocked = await ann.waitForFunction(() => document.querySelector('.courier-combat-lock')?.hasAttribute('inert') === true).then((handle) => handle.jsonValue())
   await bo.getByRole('dialog', { name: 'The Courier' }).waitFor()
