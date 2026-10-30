@@ -10740,52 +10740,6 @@ check('Burning Pact+ Exhausts its choice before drawing three cards', () => {
 })
 await shot('06zd-burning-pact-resolved')
 
-const severTarget = await page.evaluate(() => {
-  const debug = window.__STS_DEBUG__
-  const run = structuredClone(debug.getRun())
-  const target = run.combat.enemies.find((enemy) => !enemy.isBoss) ?? run.combat.enemies[0]
-  for (const enemy of run.combat.enemies) enemy.dead = enemy.uid !== target.uid
-  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false, vulnerable: 0 })
-  Object.assign(run.combat.players[0], {
-    hand: [
-      { uid: 'ui-sever-soul', defId: 'sever_soul', upgraded: true },
-      { uid: 'ui-sever-soul-one', defId: 'defend_ironclad', upgraded: false },
-      { uid: 'ui-sever-soul-two', defId: 'defend_ironclad', upgraded: false },
-    ],
-    draw: [],
-    discard: [],
-    exhaust: [],
-    powers: [],
-    energy: 2,
-    strength: 0,
-    weak: 0,
-  })
-  debug.setRun(run)
-  return target.uid
-})
-const severSoulCard = page.getByRole('button', { name: /^Sever Soul\+,/ })
-await severSoulCard.waitFor()
-const severSoulLabel = await severSoulCard.getAttribute('aria-label')
-await severSoulCard.click()
-const emptySeverConfirmation = page.getByRole('button', { name: 'Exhaust none' })
-await emptySeverConfirmation.waitFor()
-assert(await emptySeverConfirmation.isDisabled(), 'Sever Soul+ allowed zero Exhaust choices')
-await page.getByRole('button', { name: /^Defend,/ }).first().click()
-await page.getByRole('button', { name: 'Exhaust 1', exact: true }).waitFor()
-await shot('06ze-sever-soul-range-choice')
-await page.getByRole('button', { name: 'Exhaust 1', exact: true }).click()
-await page.getByText('Choose an enemy').waitFor()
-await page.locator('.enemy--targeted:not(:disabled) .enemy__hit-area').click()
-await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
-const severSoul = await readState()
-check('Sever Soul+ requires one or two Exhaust choices and deals its printed hit', () => {
-  assert(severSoulLabel.includes('exhaust 1-2 cards from hand'), severSoulLabel)
-  assertEqual(severSoul.players[0].exhaust.length, 1)
-  assertEqual(severSoul.players[0].hand.length, 1)
-  assertEqual(severSoul.enemies.find((enemy) => enemy.uid === severTarget).hp, 6)
-})
-await shot('06zf-sever-soul-resolved')
-
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())

@@ -3848,11 +3848,12 @@ try {
     } }),
   })
   assert(teammateDraw.ok, 'Predator could not draw into the staged Sever Soul hand')
-  await a.getByText('Exhaust 1-2 cards — 0 chosen').waitFor()
-  const reopenedSever = a.getByRole('button', { name: 'Exhaust none', exact: true })
+  const severPicker = a.getByRole('dialog', { name: 'Choose 1 or 2 cards in your hand to Exhaust' })
+  await severPicker.waitFor()
+  const reopenedSever = severPicker.getByRole('button', { name: 'Exhaust selected cards', exact: true })
   assert(await reopenedSever.isDisabled(), 'the new required Exhaust could still be skipped')
-  await a.getByRole('button', { name: /^Strike,/ }).click()
-  await a.getByRole('button', { name: 'Exhaust 1', exact: true }).click()
+  await severPicker.getByRole('button', { name: /^Strike,/ }).click()
+  await severPicker.getByRole('button', { name: 'Exhaust 1 card', exact: true }).click()
   await a.getByText('Choose an enemy').waitFor()
   await a.locator('.enemy--targeted:not(:disabled)').first().dispatchEvent('click')
   await a.waitForFunction(() => ![...document.querySelectorAll('button')]
