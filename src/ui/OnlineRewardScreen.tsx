@@ -6,6 +6,7 @@ import type { RewardSource } from '../game/run.ts'
 import { rewardSourceLabel } from './reward-source.ts'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
 import { CardPicker } from './CardPicker.tsx'
+import { RelicRewardPicker } from './RelicRewardPicker.tsx'
 import { ItemLootChoice, LootChoice, PotionLootChoices } from './RewardScreen.tsx'
 
 type Props = {
@@ -17,6 +18,7 @@ type Props = {
 
 export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, onAction }: Props) {
   const [activeCard, setActiveCard] = useState(false)
+  const [activeRelic, setActiveRelic] = useState(false)
   const [activeTransform, setActiveTransform] = useState(false)
   const [transformUid, setTransformUid] = useState<string | null>(null)
   const [cardChoicePending, setCardChoicePending] = useState(false)
@@ -32,6 +34,9 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
   const availableSources = offer?.availableSources ?? []
   const availableSourcesKey = availableSources.join(',')
   useEffect(() => setSources((current) => current.filter((source) => availableSources.includes(source))), [availableSourcesKey])
+  useEffect(() => {
+    if (!Array.isArray(offer?.bossRelics)) setActiveRelic(false)
+  }, [offer?.bossRelics, viewerId])
   useEffect(() => {
     if (!offer?.transformReward) {
       setActiveTransform(false)
@@ -108,6 +113,12 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
     dispatchLoot(actions)
   }
 
+  if (activeRelic && Array.isArray(offer.bossRelics) && offer.bossRelics.length > 0) return <RelicRewardPicker
+    choices={offer.bossRelics} style={backdrop} disabled={lootPending} skipDisabled={waitingForTeammate}
+    onBack={() => setActiveRelic(false)}
+    onChoose={(relicId) => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])}
+    onSkip={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'skip' }])} />
+
   if (activeTransform && offer.transformReward) return <CardPicker
     cards={(player.deck ?? []).filter((card) => !cardIsCurse(card.defId))}
     verb="Transform"
@@ -155,7 +166,10 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
         onChoose={(decision) => dispatchLoot([{ ...decision, kind: 'potionReward', choice: decision.kind }])} /> : null}
       {typeof offer.relic === 'string' ? <ItemLootChoice kind="relic" id={offer.relic} disabled={lootPending}
         confirmLabel="claim this relic" onClick={() => dispatchLoot([{ kind: 'relicReward', choice: 'gain' }])} /> : null}
-      {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <ItemLootChoice kind="relic" id={relicId}
+      {Array.isArray(offer.bossRelics) && offer.bossRelics.length > 1 ? <LootChoice disabled={lootPending}
+        icon={<img src={assetPath('icons/relic.png')} alt="" />} onClick={() => setActiveRelic(true)}>
+        Choose 1 of {offer.bossRelics.length} relics
+      </LootChoice> : Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <ItemLootChoice kind="relic" id={relicId}
         key={relicId} disabled={lootPending} confirmLabel="claim this relic"
         onClick={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])} />)
       : null}

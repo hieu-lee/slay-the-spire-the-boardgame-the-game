@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './lib/profile-browser.mjs'
 import { createServer } from 'vite'
+import { checkRewardSweep } from './lib/reward-hover.mjs'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const out = join(root, 'artifacts/loot-browser')
@@ -35,6 +36,7 @@ try {
       run.combat = null
       run.rewardDestination = 'map'
       run.players[0].potions = []
+      run.players[0].rareRewards = ['impervious', 'demon_form', 'offering']
       run.rewards = [{
         playerId: run.players[0].id,
         cardReward: true,
@@ -57,6 +59,70 @@ try {
     await page.locator('.reward-screen--loot').waitFor()
     await page.evaluate(() => document.fonts.ready)
     await page.waitForTimeout(250)
+  }
+  const checkRewardHover = async (card) => {
+    await page.mouse.move(5, 5)
+    await card.evaluate(async card => {
+      card.blur()
+      await Promise.all(card.closest('.reward-screen').getAnimations({ subtree: true }).map(animation => animation.finished))
+    })
+    const resting = await card.boundingBox()
+    await card.hover()
+    const growing = await card.evaluate(card => {
+      getComputedStyle(card).transform
+      const animation = card.getAnimations().find(animation => animation.transitionProperty === 'transform')
+      if (!animation) return null
+      animation.pause()
+      const duration = animation.effect.getTiming().duration
+      const widths = [0, duration / 2, duration].map(time => {
+        animation.currentTime = time
+        return card.getBoundingClientRect().width
+      })
+      animation.finish()
+      return { duration, widths }
+    })
+    assert(growing && growing.duration === 500, 'entering a reward must ease up over half a second')
+    assert(growing.widths[0] < growing.widths[1] && growing.widths[1] < growing.widths[2] &&
+      Math.abs(growing.widths[0] - resting.width) < 1,
+    'reward enlargement must pass through intermediate sizes')
+    const hovered = await card.boundingBox()
+    assert(Math.abs(hovered.width / resting.width - 1.25) < .01,
+      `reward focus must finish 25% larger: ${JSON.stringify({ resting, hovered,
+        style: await card.evaluate(card => ({ transform: getComputedStyle(card).transform,
+          duration: getComputedStyle(card).transitionDuration, hovered: card.matches(':hover'),
+          reducedMotion: document.documentElement.dataset.reducedMotion })) })}`)
+    assert(Math.abs(hovered.x + hovered.width / 2 - resting.x - resting.width / 2) < 1 &&
+      Math.abs(hovered.y + hovered.height / 2 - resting.y - resting.height / 2) < 1,
+    'reward enlargement must keep the card centered')
+    const helpId = await card.getAttribute('data-keyword-help-id')
+    const help = page.locator(`[id="${helpId}"]`)
+    await help.waitFor({ state: 'visible' })
+    assert((await help.innerText()).trim(), 'reward hover must show keyword help without Shift')
+    await page.mouse.move(5, 5)
+    const returning = await card.evaluate(card => {
+      getComputedStyle(card).transform
+      const animation = card.getAnimations().find(animation => animation.transitionProperty === 'transform')
+      if (!animation) return null
+      animation.pause()
+      const duration = animation.effect.getTiming().duration
+      const widths = [0, 125, 500].map(time => {
+        animation.currentTime = time
+        return card.getBoundingClientRect().width
+      })
+      animation.finish()
+      return { duration, widths }
+    })
+    assert(returning && returning.duration === 500, 'leaving a reward must animate back over half a second')
+    assert(returning.widths[0] > returning.widths[1] && returning.widths[1] > returning.widths[2] &&
+      returning.widths[1] < resting.width * 1.125 && Math.abs(returning.widths[2] - resting.width) < 1,
+    'reward return must ease out to its resting size')
+    await help.waitFor({ state: 'hidden' })
+    await page.keyboard.press('Tab')
+    await card.focus()
+    await card.evaluate(card => Promise.all(card.getAnimations().map(animation => animation.finished)))
+    assert(Math.abs((await card.boundingBox()).width / resting.width - 1.25) < .01,
+      'keyboard focus must use the same reward-card enlargement')
+    await help.waitFor({ state: 'visible' })
   }
 
   await stage()
@@ -131,11 +197,10 @@ try {
     'Skip changes color on hover instead of smoothly brightening')
   await page.screenshot({ path: join(out, 'desktop-card-skip-hover.png') })
   const card = page.locator('.reward-screen__cards .card').first()
-  const resting = await card.boundingBox()
-  await card.hover()
-  await page.waitForTimeout(180)
-  const hovered = await card.boundingBox()
-  assert(resting && hovered && hovered.width > resting.width * 1.05, 'hovering a reward card does not enlarge it')
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await checkRewardSweep(page, page.locator('.reward-screen__cards > .card'))
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await checkRewardHover(card)
   await page.screenshot({ path: join(out, 'desktop-card-hover.png') })
   await card.click()
   await page.getByRole('heading', { name: 'Loot!' }).waitFor()
@@ -242,13 +307,30 @@ try {
     cards.map((card) => card.getBoundingClientRect()).map((box) => ({ left: box.left, right: box.right })))
   assert(compactCards.every((box) => box.left >= 0 && box.right <= 1024),
     `five-card reward clips compact desktop: ${JSON.stringify(compactCards)}`)
+  await page.setViewportSize({ width: 844, height: 390 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
+  await checkRewardSweep(page, fiveCardReward.locator('.reward-screen__cards > .card'))
+  await page.emulateMedia({ reducedMotion: 'no-preference' })
+  await checkRewardHover(fiveCardReward.locator('.reward-screen__cards > .card').nth(2))
+  const hoveredPhoneCards = await fiveCardReward.locator('.card').evaluateAll(cards => cards.map(card => {
+    const box = card.getBoundingClientRect()
+    return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
+  }))
+  assert(hoveredPhoneCards.every(Boolean), 'enlarged rewards must fit horizontal-phone screens')
+  await page.screenshot({ path: join(out, 'horizontal-phone-card-hover.png') })
+  await page.setViewportSize({ width: 1024, height: 768 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true' })
   const reducedCard = fiveCardReward.locator('.reward-screen__cards > .card').first()
   await reducedCard.hover()
-  assert.deepEqual(await reducedCard.evaluate((card) => ({
+  const reducedInspection = await reducedCard.evaluate((card) => ({
     transform: getComputedStyle(card).transform,
     duration: getComputedStyle(card).transitionDuration,
-  })), { transform: 'none', duration: '0s' }, 'Card Reward hover ignores reduced motion')
+  }))
+  assert(reducedInspection.transform === 'matrix(1.25, 0, 0, 1.25, 0, 0)' &&
+    reducedInspection.duration.split(',').every(duration => parseFloat(duration) <= .001),
+  'the in-game reduced motion setting must preserve instant reward inspection without animated easing')
+  await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'false' })
   await page.emulateMedia({ reducedMotion: 'no-preference' })
   await page.setViewportSize({ width: 1440, height: 900 })
   assert.equal(await fiveCardReward.getByRole('button', { name: /Confirm/ }).count(), 0,

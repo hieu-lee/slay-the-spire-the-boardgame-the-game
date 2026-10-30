@@ -45,9 +45,14 @@ export function CardRewardPicker({
     aria-describedby={description ? `${uidPrefix}-description` : undefined}>
     <h2 className="reward-screen__title" id={`${uidPrefix}-title`}>{title}</h2>
     {description ? <p className="muted" id={`${uidPrefix}-description`}>{description}</p> : null}
-    <div className="reward-screen__cards">
+    <div className="reward-screen__cards" onTransitionEnd={(event) => {
+      if (event.propertyName === 'transform' && event.target instanceof HTMLElement && event.target.classList.contains('card')) {
+        event.target.dispatchEvent(new Event('card-keyword-help-ready', { bubbles: true }))
+      }
+    }}>
       {choices.map((defId, index) => <Card key={`${defId}-${index}`}
         card={{ uid: `${uidPrefix}-${index}`, defId, upgraded }} playable={!disabled}
+        hoverHelp={!disabled}
         tabIndex={disabled ? -1 : undefined}
         onClick={() => !disabled && onChoose(index)} />)}
     </div>

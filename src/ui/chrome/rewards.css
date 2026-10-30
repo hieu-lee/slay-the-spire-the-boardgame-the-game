@@ -371,17 +371,18 @@
 
 .sts-scope .reward-screen--card-choice .reward-screen__cards > .card {
   width: min(13.4rem, calc((95vw - 9rem) / var(--reward-card-count, 3)));
-  transform-origin: center bottom;
-  transition: transform 150ms ease, filter 150ms ease;
 }
 
-.sts-scope .reward-screen--card-choice .reward-screen__cards > .card:hover,
-.sts-scope .reward-screen--card-choice .reward-screen__cards > .card:focus-visible {
+.sts-scope .reward-screen--card-choice .reward-screen__cards > :is(.card, .relic-reward__choice) {
+  transform-origin: center;
+  transform: scale(1);
+  transition: transform 500ms var(--ease-lerp), filter 500ms var(--ease-lerp);
+}
+
+.sts-scope .reward-screen--card-choice .reward-screen__cards > :is(.card, .relic-reward__choice):not([aria-disabled='true'], :disabled):where(:hover, :focus-visible) {
   z-index: 2;
   filter: drop-shadow(0 0.55rem 0.6rem rgb(0 0 0 / 0.7));
-  /* Keep the resting hit area inside the enlarged card at every frame. Lifting
-     its bottom edge away from the pointer repeatedly toggles hover on/off. */
-  transform: scale(1.11);
+  transform: scale(1.25);
 }
 
 @media (max-height: 700px) {
@@ -397,11 +398,7 @@
   .sts-scope .reward-screen--card-choice .reward-screen__cards > .card { width: min(21vh, 10rem); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  html:not([data-mobile-performance='true']) .sts-scope .reward-screen--card-choice .reward-screen__cards > .card {
-    transition: none;
-  }
-  html:not([data-mobile-performance='true']) .sts-scope .reward-screen--card-choice .reward-screen__cards > .card:is(:hover, :focus-visible) {
-    transform: none;
-  }
+/* Like the hand, reward inspection follows the visible in-game motion toggle. */
+html[data-reduced-motion='true'] .sts-scope .reward-screen--card-choice .reward-screen__cards > :is(.card, .relic-reward__choice) {
+  transition: none;
 }

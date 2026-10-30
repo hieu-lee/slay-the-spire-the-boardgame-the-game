@@ -7,6 +7,7 @@ import { potionDef, relicDef } from '../game/relics.ts'
 import type { Player } from '../game/types.ts'
 import { CardRewardIcon, CardRewardPicker } from './CardRewardPicker.tsx'
 import { CardPicker } from './CardPicker.tsx'
+import { RelicRewardPicker } from './RelicRewardPicker.tsx'
 import { ItemImage } from './ItemImage.tsx'
 import { PotionTooltipAnchor } from './PotionIcon.tsx'
 import { rewardSourceLabel } from './reward-source.ts'
@@ -97,6 +98,7 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
   const [activeCardPlayerId, setActiveCardPlayerId] = useState<string | null>(() =>
     rewards.find((offer) => offer.cardReward && offer.choices !== null)?.playerId ?? null)
   const [sources, setSources] = useState<RewardSource[]>([])
+  const [activeRelicPlayerId, setActiveRelicPlayerId] = useState<string | null>(null)
   const [transformPlayerId, setTransformPlayerId] = useState<string | null>(null)
   const [transformUid, setTransformUid] = useState<string | null>(null)
   const backdrop = { '--reward-backdrop': `url("${new URL(assetPath(`backgrounds/boss-act-${act}.webp`), window.location.href).href}")` } as CSSProperties
@@ -123,6 +125,12 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
 
   const transformPlayer = rewards.some((offer) => offer.playerId === transformPlayerId && offer.transformReward)
     ? players.find((player) => player.id === transformPlayerId) : undefined
+  const relicOffer = rewards.find((offer) => offer.playerId === activeRelicPlayerId)
+  if (relicOffer && Array.isArray(relicOffer.bossRelics) && relicOffer.bossRelics.length > 0) return <RelicRewardPicker
+    choices={relicOffer.bossRelics} style={backdrop}
+    onBack={() => setActiveRelicPlayerId(null)}
+    onChoose={(id) => { setActiveRelicPlayerId(null); onBossRelic(relicOffer.playerId, id) }}
+    onSkip={() => { setActiveRelicPlayerId(null); onBossRelic(relicOffer.playerId, null) }} />
   if (transformPlayer) return <CardPicker
     cards={transformPlayer.deck.filter((card) => !cardIsCurse(card.defId))}
     verb="Transform"
@@ -167,7 +175,11 @@ export function RewardScreen({ players, rewards, onReveal, onGold, onPotion, onR
             onChoose={(decision) => onPotion(player.id, decision)} /> : null}
           {typeof offer.relic === 'string' ? <ItemLootChoice kind="relic" id={offer.relic}
             confirmLabel="claim this relic" onClick={() => onRelic(player.id, 'gain')} /> : null}
-          {Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <ItemLootChoice kind="relic" id={relicId}
+          {Array.isArray(offer.bossRelics) && offer.bossRelics.length > 1 ? <LootChoice
+            icon={<img src={assetPath('icons/relic.png')} alt="" />}
+            onClick={() => setActiveRelicPlayerId(player.id)}>
+            Choose 1 of {offer.bossRelics.length} relics
+          </LootChoice> : Array.isArray(offer.bossRelics) ? offer.bossRelics.map((relicId) => <ItemLootChoice kind="relic" id={relicId}
             key={relicId} confirmLabel="claim this relic" onClick={() => onBossRelic(player.id, relicId)} />)
           : null}
           {offer.cardReward ? <LootChoice onClick={() => {
