@@ -82,7 +82,31 @@ try {
         (!value || orb.contains(document.elementFromPoint(value.x + value.width / 2, value.y + value.height / 2)))
     }))
 
-    // A card Evoke chooses the Orb on the hero, then aims each Lightning Evoke.
+    for (const [orb, slot, upgraded, damage] of [['lightning', 1, false, 2], ['dark', 2, true, 3]]) {
+      const orbs = [null, null, null]
+      orbs[slot] = orb
+      await load({ player: { hand: [c('single-orb-dual', 'dual_cast', upgraded)], orbs } })
+      await page.locator('.hand .card[title^="Dual Cast"]').click()
+      const autoAim = page.locator('.evoke-target-effect')
+      await autoAim.waitFor()
+      assert.equal(await page.locator('.orbs__target').count(), 0,
+        `${name}: Dual Cast must automatically select its only ${orb} Orb`)
+      assert.deepEqual(await hp(), [30, 30], 'auto-selecting an Orb must not choose an enemy or apply damage')
+      await autoAim.locator('button').click()
+      await page.locator('[data-enemy-id="e1"] .enemy__head').click()
+      await page.waitForFunction(() => document.querySelector('.evoke-target-effect')?.textContent.includes('Orb 2:'))
+      await drag(autoAim.locator('button'), 'e0')
+      await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+      assert.deepEqual(await hp(), [30 - damage, 30 - damage])
+      assert.equal((await combat()).players[0].orbs[slot], null, 'Dual Cast must consume its selected Orb')
+    }
+    await load({ player: { hand: [c('single-frost-dual', 'dual_cast')], orbs: [null, 'frost', null] } })
+    await page.locator('.hand .card[title="Dual Cast"]').click()
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 0)
+    assert.equal((await combat()).players[0].block, 2, 'one Frost Orb must resolve both Evokes without an Orb-picker click')
+    assert.deepEqual((await combat()).players[0].orbs, [null, null, null])
+
+    // A card Evoke still offers a real choice when several Orbs are channeled.
     await load({ player: { hand: [c('dual', 'dual_cast')], orbs: ['lightning', 'frost', 'dark'] } })
     await page.locator('.hand .card[title="Dual Cast"]').click()
     await orbButton('lightning', 1).waitFor()
