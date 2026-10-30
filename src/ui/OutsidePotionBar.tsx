@@ -79,12 +79,12 @@ export function OutsidePotionBar({ players, viewerId, ascension, ruleset, disabl
             onUse(id, held); setReplacing(null)
           }}><ItemImage kind="potion" id={held} />Replace {potionDef(held).name}</button>)}
       </div> : null}
-      <button type="button" className="outside-potions__give" aria-label={`Give ${potionDef(id).name}`}
+      {players.length > 1 ? <button type="button" className="outside-potions__give" aria-label={`Give ${potionDef(id).name}`}
         title={`Give ${potionDef(id).name}`} disabled={recipients.length === 0}
         aria-expanded={recipients.length > 0
           ? giving?.context === giveContext && giving.index === index && giving.id === id : undefined} onClick={() =>
         setGiving(giving?.context === giveContext && giving.index === index && giving.id === id
-          ? null : { index, id, context: giveContext })}><span aria-hidden="true">⇢</span></button>
+          ? null : { index, id, context: giveContext })}><span aria-hidden="true">⇢</span></button> : null}
       {recipients.length > 0 && giving?.context === giveContext && giving.index === index && giving.id === id
         ? <div className="outside-potions__targets">
         {recipients.map((player) =>

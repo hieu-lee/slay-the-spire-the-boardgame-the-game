@@ -136,6 +136,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = ownerMap([
+  ['src/ui/OutsidePotionBar.tsx', ['verify-solo-potion-give-browser.mjs']],
   ['.github/workflows/ci.yml', ['verify-assets.mjs', 'verify-pipeline.mjs']],
   ['scripts/audio/generate-combat-sfx.py', ['verify-assets.mjs', 'verify-safari-sound-browser.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/lib/skin-attack-fixture.mjs', ['verify-skin-attack-browser.mjs', 'verify-monogatari-animation-browser.mjs', 'verify-monogatari-skins-browser.mjs', 'verify-defect-chan-evoke-browser.mjs']],
