@@ -1271,7 +1271,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
           ) : null}
         </div>
         {viewer ? (
-          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open">
+          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable>
             <img src={assetPath('menu/current-deck.webp')} alt="" />
             <span aria-hidden="true">{viewer.deck.length}</span>
           </CardCollectionOverlay>

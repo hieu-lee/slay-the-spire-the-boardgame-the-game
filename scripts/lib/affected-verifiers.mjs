@@ -57,6 +57,7 @@ const focusedEngineOwners = ownerMap([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = ownerMap([
+  ['src/ui/CardCollectionOverlay.tsx', ['verify-deck-inspection-browser.mjs', 'verify-card-picker-browser.mjs']],
   ['src/ui/App.tsx', ['verify-ascension-sync-browser.mjs', 'verify-restricted-browser.mjs', 'verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
     'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs', 'verify-skin-browser.mjs']],
   ['src/ui/CampfireScene.tsx', ['verify-art-scenes-browser.mjs', 'verify-skin-browser.mjs']],
@@ -136,6 +137,8 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = ownerMap([
+  ['src/ui/CardInspectionDialog.tsx', ['verify-deck-inspection-browser.mjs']],
+  ['src/ui/styles/card-inspection.css', ['verify-deck-inspection-browser.mjs']],
   ['.github/workflows/ci.yml', ['verify-assets.mjs', 'verify-pipeline.mjs']],
   ['scripts/audio/generate-combat-sfx.py', ['verify-assets.mjs', 'verify-safari-sound-browser.mjs', 'verify-rig-animation-browser.mjs']],
   ['scripts/lib/skin-attack-fixture.mjs', ['verify-skin-attack-browser.mjs', 'verify-monogatari-animation-browser.mjs', 'verify-monogatari-skins-browser.mjs', 'verify-defect-chan-evoke-browser.mjs']],
