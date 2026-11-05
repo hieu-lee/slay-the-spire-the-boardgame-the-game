@@ -2789,11 +2789,11 @@ export const DOWNFALL_COLORLESS_CARD_DEFS: Readonly<Record<string, CardDef>> = O
   colorless('Blood Shots', { type: 'attack', cost: 3, effects: [{ kind: 'hit', amount: 2, times: 3 }],
     upgrade: { printedText: DOWNFALL_COLORLESS_CARDS[10]!.upgradedText, effects: [{ kind: 'hit', amount: 2, times: 4 }] } }),
   colorless('Chronoboost', { type: 'power', cost: 2, trigger: { kind: 'onShuffle' }, effects: [{ kind: 'gainStrength', amount: 1 }],
-    upgrade: { printedText: DOWNFALL_COLORLESS_CARDS[11]!.upgradedText } }),
+    upgrade: { cost: 1, printedText: DOWNFALL_COLORLESS_CARDS[11]!.upgradedText } }),
   colorless('Curiosity', { type: 'power', cost: 3, trigger: { kind: 'onPlayCard', cardType: 'power' }, effects: [{ kind: 'gainStrength', amount: 1 }],
-    upgrade: { printedText: DOWNFALL_COLORLESS_CARDS[12]!.upgradedText } }),
+    upgrade: { cost: 2, printedText: DOWNFALL_COLORLESS_CARDS[12]!.upgradedText } }),
   colorless('Invincible', { type: 'power', cost: 3, trigger: { kind: 'endOfTurn' }, effects: [{ kind: 'optionalPreventRoundHpLoss' }],
-    upgrade: { printedText: DOWNFALL_COLORLESS_CARDS[13]!.upgradedText } }),
+    upgrade: { cost: 2, printedText: DOWNFALL_COLORLESS_CARDS[13]!.upgradedText } }),
   colorless('Virus', { type: 'attack', cost: 1, effects: [
     { kind: 'exhaustDrawTop', amount: 2 }, { kind: 'hit', amount: { base: 0, per: 'cardsInExhaust' } },
   ], upgrade: { printedText: DOWNFALL_COLORLESS_CARDS[14]!.upgradedText, effects: [
