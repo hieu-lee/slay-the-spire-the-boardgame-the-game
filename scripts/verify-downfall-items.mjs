@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
-import { CARDS } from '../src/game/cards.ts'
+import { CARDS, faceOf } from '../src/game/cards.ts'
 import {
   DOWNFALL_BOSS_RELICS,
   DOWNFALL_BOSS_RELIC_DECK,
+  DOWNFALL_COLORLESS_CARD_DEFS,
   DOWNFALL_COLORLESS_CARDS,
   DOWNFALL_ITEMS_MANIFEST,
   DOWNFALL_POTION_COSTS,
@@ -125,6 +126,12 @@ for (const item of DOWNFALL_COLORLESS_CARDS) {
   assert.equal(item.baseCardId, 467000 + item.index)
   assert.equal(item.upgradeCardId, 468400 + item.index)
   assert.ok(item.name.length > 0 && item.baseText.length > 0 && item.upgradedText.length > 0)
+}
+for (const item of DOWNFALL_COLORLESS_CARDS) {
+  const def = Object.values(DOWNFALL_COLORLESS_CARD_DEFS).find(({ name }) => name === item.name)
+  if (!def || typeof item.cost !== 'number') continue
+  assert.equal(faceOf(def, false).cost, item.cost, `${item.name} printed cost`)
+  assert.equal(faceOf(def, true).cost, item.upgradedCost ?? item.cost, `${item.name}+ printed cost`)
 }
 for (const [index, boon] of HEARTS_BOONS.entries()) {
   assert.equal(boon.index, index)
