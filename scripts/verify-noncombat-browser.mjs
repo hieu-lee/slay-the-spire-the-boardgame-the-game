@@ -4702,6 +4702,24 @@ check('Mysterious Sphere opening-hand cards stay readable but read-only', () => 
   assertEqual(openingPreviewStyle.disabled, 'true')
 })
 
+const courierPendingRun = enterRoom(postNeowRun(8804, [{ id: 'p1', name: 'Ann', character: 'ironclad' }]),
+  roomChoices(postNeowRun(8804, [{ id: 'p1', name: 'Ann', character: 'ironclad' }]))[0].id)
+for (const group of [courierPendingRun.players, courierPendingRun.combat.players]) {
+  group[0].relics.push({ defId: 'war_paint', spent: false, pending: true, pendingId: 0 })
+}
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), courierPendingRun)
+await page.getByRole('button', { name: /End Turn|Roll|Start/i }).first().waitFor()
+const courierPendingCombat = await page.evaluate(() => ({
+  phase: window.__STS_DEBUG__.getRun().phase,
+  resolver: document.body.textContent?.includes('Resolve War Paint') ?? false,
+  waiting: document.body.textContent?.includes('to resolve War Paint') ?? false,
+}))
+check('War Paint bought from The Courier does not lock combat behind its resolver', () => {
+  assertEqual(courierPendingCombat.phase, 'combat')
+  assertEqual(courierPendingCombat.resolver, false, 'the unresolvable War Paint resolver covered combat')
+  assertEqual(courierPendingCombat.waiting, false, 'combat showed a waiting banner for an unresolvable Relic')
+})
+
 writeFileSync(join(outDir, 'summary.json'), JSON.stringify({ failures }, null, 2))
 check('non-combat surfaces reported no browser errors', () => assertEqual(failures.length, 0, failures.join('\n')))
 await browser.close()
