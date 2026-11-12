@@ -51,9 +51,13 @@ function restorePendingRewardDraws(player: Player, pending: Player['relics'][num
   }
 }
 
-/** Only the owner sees cards exposed by a pending one-shot relic. */
+/**
+ * Only the owner sees cards exposed by a pending one-shot relic. A relic the
+ * Courier sold mid-combat (War Paint, Whetstone) cannot be used in combat, so
+ * it stays face up and unresolvable until combat ends — nothing to preview.
+ */
 export function pendingRelicPreview(state: RunState, playerId: string): PendingRelicPreview | null {
-  if (!Array.isArray(state.players)) return null
+  if (state.phase === 'combat' || !Array.isArray(state.players)) return null
   const reserved = reserveRevealedRewardDraws(state, playerId)
   const player = reserved.players.find((candidate) => candidate.id === playerId)
   const pending = player?.relics.find((relic) => relic.pending)
