@@ -10810,7 +10810,7 @@ const secondWindCard = page.getByRole('button', { name: /^Second Wind\+,/ })
 await secondWindCard.waitFor()
 const secondWindLabel = await secondWindCard.getAttribute('aria-label')
 const sentinelLabel = await page.getByRole('button', { name: /^Sentinel,/ }).getAttribute('aria-label')
-const dazeFallback = page.getByTitle('Daze')
+const dazeFallback = page.locator('.card[data-card-name="Daze"]')
 const dazeFallbackBox = await dazeFallback.boundingBox()
 const dazeFallbackLayer = await dazeFallback.locator(':scope > .card__fallback').evaluate((fallback) =>
   getComputedStyle(fallback).zIndex)
