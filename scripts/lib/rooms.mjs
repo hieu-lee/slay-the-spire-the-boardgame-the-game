@@ -5614,7 +5614,8 @@ export function snapshotFor(room, seatToken, shared = {}) {
   }
   const visibleRun = run && visibleCombat !== run.combat ? { ...run, combat: visibleCombat } : run
   const viewerPlayer = run?.players.find((player) => player.id === viewerId)
-  const pendingOwner = run?.players.find((player) => player.relics.some((relic) => relic.pending))
+  const pendingOwner = run?.phase === 'combat' ? undefined
+    : run?.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const giveUpVote = activeGiveUpVote(room)
   const postRollPending = run?.combat?.phase === 'start' && roomPostRollChoicePending(room)

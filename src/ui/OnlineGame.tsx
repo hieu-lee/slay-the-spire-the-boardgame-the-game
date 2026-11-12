@@ -993,7 +993,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       ) : pendingSocket && pendingSocketOwner ? <section className="room-screen" role="status">
         Waiting for {pendingSocketOwner.name} to socket a Guardian Gem.
       </section> : null}
-      {run.phase !== 'neow' && !viewerRewardPending &&
+      {run.phase !== 'neow' && run.phase !== 'combat' && !viewerRewardPending &&
       !snapshot.pendingRelic && snapshot.pendingRelicStatus ? <section className="room-screen" role="status">
         Waiting for {snapshot.pendingRelicStatus.playerName} to resolve{' '}
         {relicDef(snapshot.pendingRelicStatus.relicId).name}.
