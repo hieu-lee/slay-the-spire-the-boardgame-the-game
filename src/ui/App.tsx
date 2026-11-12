@@ -1363,7 +1363,7 @@ function LocalGame({ onOnline, settings, onSettings, active }: {
         onResolve={(gemId) => setRun((current) => finishRewardsIfComplete(resolveGuardianSocket(
           current, pendingSocket.playerId, pendingSocket.cardUid, gemId,
         )))} /> : null}
-      {run.phase !== 'neow' && run.phase !== 'reward' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
+      {run.phase !== 'neow' && run.phase !== 'reward' && run.phase !== 'combat' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
         Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
         <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
       </section> : null}

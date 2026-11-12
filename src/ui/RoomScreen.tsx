@@ -1494,7 +1494,10 @@ function EventScreen({
           ) : null}
         </div>
         {(!resolverOpen || room.card.id === "knowing_skull") ? <div className={`event-options${repeatScrap ? " event-options--retry" : ""}`} ref={eventOptions}>
-          {room.card.options.map((choice) => {
+          {room.card.options.map((option) => {
+            const choice = room.card.id === "face_trader" && option.id === "exchange" && players.length === 1
+              ? { ...option, label: "Leave", description: "No other player to exchange with." }
+              : option;
             const cardSlots = eventCardSlots(choice.effects, pendingDie, player, players);
             const choiceEffects = activeEffects(choice.effects);
             const choiceTradeCard = choiceEffects.some((effect) => effect.tag === "trade-card");
