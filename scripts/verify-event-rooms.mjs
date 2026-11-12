@@ -1269,6 +1269,17 @@ check('exhausted normal and Rare Prismatic Event rewards allow the no-choice esc
   assertEqual(run.phase, 'map')
 })
 
+check('an unavailable Event cannot advertise skipping while another seat has a pending choice', () => {
+  const run = inEvent('old_beggar', 2)
+  run.players.forEach(player => { player.gold = 0 })
+  run.roomState.pendingDecisions = { p2: { optionIds: ['give'] } }
+  assertEqual(canSkipEvent(run, 'p1'), false)
+  assertEqual(skipEvent(run, 'p1'), run, 'pending shared resources must not be discarded')
+  run.roomState.pendingDecisions = {}
+  assertEqual(canSkipEvent(run, 'p1'), true)
+  assertEqual(skipEvent(run, 'p1').phase, 'map')
+})
+
 check('exhausted item decks never strand mandatory, paid, rolled, or Lab Events', () => {
   let paid = inEvent('we_meet_again', 1)
   paid.itemDecks.relics = []
