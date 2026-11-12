@@ -118,7 +118,7 @@ try {
     await page.screenshot({ path: `${out}/${name}-cheat-picked.png` })
 
     await page.evaluate(() => {
-      const current = window.__STS_DEBUG__.getRun()
+      const current = structuredClone(window.__STS_DEBUG__.getRun())
       current.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
       current.combat.players[0].relics = current.players[0].relics
       current.combat.players[0].potions = []
