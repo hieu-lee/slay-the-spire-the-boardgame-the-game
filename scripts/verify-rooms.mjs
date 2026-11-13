@@ -143,6 +143,18 @@ function claimRewardGold(room, ...seats) {
   }
 }
 
+check('stance bonus snapshots report only the viewer and reset next turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.stanceChangedThisTurn = [a.playerId]
+  assertEqual(snapshotFor(room, a.token).run.combat.viewerStanceChangedThisTurn, true)
+  assertEqual(snapshotFor(room, b.token).run.combat.viewerStanceChangedThisTurn, false)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.combat.viewerStanceChangedThisTurn, true)
+  room.run.combat = preparePlayerTurn({ ...room.run.combat, phase: 'roundEnd' })
+  assertEqual(snapshotFor(room, a.token).run.combat.viewerStanceChangedThisTurn, false)
+})
+
 check('a persisted legacy end-turn order resets safely into the drag flow', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) player.hand = []
@@ -12867,17 +12879,19 @@ check('Courier one-shot Relics wait through combat and reconnect without deadloc
   apply(room, a.token, { kind: 'courierResolve', decision: 'buy', payments: { [a.playerId]: 8 } })
   assert(room.run.players.find((player) => player.id === a.playerId).relics
     .some((relic) => relic.defId === 'war_paint' && relic.pending))
-  assertEqual(snapshotFor(room, a.token).pendingRelic?.id, 41)
+  assertEqual(snapshotFor(room, a.token).pendingRelic, null)
+  assertEqual(snapshotFor(room, a.token).pendingRelicStatus, null)
 
   markDisconnected(room, a.token)
   joinRoom(room, { token: a.token })
-  assertEqual(snapshotFor(room, a.token).pendingRelic?.relicId, 'war_paint')
+  assertEqual(snapshotFor(room, a.token).pendingRelic, null)
   apply(room, a.token, { kind: 'playCard', cardUid: 'courier-pending-defend', preflight: true })
   assert(room.run.combat.players.find((player) => player.id === a.playerId).discard
     .some((card) => card.uid === 'courier-pending-defend'), 'pending Courier Relic blocked combat play')
 
   room.run.combat.phase = 'won'
   apply(room, a.token, { kind: 'resolveCombat' })
+  assertEqual(snapshotFor(room, a.token).pendingRelic?.id, 41)
   const owner = room.run.players.find((player) => player.id === a.playerId)
   const starter = owner.deck.find((card) => card.defId.startsWith('defend_') && !card.upgraded)
   const skill = owner.deck.find((card) => card.uid !== starter?.uid && !card.upgraded && CARDS[card.defId]?.type === 'skill')
