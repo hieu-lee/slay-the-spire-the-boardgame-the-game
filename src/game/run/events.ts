@@ -765,7 +765,7 @@ function eventOptionAvailable(state: RunState, player: Player, option: EventCard
 
 export function canSkipEvent(state: RunState, playerId: string): boolean {
   if (state.phase !== 'room' || state.roomState?.kind !== 'event' || state.roomState.decisions[playerId] ||
-    state.roomState.pendingDecisions?.[playerId]) return false
+    state.roomState.pendingTrade || Object.keys(state.roomState.pendingDecisions ?? {}).length > 0) return false
   const player = state.players.find((candidate) => candidate.id === playerId && !candidate.dead)
   const used = usedBigFishOptionIds(state, playerId)
   return Boolean(player && !state.roomState.card.options.some((option) => !used.has(option.id) && eventOptionAvailable(state, player, option)))
