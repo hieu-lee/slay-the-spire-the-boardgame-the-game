@@ -94,10 +94,8 @@ try {
     assert(Math.abs(hovered.x + hovered.width / 2 - resting.x - resting.width / 2) < 1 &&
       Math.abs(hovered.y + hovered.height / 2 - resting.y - resting.height / 2) < 1,
     'reward enlargement must keep the card centered')
-    const helpId = await card.getAttribute('data-keyword-help-id')
-    const help = page.locator(`[id="${helpId}"]`)
-    await help.waitFor({ state: 'visible' })
-    assert((await help.innerText()).trim(), 'reward hover must show keyword help without Shift')
+    assert.equal(await page.locator('.card-keyword-tips[data-open]').count(), 0,
+      'reward hover must not show keyword help unless Shift is held')
     await page.mouse.move(5, 5)
     const returning = await card.evaluate(card => {
       getComputedStyle(card).transform
@@ -116,13 +114,11 @@ try {
     assert(returning.widths[0] > returning.widths[1] && returning.widths[1] > returning.widths[2] &&
       returning.widths[1] < resting.width * 1.125 && Math.abs(returning.widths[2] - resting.width) < 1,
     'reward return must ease out to its resting size')
-    await help.waitFor({ state: 'hidden' })
     await page.keyboard.press('Tab')
     await card.focus()
     await card.evaluate(card => Promise.all(card.getAnimations().map(animation => animation.finished)))
     assert(Math.abs((await card.boundingBox()).width / resting.width - 1.25) < .01,
       'keyboard focus must use the same reward-card enlargement')
-    await help.waitFor({ state: 'visible' })
   }
 
   await stage()

@@ -22,7 +22,6 @@ type CardProps = {
   playable?: boolean
   /** Recessed combat cards reveal on the first tap, then activate on the next. */
   inspectOnTouch?: boolean
-  hoverHelp?: boolean
   /** Transient copies must paint an already-visible scan on their first frame. */
   immediateArt?: boolean
   /** Staged for play, waiting on a target or a choice. */
@@ -738,7 +737,6 @@ export function Card({
   cost,
   playable = true,
   inspectOnTouch = false,
-  hoverHelp = false,
   immediateArt = false,
   selected = false,
   picked = false,
@@ -774,7 +772,7 @@ export function Card({
     .join(' ')
 
   return <CardKeywordHelp def={def} additionalDef={attachedGem}
-    gemPowerDamage={gemPowerDamage} hover={hoverHelp}>{(keywordHelpProps) => (
+    gemPowerDamage={gemPowerDamage}>{(keywordHelpProps) => (
     <button
       {...keywordHelpProps}
       type="button"

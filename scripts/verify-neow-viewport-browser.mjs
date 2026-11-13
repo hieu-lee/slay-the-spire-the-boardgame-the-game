@@ -105,7 +105,6 @@ try {
         assert(await card.evaluate(element => getComputedStyle(element).transitionDuration
           .split(',').every(duration => parseFloat(duration) <= .001)),
         `${mode}: reduced-motion inspection must not animate`)
-        await page.locator('.card-keyword-tips[data-open]').waitFor()
         await page.mouse.move(5, 5)
         assert(Math.abs((await card.boundingBox()).width - resting.width) < 1,
           `${mode}: reduced-motion inspection must return immediately`)
