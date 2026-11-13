@@ -11048,6 +11048,23 @@ check('Runic Pyramid retains the selected cards without replacing another Retain
   assertEqual(following.players[0].hand.length, 0)
 })
 
+check('Runic Pyramid retaining the last discardable card during the end-turn prompt finishes the turn', () => {
+  const kept = instance('strike_ironclad')
+  const other = instance('defend_ironclad')
+  const withRetain = combat([makePlayer({
+    hand: [kept, other],
+    relics: [{ defId: 'runic_pyramid', spent: false }],
+  })], [makeEnemy()])
+  withRetain.players[0].retainCardsThisTurn = 1
+  const prompt = beginEndPlayerTurn(withRetain)
+  assertEqual(prompt.phase, 'discard')
+  const partial = activateRelic(prompt, 'p1', 0, { cardUids: [kept.uid] })
+  assertEqual(partial.phase, 'discard', 'one discardable card still poses a Retain choice')
+  const all = activateRelic(prompt, 'p1', 0, { cardUids: [kept.uid, other.uid] })
+  assertEqual(all.phase, 'enemy', 'nothing is left to confirm, so the turn must not park at the prompt')
+  assertDeepEqual(all.players[0].hand.map((card) => card.uid), [kept.uid, other.uid])
+})
+
 check('a changed die drives the Mystic action that actually resolves', () => {
   const starting = { ...combat(
     [makePlayer({ potions: ['gamblers_brew'] })],

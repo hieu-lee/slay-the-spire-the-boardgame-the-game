@@ -47,6 +47,7 @@ const focusedEngineOwners = ownerMap([
   ['src/game/combat/board.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/game/combat/create.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/game/combat/items.ts', ['verify-die-relic-browser.mjs']],
+  ['src/game/combat/item-windows.ts', ['verify-die-relic-browser.mjs']],
   ['src/game/noncombat.ts', ['verify-courier-browser.mjs']],
   ['src/game/run/merchant.ts', ['verify-merchant-overflow-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/game/run/neow.ts', [
