@@ -116,7 +116,7 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
   }
 
   if (activeRelic && Array.isArray(offer.bossRelics) && offer.bossRelics.length > 0) return <RelicRewardPicker
-    choices={offer.bossRelics} style={backdrop} disabled={lootPending || locked} skipDisabled={waitingForTeammate}
+    choices={offer.bossRelics} style={backdrop} disabled={lootPending || locked} skipDisabled={waitingForTeammate} backDisabled={lootPending}
     onBack={() => setActiveRelic(false)}
     onChoose={(relicId) => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])}
     onSkip={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'skip' }])} />

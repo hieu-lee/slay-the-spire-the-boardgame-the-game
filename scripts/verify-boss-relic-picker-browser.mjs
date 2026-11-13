@@ -109,6 +109,33 @@ try {
       return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
     })), `${screen}: relic choices or navigation clipped`)
     await page.screenshot({ path: `${output}/${screen}.png`, animations: 'disabled' })
+    if (!phone) {
+      const five = ['coffee_dripper', 'fusion_hammer', 'sozu', 'black_blood', 'orrery']
+      await page.evaluate((five) => {
+        const run = structuredClone(window.__STS_DEBUG__.getRun())
+        run.rewards[0].bossRelics = five
+        window.__STS_DEBUG__.setRun(run)
+      }, five)
+      await page.setViewportSize({ width: 1024, height: 768 })
+      await picker(page).locator('.relic-reward__choice').nth(4).waitFor()
+      for (const index of [0, 4]) {
+        const choice = picker(page).locator('.relic-reward__choice').nth(index)
+        await page.mouse.move(5, 5)
+        await choice.hover()
+        await choice.evaluate(node => Promise.all(node.getAnimations().map(animation => animation.finished)))
+        const box = await choice.boundingBox()
+        assert(box.x >= 0 && box.x + box.width <= 1024, `five-relic reward clips relic ${index} on a compact desktop: ${JSON.stringify(box)}`)
+      }
+      await page.mouse.move(5, 5)
+      await page.setViewportSize(viewport)
+      await page.evaluate((choices) => {
+        const run = structuredClone(window.__STS_DEBUG__.getRun())
+        run.rewards[0].bossRelics = choices
+        window.__STS_DEBUG__.setRun(run)
+      }, choices)
+      await picker(page).locator('.relic-reward__choice').nth(2).waitFor()
+      await picker(page).locator('.relic-reward__choice').nth(3).waitFor({ state: 'detached' })
+    }
     for (const mode of phone ? ['game'] : ['system', 'game']) {
       await page.emulateMedia({ reducedMotion: mode === 'system' ? 'reduce' : 'no-preference' })
       await page.evaluate(mode => { document.documentElement.dataset.reducedMotion = String(mode === 'game') }, mode)
