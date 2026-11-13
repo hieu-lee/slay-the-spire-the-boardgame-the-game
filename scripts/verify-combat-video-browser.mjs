@@ -61,7 +61,7 @@ try {
         const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
         let opaque = false
         for (let index = 3; index < pixels.length; index += 4) if (pixels[index] === 255) { opaque = true; break }
-        return { corner: pixels[3], opaque, loop: video.loop, muted: video.muted }
+        return { corner: pixels[3], opaque, loop: video.loop, muted: video.muted && globalThis[Symbol.for('sts-test-audio-muted')].get(video) === true }
       }))
       assert(alpha.every(value => value.corner === 0 && value.opaque && value.loop && value.muted), `${screen}: native video lost transparency or playback`)
       await page.waitForFunction(count => {
