@@ -43,7 +43,7 @@ try {
       if (survivor) Object.assign(run.combat.enemies.find(enemy => enemy.uid !== survivor), { dead: true, hp: 0 })
       Object.assign(run.combat, { phase, turn: 2, die: 4, startTurnStage: phase === 'start' ? 'facing' : undefined })
       run.combat.players.forEach((player, index) => Object.assign(player, {
-        row: ordinary ? 0 : count === 1 ? side === 'shield' ? 1 : 2 : count === 2 ? index + 1 : index,
+        row: ordinary ? index : count === 1 ? side === 'shield' ? 1 : 2 : count === 2 ? index + 1 : index,
         facingEnemyUid: ordinary || phase === 'start' ? null : count === 1 ? side : index < count / 2 ? 'shield' : 'spear',
         hp: 8, maxHp: 8, energy: 3, strength: phase === 'player' ? 2 : 0, vulnerable: phase === 'player' ? 1 : 0,
         strengthLossAtEndOfTurn: phase === 'player' ? 2 : 0,
@@ -163,8 +163,14 @@ try {
     await page.evaluate(id => window.__STS_DEBUG__.setViewer(id), viewerId)
 
     await load({ ordinary: true })
-    await inspect(screen, 'ordinary-elite', { rowLabels: 1 })
+    await inspect(screen, 'solo-ordinary-elite')
+    assert.doesNotMatch(await enemy('nob').getAttribute('aria-label'), /facing Viet/,
+      'solo enemies should not repeat the only character as their target')
+    await load({ count: 2, ordinary: true })
+    await inspect(screen, 'party-ordinary-elite', { rowLabels: 1 })
     assert.equal(await enemy('nob').locator('.enemy__row').innerText(), 'Viet')
+    assert.match(await enemy('nob').getAttribute('aria-label'), /facing Viet/,
+      'party enemies must still identify their row target')
     console.log(`${screen}: solo, last survivor, four-player capacity and viewer-specific Facing exercised`)
     await context.close()
   }
