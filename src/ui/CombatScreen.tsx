@@ -2279,8 +2279,18 @@ function CombatScreenView({
   useLayoutEffect(() => {
     const statuses = boardRef.current?.querySelectorAll<HTMLElement>('.seat__meta') ?? []
     // Keep Orbs above wrapped statuses without moving the hero. A row change remounts the seat, so rebind per seat.
+    // The board clips its children, so Orbs shrink instead of rising past its top edge.
     const measure = (element: HTMLElement) => {
-      element.closest<HTMLElement>('.seat__interactive')?.style.setProperty('--temporary-status-height', `${element.offsetHeight}px`)
+      const seat = element.closest<HTMLElement>('.seat__interactive')
+      const board = boardRef.current
+      if (!seat || !board) return
+      seat.style.setProperty('--temporary-status-height', `${element.offsetHeight}px`)
+      seat.style.removeProperty('--orb-size-cap')
+      const orbs = seat.querySelector('.orbs')?.getBoundingClientRect()
+      const orbSize = seat.querySelector('.orbs .token--orb')?.getBoundingClientRect().height
+      if (!orbs || !orbSize) return
+      const overflow = board.getBoundingClientRect().top - (orbs.top - orbSize * 0.16)
+      if (overflow > 0) seat.style.setProperty('--orb-size-cap', `${orbSize - overflow * 1.2}px`)
     }
     statuses.forEach(measure)
     if (typeof ResizeObserver === 'undefined') return

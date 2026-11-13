@@ -75,7 +75,7 @@ try {
           orbCount: meta.closest('.seat__interactive').querySelectorAll('.orbs .token--orb').length,
           orbsClear: [...meta.closest('.seat__interactive').querySelectorAll('.orbs .token--orb')].every(orb => {
             const rect = orb.getBoundingClientRect()
-            return rect.bottom + rect.height * 0.16 + 4 <= box.top && rect.top >= 0
+            return rect.bottom + rect.height * 0.16 + 4 <= box.top && rect.top >= board.top
           }),
         }
       })
