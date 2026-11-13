@@ -31,7 +31,9 @@
 
 .die-relic--group,
 /* The owner label would starve a half-width tile of room for the Relic name. */
-.die-relic-list--shared > .die-relic { grid-column: 1 / -1; }
+.die-relic-list--shared > :is(.die-relic, .die-relic-choice) { grid-column: 1 / -1; }
+
+.die-relic-list > .die-relic-choice { display: grid; min-width: 0; }
 
 .die-relic__head,
 .die-relic--single {

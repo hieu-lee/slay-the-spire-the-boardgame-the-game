@@ -19,17 +19,19 @@
 /* Event card pickers name a single card and nothing else, so they keep the
    key's default height and just take a tighter gutter. */
 .sts-scope .event-cards button { padding: 0.4rem 0.8rem; }
+.sts-scope .event-cards > .event-relic-choice { max-width: 100%; }
+.sts-scope .event-relic-choice > button { max-width: 100%; }
 
 /* A relic option button shows an icon and a name, and kept its printed rules in
-   a `title` — the one tooltip a touchscreen cannot open. These buttons ask
+   a hover tooltip. These buttons ask
    which relic to give up or trade, so on a phone the decision was being made
    blind. The prose is always in the DOM (see RelicOptionText) and appears only
-   where there is no hover to open the `title` with, which is exactly the
+   where there is no hover, which is exactly the
    substitution the merchant shelves make in chrome/merchant-rug.css.
 
    Hidden with `display: none` rather than clipped, which takes it out of the
    accessible tree along with the view. That is right only on a hover device,
-   where the `title` is reachable and printing the same sentence again would be
+   where the tooltip is reachable and printing the same sentence again would be
    duplicate clutter. Where it IS shown it joins the button's accessible name on
    purpose — see RelicOptionText, which explains why a `title` cannot be relied
    on to carry these rules on a phone. */
