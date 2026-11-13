@@ -3978,11 +3978,44 @@ function CombatScreenView({
     setPending(null)
   }
 
+  function withEvokeSlot(next: Pending, slot: number): Pending {
+    const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
+    const evokeSlots = [...next.evokeSlots, slot]
+    const orbs = chosenEvokeOrbs(def, viewer!, evokeSlots, state.die,
+      next.mode ?? undefined, next.effectEnergy ?? 0)
+    return {
+      ...next,
+      evokeSlots,
+      evokeEnemyUids: [...next.evokeEnemyUids, ...orbs.slice(next.evokeEnemyUids.length)
+        .map((orb) => orb === 'frost' ? null : undefined)],
+    }
+  }
+
   function stageOrCommit(next: Pending) {
     next = withAdjacentChoices(next)
+    if (next.choiceCards?.length === 0 &&
+      (next.choice?.kind === 'scry' || next.choice?.kind === 'scryToHand')) {
+      next = { ...next, choiceConfirmed: true }
+    }
     const def = effectiveCombatCardDef(
       faceOf(cardDef(next.card.defId), next.card.upgraded), next.corruptedShardMode ?? viewer!.guardianMode,
     )
+    if (def.id === 'dual_cast') {
+      const choice = nextEvokeChoice(def, viewer!, next.evokeSlots, state.die, next.mode ?? undefined, next.effectEnergy ?? 0)
+      if (choice?.options.length === 1) next = withEvokeSlot(next, choice.options[0]!.slot)
+    }
+    const onlySlime = viewer!.slimes.length === 1 ? viewer!.slimes[0] : undefined
+    if (onlySlime && !next.slimeChoiceConfirmed && next.slimeChoice?.minimum === 1 &&
+      next.slimeChoice.amount === 1 && (def.cost !== 'X' || next.energySpent !== null) &&
+      (!def.modes || next.mode !== null) &&
+      (!next.cardInHand && !next.chamberPlay || forcedCardUid === next.card.uid ||
+        slimeChoiceIsAvailable(def, state, viewer!, onlySlime.card.uid, next.effectEnergy ?? 0))) {
+      next = { ...next, slimeUids: [onlySlime.card.uid], slimeChoiceConfirmed: true }
+    }
+    const enemies = livingEnemies(state)
+    if (enemies.length === 1 && (!next.slimeChoice || next.slimeChoiceConfirmed)) {
+      next = { ...next, slimeEnemyUids: Array<string>(slimeEnemyChoicesRequired(next)).fill(enemies[0]!.uid) }
+    }
     const evokeProgress = evokeTargetProgress(
       def, state, viewer!, next.evokeSlots, next.evokeEnemyUids,
       next.mode ?? undefined, next.effectEnergy ?? 0,
@@ -4478,9 +4511,9 @@ function CombatScreenView({
     setArmedEndTurnAbilityId((current) => current === ability.id ? null : ability.id)
   }
 
-  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, chamber = false) {
+  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, playable: boolean, chamber = false) {
     if (event.button !== 0) return
-    const canDrag = chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card)
+    const canDrag = playable && (chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card))
     const staged = chamber ? stageHermitChamberViewer(viewer!, card,
       state.pendingHermitChamberPlays?.[0]?.playerId === viewerId &&
       state.pendingHermitChamberPlays[0].cardUids[0] === card.uid &&
@@ -4990,15 +5023,7 @@ function CombatScreenView({
     if (!pending || !pendingEvokeChoice || pendingEvokeTarget >= 0 || !choiceSatisfied) return
     const option = pendingEvokeChoice.options.find((candidate) => candidate.slot === slot)
     if (!option) return
-    const evokeSlots = [...pending.evokeSlots, slot]
-    const orbs = chosenEvokeOrbs(pendingDef!, viewer!, evokeSlots, state.die,
-      pending.mode ?? undefined, pending.effectEnergy ?? 0)
-    stageOrCommit({
-      ...pending,
-      evokeSlots,
-      evokeEnemyUids: [...pending.evokeEnemyUids, ...orbs.slice(pending.evokeEnemyUids.length)
-        .map((orb) => orb === 'frost' ? null : undefined)],
-    })
+    stageOrCommit(withEvokeSlot(pending, slot))
   }
 
   function onModeClick(mode: number) {
@@ -6358,6 +6383,15 @@ function CombatScreenView({
               <button type="button" onClick={() => useRelic(relicIndex, { cardUids: relicCardUids })}>
                 Activate
               </button>
+              <button type="button" onClick={(event) => {
+                if (relicActionPending.current) return
+                setRelicCardUids([])
+                const details = event.currentTarget.closest('details')
+                if (details) {
+                  details.open = false
+                  details.querySelector('summary')?.focus()
+                }
+              }}>Cancel</button>
             </details>]
             if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
               <div className="campfire__deck">{viewer.hand.map((card) => <Card key={card.uid} card={card}
@@ -7756,7 +7790,7 @@ function CombatScreenView({
                 : activateCard}
               onPointerDown={handPicksOnly && !chamberCard
                 ? undefined
-                : (event) => onCardPointerDown(card, event, chamberCard)}
+                : (event, playable) => onCardPointerDown(card, event, playable, chamberCard)}
               onPointerMove={handPicksOnly && !chamberCard ? undefined : onCardPointerMove}
               onPointerUp={handPicksOnly && !chamberCard ? undefined : finishCardDrag}
               onPointerCancel={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}

@@ -75,7 +75,7 @@ import { MapOverlay } from './MapOverlay.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { CampfireScreen } from './CampfireScreen.tsx'
 import { RewardScreen } from './RewardScreen.tsx'
-import { relicDef } from '../game/relics.ts'
+import { refreshCombatRelic, relicDef } from '../game/relics.ts'
 import { IconValue } from './Icon.tsx'
 import { RelicBar } from './RelicChip.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
@@ -309,7 +309,7 @@ export function App() {
     settle()
     const changedAccount = () => {
       const next = savedProfile()?.token
-      if (next !== account) { setLocalOpen(false); setAccount(next) }
+      if (next !== account) setAccount(next)
       settle()
     }
     const stop = onProfileChange(changedAccount)
@@ -338,7 +338,6 @@ export function App() {
     }, () => { if (active) setOnline(false) })
     return () => { active = false }
   }, [online])
-  const [localOpen, setLocalOpen] = useState(false)
   const [settings, setSettings] = useGameSettings()
   useEffect(() => settings.sfxVolume > 0 ? installSoundEffects(true) : undefined, [settings.sfxVolume])
   useEffect(() => {
@@ -593,7 +592,7 @@ export function App() {
     <Suspense fallback={<main className="app-loading" role="status">Loading…</main>}>
       {online === null ? <main className="app-loading" role="status">Loading…</main> : <>
       <div className="game-mode" hidden={online}>
-        <LocalGame key={account} open={localOpen} onOpen={() => setLocalOpen(true)} onClose={() => setLocalOpen(false)} onOnline={SINGLE_PLAYER_ONLY ? undefined : () => setOnline(true)}
+        <LocalGame key={account} onOnline={SINGLE_PLAYER_ONLY ? undefined : () => setOnline(true)}
           settings={settings} onSettings={setSettings} active={!online} />
       </div>
       {online && OnlineGame ? <OnlineGame onLocal={() => setOnline(false)} settings={settings} onSettings={setSettings} /> : null}
@@ -603,15 +602,16 @@ export function App() {
   )
 }
 
-function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, active }: {
-  open: boolean
-  onOpen: () => void
-  onClose: () => void
+function LocalGame({ onOnline, settings, onSettings, active }: {
   onOnline?: () => void
   settings: GameSettings
   onSettings: (settings: GameSettings) => void
   active: boolean
 }) {
+  // A remount must return to the menu, not autosave an unstarted replacement run.
+  const [open, setOpen] = useState(false)
+  const onOpen = () => setOpen(true)
+  const onClose = () => setOpen(false)
   const [seedText, setSeedText] = useState<string>(() => crypto.randomUUID())
   const [ascension, setAscension] = useState(0)
   const [characters, setCharacters] = useState<CharacterId[]>(() => [...DEFAULT_CHARACTERS])
@@ -731,7 +731,10 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
     setLastStand(resume.built.lastStand)
     setMode(resume.built.meta.mode ?? 'standard')
     setBuilt(resume.built)
-    setRun(resume.run)
+    setRun(resume.run.phase === 'combat' ? resume.run : {
+      ...resume.run,
+      players: resume.run.players.map(player => ({ ...player, relics: player.relics.map(refreshCombatRelic) })),
+    })
     terminalRun.current = resume.terminalRun ? structuredClone(resume.terminalRun) : null
     setRecordRunId(resume.recordRunId ?? null)
     setRunLogExtractedRunId(resume.runLogExtractedRunId ?? null)
@@ -1363,7 +1366,7 @@ function LocalGame({ open, onOpen, onClose, onOnline, settings, onSettings, acti
         onResolve={(gemId) => setRun((current) => finishRewardsIfComplete(resolveGuardianSocket(
           current, pendingSocket.playerId, pendingSocket.cardUid, gemId,
         )))} /> : null}
-      {run.phase !== 'neow' && run.phase !== 'reward' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
+      {run.phase !== 'neow' && run.phase !== 'reward' && run.phase !== 'combat' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
         Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
         <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
       </section> : null}
