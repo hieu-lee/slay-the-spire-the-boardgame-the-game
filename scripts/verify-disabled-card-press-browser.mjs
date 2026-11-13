@@ -21,12 +21,12 @@ try {
       const root = (DOM.createRoot ?? DOM.default.createRoot)(host)
       const createElement = React.createElement ?? React.default.createElement
       const flushSync = Core.flushSync ?? Core.default.flushSync
-      const fixture = window.disabledCardFixture = { plays: 0, presses: 0 }
+      const fixture = window.disabledCardFixture = { plays: 0, presses: [] }
       fixture.render = playable => flushSync(() => root.render(createElement(Card, {
         card: { uid: 'strike', defId: 'strike_ironclad', upgraded: false },
         playable, style: { '--card-width': '180px' },
         onClick: () => { fixture.plays++ },
-        onPointerDown: () => { fixture.presses++ },
+        onPointerDown: (_event, pressPlayable) => { fixture.presses.push(pressPlayable) },
       })))
       fixture.render(false)
     })
@@ -35,14 +35,23 @@ try {
     await page.mouse.down()
     assert.equal(await card.evaluate(element => element === document.activeElement), false,
       'a disabled mouse press must not leave the card focused')
-    assert.equal(await page.evaluate(() => window.disabledCardFixture.presses), 0,
-      'a disabled press must not start a drag handler')
+    assert.deepEqual(await page.evaluate(() => window.disabledCardFixture.presses), [false],
+      'a disabled press must reach the hand handler flagged unplayable, so it can pan but never drag-play')
     await page.evaluate(() => window.disabledCardFixture.render(true))
     await page.mouse.up()
     assert.equal(await page.evaluate(() => window.disabledCardFixture.plays), 0,
       'enabling the card between press and release must not play it')
     await card.click()
     assert.equal(await page.evaluate(() => window.disabledCardFixture.plays), 1)
+    await page.evaluate(() => window.disabledCardFixture.render(false))
+    await card.focus()
+    await card.hover()
+    await page.mouse.down()
+    await page.keyboard.press('Enter')
+    await page.evaluate(() => window.disabledCardFixture.render(true))
+    await page.mouse.up()
+    assert.equal(await page.evaluate(() => window.disabledCardFixture.plays), 1,
+      'a keyboard click during a disabled mouse press must not unblock its release')
     await page.evaluate(() => window.disabledCardFixture.render(false))
     await card.focus()
     assert(await card.evaluate(element => element === document.activeElement), 'keyboard inspection remains available')

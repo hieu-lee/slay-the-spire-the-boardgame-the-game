@@ -39,7 +39,8 @@ type CardProps = {
   /** Appended to the accessible name, e.g. to tell a just-drawn duplicate apart. */
   accessibleNote?: string
   onClick?: (card: CardInstance) => void
-  onPointerDown?: React.PointerEventHandler<HTMLButtonElement>
+  /** `playable` is the card's state at press time, so a press can pan without starting a play. */
+  onPointerDown?: (event: React.PointerEvent<HTMLButtonElement>, playable: boolean) => void
   onPointerMove?: React.PointerEventHandler<HTMLButtonElement>
   onPointerUp?: React.PointerEventHandler<HTMLButtonElement>
   onPointerCancel?: React.PointerEventHandler<HTMLButtonElement>
@@ -792,11 +793,8 @@ export function Card({
         touchNeedsInspection.current = inspectOnTouch && event.pointerType === 'touch' &&
           document.activeElement !== event.currentTarget
         blockedMousePress.current = event.pointerType === 'mouse' && !playable
-        if (blockedMousePress.current) {
-          event.preventDefault()
-          return
-        }
-        onPointerDown?.(event)
+        if (blockedMousePress.current) event.preventDefault()
+        onPointerDown?.(event, playable)
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -806,7 +804,7 @@ export function Card({
         const inspect = touchNeedsInspection.current && event.detail !== 0
         touchNeedsInspection.current = false
         const blocked = blockedMousePress.current && event.detail !== 0
-        blockedMousePress.current = false
+        if (event.detail !== 0) blockedMousePress.current = false
         if (inspect) {
           event.currentTarget.focus({ preventScroll: true })
           return
