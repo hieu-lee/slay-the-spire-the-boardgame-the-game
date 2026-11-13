@@ -95,7 +95,7 @@ try {
       const previousMotion = await page.evaluate(() => document.documentElement.dataset.reducedMotion)
       for (const mode of ['system', 'game']) {
         await page.emulateMedia({ reducedMotion: mode === 'system' ? 'reduce' : 'no-preference' })
-        await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true' })
+        await page.evaluate(mode => { document.documentElement.dataset.reducedMotion = String(mode === 'game') }, mode)
         await page.mouse.move(5, 5)
         const resting = await card.boundingBox()
         await card.hover()

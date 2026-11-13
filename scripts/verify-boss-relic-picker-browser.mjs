@@ -109,9 +109,9 @@ try {
       return box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
     })), `${screen}: relic choices or navigation clipped`)
     await page.screenshot({ path: `${output}/${screen}.png`, animations: 'disabled' })
-    for (const mode of ['system', 'game']) {
+    for (const mode of phone ? ['game'] : ['system', 'game']) {
       await page.emulateMedia({ reducedMotion: mode === 'system' ? 'reduce' : 'no-preference' })
-      await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true' })
+      await page.evaluate(mode => { document.documentElement.dataset.reducedMotion = String(mode === 'game') }, mode)
       await hoverChoice.evaluate(choice => choice.blur())
       await page.mouse.move(5, 5)
       await hoverChoice.hover()
