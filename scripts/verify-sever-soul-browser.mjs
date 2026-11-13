@@ -36,7 +36,9 @@ try {
     const fuel = [card('defend_ironclad', 'defend'), card('daze', 'daze'), card('strike_ironclad', 'strike')]
     const deck = [sever, upgraded, ...fuel]
     Object.assign(base.combat.players[0], {
-      hand: [], draw: [], discard: [], exhaust: [], relics: [], potions: [],
+      hand: [], draw: [], discard: [], exhaust: [], relics: [],
+      // An unused potion is a legal action, so combat never auto-ends the turn mid-assertion.
+      potions: ['swift_potion'],
       powers: [card('feel_no_pain', 'feel-no-pain')], energy: 2, strength: 0, weak: 0, block: 0, deck,
     })
     base.players[0].deck = structuredClone(deck)
@@ -55,7 +57,7 @@ try {
     }
     const activate = locator => phone ? locator.tap() : locator.click()
     const play = async (name) => {
-      await page.locator(`.hand .card[title="${name}"]`).click()
+      await page.locator(`.hand .card[data-card-name="${name}"]`).click()
     }
     const dialog = page.getByRole('dialog', { name: /Choose .* in your hand to Exhaust/ })
     const read = () => page.evaluate(() => structuredClone(window.__STS_DEBUG__.getState()))
@@ -73,7 +75,7 @@ try {
     await dialog.focus()
     await page.keyboard.press('Escape')
     assert(await dialog.isVisible(), 'Havoc’s mandatory choice cannot be dismissed')
-    await activate(dialog.locator('.card[title="Defend"]'))
+    await activate(dialog.locator('.card[data-card-name="Defend"]'))
     await finish()
     await page.waitForFunction(() => !window.__STS_DEBUG__.getState().startTurnProgress?.forcedCard)
     const havocPlayed = await read()
@@ -86,12 +88,12 @@ try {
     await play('Sever Soul')
     await dialog.waitFor()
     assert.equal(await dialog.locator('.card').count(), 3, 'only other hand cards may be exhausted')
-    assert.equal(await dialog.locator('.card[title="Sever Soul"]').count(), 0)
+    assert.equal(await dialog.locator('.card[data-card-name="Sever Soul"]').count(), 0)
     assert(await confirm().isDisabled())
-    await activate(dialog.locator('.card[title="Defend"]'))
-    await activate(dialog.locator('.card[title="Daze"]'))
+    await activate(dialog.locator('.card[data-card-name="Defend"]'))
+    await activate(dialog.locator('.card[data-card-name="Daze"]'))
     assert.equal(await dialog.locator('.card--selected').count(), 1, 'base card allows one choice')
-    await activate(dialog.locator('.card[title="Daze"]'))
+    await activate(dialog.locator('.card[data-card-name="Daze"]'))
     assert(await confirm().isDisabled(), 'deselecting the only choice must disable confirmation')
     assert.deepEqual(await read(), before, 'inspection must not spend Energy, deal damage or exhaust cards')
     if (phone) await activate(dialog.getByRole('button', { name: 'Cancel', exact: true }))
@@ -105,7 +107,7 @@ try {
     assert.deepEqual(await read(), before, 'Cancel must leave the entire combat unchanged')
     await play('Sever Soul')
     await dialog.waitFor()
-    await activate(dialog.locator('.card[title="Daze"]'))
+    await activate(dialog.locator('.card[data-card-name="Daze"]'))
     assert(await dialog.evaluate(element => {
       const rect = element.getBoundingClientRect()
       const controls = [...element.querySelectorAll('.hand-exhaust__actions button')]
@@ -129,8 +131,8 @@ try {
       await dialog.waitFor()
       assert.match(await dialog.locator('h2').innerText(), /1 or 2 cards/)
       assert(await confirm().isDisabled(), 'the upgrade cannot skip an available Exhaust')
-      await activate(dialog.locator('.card[title="Defend"]'))
-      if (count === 2) await activate(dialog.locator('.card[title="Daze"]'))
+      await activate(dialog.locator('.card[data-card-name="Defend"]'))
+      if (count === 2) await activate(dialog.locator('.card[data-card-name="Daze"]'))
       await page.screenshot({ path: `${output}/${screen}-upgrade-${count}.png` })
       await finish()
       await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
@@ -143,15 +145,15 @@ try {
     await setHand([upgraded, ...fuel])
     await play('Sever Soul+')
     await dialog.waitFor()
-    await activate(dialog.locator('.card[title="Defend"]'))
+    await activate(dialog.locator('.card[data-card-name="Defend"]'))
     await page.evaluate(() => {
       const run = structuredClone(window.__STS_DEBUG__.getRun())
       run.combat.players[0].hand = run.combat.players[0].hand.filter(card => card.uid !== 'defend')
       window.__STS_DEBUG__.setRun(run)
     })
-    await dialog.locator('.card[title="Defend"]').waitFor({ state: 'detached' })
+    await dialog.locator('.card[data-card-name="Defend"]').waitFor({ state: 'detached' })
     await page.waitForFunction(() => document.querySelector('.hand-exhaust__actions button')?.disabled)
-    await activate(dialog.locator('.card[title="Daze"]'))
+    await activate(dialog.locator('.card[data-card-name="Daze"]'))
     await finish()
     await page.waitForFunction(() => window.__STS_DEBUG__.getState().players[0].energy === 0)
     assert.deepEqual((await read()).players[0].exhaust.map(card => card.uid), ['daze'],
