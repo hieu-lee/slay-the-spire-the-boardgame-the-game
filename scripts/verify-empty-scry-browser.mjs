@@ -39,7 +39,7 @@ try {
       })
       next.combat.enemies = [{ ...next.combat.enemies[0], uid: 'target', hp: 30, maxHp: 30, block: 0, dead: false }]
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), next)
-      await page.locator(`.hand .card[title="${name}"]`).click()
+      await page.locator(`.hand .card[data-card-name="${name}"]`).click()
       if (targeted) await page.locator('[data-enemy-id="target"] .enemy__hit-area').click()
       if (drawCount) {
         const dialog = page.getByRole('dialog', { name: 'Scry 3', exact: true })

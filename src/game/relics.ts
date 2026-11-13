@@ -383,7 +383,11 @@ boss({ id: 'ring_of_serpent', name: 'Ring of Serpent', trigger: { kind: 'startOf
   effects: [{ kind: 'draw', amount: 1 }], text: 'Start of turn: draw a card.' })
 boss({ id: 'snecko_eye', name: 'Snecko Eye',
   trigger: { kind: 'dieRelic', faces: [1, 2] }, effects: [{ kind: 'draw', amount: 2 }],
-  abilities: [{ trigger: { kind: 'dieRelic', faces: [3, 4] }, effects: [{ kind: 'gainEnergy', amount: 1 }] }],
+  abilities: [
+    { trigger: { kind: 'dieRelic', faces: [3, 4] }, effects: [{ kind: 'gainEnergy', amount: 1 }] },
+    { trigger: { kind: 'dieRelic', faces: [5] }, effects: [{ kind: 'setNextCardCost', amount: 2 }] },
+    { trigger: { kind: 'dieRelic', faces: [6] }, effects: [{ kind: 'setNextCardCost', amount: 0 }] },
+  ],
   text: 'On a 1 or 2: draw 2. On a 3 or 4: gain 1 Energy. On a 5: your next card this turn costs 2 Energy. On a 6: your next card this turn costs 0 Energy.' })
 boss({ id: 'sozu', name: 'Sozu', trigger: { kind: 'startOfTurn' },
   effects: [{ kind: 'gainEnergy', amount: 1 }], rule: 'You cannot gain Potions.',
@@ -543,6 +547,21 @@ export function createRelicInstance(defId: string): RelicInstance {
       'downfall_enchiridion', 'orrery', 'pandoras_box', 'tiny_house', 'forbidden_fruit',
     ].includes(defId) || undefined,
   }
+}
+
+export const TURN_REFRESH_RELICS: ReadonlySet<string> = new Set([
+  'charons_ashes', 'dollys_mirror', 'nilrys_codex', 'downfall_nilrys_codex', 'loaded_die', 'fuel_canister',
+])
+
+/** Combat and turn cooldowns expire when a fight ends; room and finite-use limits do not. */
+export function refreshCombatRelic(relic: RelicInstance): RelicInstance {
+  const def = relicDef(relic.defId)
+  let ready = relic
+  if (relic.spent && (def.activation === 'oncePerCombat' || TURN_REFRESH_RELICS.has(relic.defId))) {
+    ready = { ...ready, spent: false }
+  }
+  if (def.cubes !== undefined && relic.cubes !== def.cubes) ready = { ...ready, cubes: def.cubes }
+  return ready
 }
 
 export function relicDef(id: string): RelicDef {

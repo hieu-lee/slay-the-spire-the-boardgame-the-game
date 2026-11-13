@@ -3959,6 +3959,19 @@ function CombatScreenView({
     setPending(null)
   }
 
+  function withEvokeSlot(next: Pending, slot: number): Pending {
+    const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
+    const evokeSlots = [...next.evokeSlots, slot]
+    const orbs = chosenEvokeOrbs(def, viewer!, evokeSlots, state.die,
+      next.mode ?? undefined, next.effectEnergy ?? 0)
+    return {
+      ...next,
+      evokeSlots,
+      evokeEnemyUids: [...next.evokeEnemyUids, ...orbs.slice(next.evokeEnemyUids.length)
+        .map((orb) => orb === 'frost' ? null : undefined)],
+    }
+  }
+
   function stageOrCommit(next: Pending) {
     next = withAdjacentChoices(next)
     if (next.choiceCards?.length === 0 &&
@@ -3968,6 +3981,10 @@ function CombatScreenView({
     const def = effectiveCombatCardDef(
       faceOf(cardDef(next.card.defId), next.card.upgraded), next.corruptedShardMode ?? viewer!.guardianMode,
     )
+    if (def.id === 'dual_cast') {
+      const choice = nextEvokeChoice(def, viewer!, next.evokeSlots, state.die, next.mode ?? undefined, next.effectEnergy ?? 0)
+      if (choice?.options.length === 1) next = withEvokeSlot(next, choice.options[0]!.slot)
+    }
     const onlySlime = viewer!.slimes.length === 1 ? viewer!.slimes[0] : undefined
     if (onlySlime && !next.slimeChoiceConfirmed && next.slimeChoice?.minimum === 1 &&
       next.slimeChoice.amount === 1 && (def.cost !== 'X' || next.energySpent !== null) &&
@@ -4987,15 +5004,7 @@ function CombatScreenView({
     if (!pending || !pendingEvokeChoice || pendingEvokeTarget >= 0 || !choiceSatisfied) return
     const option = pendingEvokeChoice.options.find((candidate) => candidate.slot === slot)
     if (!option) return
-    const evokeSlots = [...pending.evokeSlots, slot]
-    const orbs = chosenEvokeOrbs(pendingDef!, viewer!, evokeSlots, state.die,
-      pending.mode ?? undefined, pending.effectEnergy ?? 0)
-    stageOrCommit({
-      ...pending,
-      evokeSlots,
-      evokeEnemyUids: [...pending.evokeEnemyUids, ...orbs.slice(pending.evokeEnemyUids.length)
-        .map((orb) => orb === 'frost' ? null : undefined)],
-    })
+    stageOrCommit(withEvokeSlot(pending, slot))
   }
 
   function onModeClick(mode: number) {

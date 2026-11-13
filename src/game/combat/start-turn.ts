@@ -66,7 +66,7 @@ import type { Enemy, OrbType, Player } from '../types.ts'
 import { clearSlimeTurn } from '../downfall/slime-boss.ts'
 import { shiftGuardianMode } from '../downfall/guardian.ts'
 import { downfallRelicBaseId } from '../downfall/items.ts'
-import { chosenDieRelicAbilities, relicDef } from '../relics.ts'
+import { chosenDieRelicAbilities, relicDef, TURN_REFRESH_RELICS } from '../relics.ts'
 
 const START_TURN_RELIC_ACTIVATIONS = new Set([
   'charons_ashes', 'dollys_mirror', 'fuel_canister', 'gambling_chip',
@@ -144,9 +144,6 @@ export function finishStartTurnDraw(next: CombatState, drewFrom: number, roll: b
     const confusion = snecko && enemyAbilities(enemyDef(snecko.defId, snecko.ascension))
       .find((ability) => ability.kind === 'confusion')
     if (confusion?.kind === 'confusion') player.enemyNextCardCost = confusion.byRoll[next.die] ?? null
-    if (player.relics.some((relic) => relic.defId === 'snecko_eye') && next.die >= 5) {
-      player.nextCardCost = next.die === 5 ? 2 : 0
-    }
   }
   next.log = [
     ...next.log.slice(0, drewFrom),
@@ -159,7 +156,7 @@ function continueStartTurnDraw(next: CombatState, drewFrom: number, pauseAfterDr
   for (const player of next.players) {
     if (player.dead) continue
     for (const relic of player.relics) {
-      if (['charons_ashes', 'dollys_mirror', 'nilrys_codex', 'downfall_nilrys_codex', 'loaded_die', 'fuel_canister'].includes(relic.defId)) relic.spent = false
+      if (TURN_REFRESH_RELICS.has(relic.defId)) relic.spent = false
     }
     drawInto(next, player, 5)
   }
@@ -1824,6 +1821,7 @@ export function startTurnOrderChoicePlayerId(
       inGroup('hit', 'rowHit', 'hitChoices'))
     if (strengthBeforeHit) definiteOrderOwner ??= player.id
     const possible = canDraw && kinds.some((set) => set.has('drawAndPlayFree')) && owned.length > 1 ||
+      distinct(inGroup('setNextCardCost'), inGroup('setNextCardCost')) ||
       distinct(inGroup('advance', 'retract', 'branch'), inGroup('advance', 'retract', 'branch')) ||
       distinct(inGroup('load', 'discountChamber', 'discardChamber', 'playChamber'),
         inGroup('load', 'discountChamber', 'discardChamber', 'playChamber')) ||

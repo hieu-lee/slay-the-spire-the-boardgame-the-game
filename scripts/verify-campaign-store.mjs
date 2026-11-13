@@ -40,6 +40,19 @@ try {
     assertEqual(restored.run.lastStand, true)
   })
 
+  const legacyRefresh = createRoom(store, { code: 'RELICS' })
+  const legacyLeader = joinRoom(legacyRefresh, { name: 'Cy', character: 'watcher' })
+  startRun(legacyRefresh, legacyLeader.token, { seed: 7335 })
+  legacyRefresh.run.phase = 'map'
+  legacyRefresh.run.players[0].relics = [{ defId: 'golden_eye', spent: true }, { defId: 'gambling_chip', spent: true },
+    { defId: 'holy_water', spent: false, cubes: 0 }]
+  saveStore(store)
+  const restoredRelics = createStore({ file }).rooms.get('RELICS').run.players[0].relics
+  check('restart refreshes combat relics left spent by an older server but keeps room cooldowns', () => {
+    assertDeepEqual(restoredRelics, [{ defId: 'golden_eye', spent: false }, { defId: 'gambling_chip', spent: true },
+      { defId: 'holy_water', spent: false, cubes: 2 }])
+  })
+
   const borrowed = createRoom(store, { code: 'BORROW' })
   borrowed.campaignBaseProgress = { ...borrowed.campaignBaseProgress,
     characters: { ...borrowed.campaignBaseProgress.characters, ironclad: 8, silent: 8 } }
