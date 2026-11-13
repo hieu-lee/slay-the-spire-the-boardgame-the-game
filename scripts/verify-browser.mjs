@@ -16351,16 +16351,10 @@ await page.evaluate((viewerId) => {
   debug.setRun(run)
 }, potionViewerId)
 const soloGive = page.locator('.outside-potions').getByRole('button', { name: 'Give Energy Potion', exact: true })
-await page.waitForFunction(() => {
-  const button = [...document.querySelectorAll('.outside-potions button')]
-    .find((candidate) => candidate.getAttribute('aria-label') === 'Give Energy Potion')
-  return button?.disabled && !button.hasAttribute('aria-expanded')
-})
-const soloGiveDisabled = await soloGive.isDisabled()
-const soloGiveExpanded = await soloGive.getAttribute('aria-expanded')
-check('a Potion cannot open an empty Give disclosure with no legal recipient', () => {
-  assert(soloGiveDisabled)
-  assertEqual(soloGiveExpanded, null)
+await soloGive.waitFor({ state: 'detached' })
+const soloGiveCount = await soloGive.count()
+check('solo Potion inventory hides the redundant Give control', () => {
+  assertEqual(soloGiveCount, 0)
 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__

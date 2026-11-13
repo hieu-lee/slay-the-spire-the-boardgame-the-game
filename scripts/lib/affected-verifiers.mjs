@@ -153,6 +153,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = ownerMap([
+  ['src/ui/OutsidePotionBar.tsx', ['verify-solo-potion-give-browser.mjs']],
   ['src/ui/CardInspectionDialog.tsx', ['verify-deck-inspection-browser.mjs']],
   ['src/ui/styles/card-inspection.css', ['verify-deck-inspection-browser.mjs']],
   ...['src/ui/PotionSlots.tsx', 'src/ui/chrome/potion-belt.css']
