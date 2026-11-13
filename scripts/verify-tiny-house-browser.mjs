@@ -90,7 +90,7 @@ await page.screenshot({ path: join(output, 'tiny-house-loot-horizontal-phone.png
 await page.setViewportSize({ width: 1440, height: 900 })
 
 await page.getByRole('button', { name: 'Add a card to your deck.' }).click()
-const claimedCardName = await page.locator('.reward-screen--card-choice .card').first().getAttribute('title')
+const claimedCardName = await page.locator('.reward-screen--card-choice .card').first().getAttribute('data-card-name')
 await page.locator('.reward-screen--card-choice .card').first().click()
 await page.getByRole('heading', { name: 'Tiny House', exact: true }).waitFor()
 await page.locator('button.loot-choice').click()
@@ -99,7 +99,7 @@ await picker.waitFor()
 const initialPicker = {
   cards: await picker.locator('.card-picker__grid .card').count(),
   back: await picker.getByRole('button', { name: 'Back' }).count(),
-  claimedCardName: await picker.locator('.card-picker__grid .card').first().getAttribute('title'),
+  claimedCardName: await picker.locator('.card-picker__grid .card').first().getAttribute('data-card-name'),
 }
 check('Tiny House then reuses the shared Upgrade picker', () => {
   assert(initialPicker.cards > 0)
