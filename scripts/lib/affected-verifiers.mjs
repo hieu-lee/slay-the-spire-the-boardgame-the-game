@@ -390,6 +390,8 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       else for (const candidate of scripts) selected.add(candidate)
     }
     if (file.startsWith('scripts/verify-') && file.endsWith('.mjs')) covered = true
+    // verify-architecture forbids any script from launching Playwright without the silent launcher; a browser-lane verifier or helper edit alone would never reach it in CI's light lane.
+    if (/^scripts\/.+\.(mjs|js|ts)$/.test(file) && scripts.includes('verify-architecture.mjs')) selected.add('verify-architecture.mjs')
     if (file.startsWith('scripts/')) {
       let browserCovered = false
       for (const script of browser) {

@@ -18,6 +18,13 @@ Before pushing `master`, require `node scripts/verify-all.mjs --changed=origin/m
 - If a regression is covered only by the legacy umbrella, extract it into a focused `verify-*-browser.mjs` script before relying on it. Focused local validation should finish in about a minute, not block iteration for 10-15 minutes.
 - A baseline failure is maintenance debt: fix the product or the test, and leave a focused regression check. Do not waive it as pre-existing and do not rerun the entire umbrella merely to classify it.
 
+## Silent browser testing
+
+- Always disable audible output during browser tests, screenshots, and manual browser checks so automation cannot interfere with the user's playing run.
+- Use `scripts/lib/profile-browser.mjs` for returning-player fixtures, or `scripts/lib/silent-browser.mjs` for fresh-profile fixtures. Do not launch Playwright directly.
+- Keep both HTML media and Web Audio output muted, including in headed browsers. Sound-specific tests may exercise playback and volume controls internally, but must never produce audible output.
+- Never mute the system, change the user's audio settings, or alter the user's running browser to silence a test. Apply muting only to the isolated automation session.
+
 ## WebMCP campaign runbook
 
 - A finished Slay the Spire run is not complete until its campaign result is explicitly recorded: after defeat, use `Record campaign result`; after victory, use `Stop and record result`.
