@@ -3974,6 +3974,10 @@ function CombatScreenView({
 
   function stageOrCommit(next: Pending) {
     next = withAdjacentChoices(next)
+    if (next.choiceCards?.length === 0 &&
+      (next.choice?.kind === 'scry' || next.choice?.kind === 'scryToHand')) {
+      next = { ...next, choiceConfirmed: true }
+    }
     const def = effectiveCombatCardDef(
       faceOf(cardDef(next.card.defId), next.card.upgraded), next.corruptedShardMode ?? viewer!.guardianMode,
     )
