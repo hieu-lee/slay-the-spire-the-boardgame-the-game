@@ -103,7 +103,7 @@ assert((await socketPanel.getAttribute('aria-describedby'))?.endsWith('-descript
   'Gem picker does not expose its host and unchosen-Gem rule to assistive technology')
 assert((await socketPanel.getByText(/Socket into Crystal Edge/).textContent())?.includes('Unchosen Gems'),
   'Gem picker does not identify its Socket host or unchosen-Gem rule')
-await socketPanel.locator('button[title="Ruby"]').click()
+await socketPanel.locator('.card[data-card-name="Ruby"]').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().pendingGuardianSockets.length === 0)
 const localGuardianSocket = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck
   .find((card) => card.uid === 'browser-guardian-socket')?.attachedGemId)
@@ -2603,6 +2603,8 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /\[Bet\]/ }).click()
+await page.getByRole('button', { name: 'Pay 2 Gold', exact: true }).click()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingRolls?.[window.__STS_DEBUG__.getRun().players[0].id]))
 const exactJoustPayment = {
   gold: await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold),
