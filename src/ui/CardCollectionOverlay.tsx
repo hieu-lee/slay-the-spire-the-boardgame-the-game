@@ -85,7 +85,10 @@ export function CardCollectionDialog({ cards, label, onClose, open = true, order
               {text} <span aria-hidden="true">{sort === key ? ascending ? '↑' : '↓' : '↕'}</span>
             </button>)}
         </div>
-        <div className="choice-modal__cards">
+        <div className="choice-modal__cards" onClickCapture={inspectable ? (event) => {
+          // Safari leaves a clicked button unfocused; the inspector restores focus to this card on close.
+          (event.target as Element).closest<HTMLElement>('.card')?.focus({ preventScroll: true })
+        } : undefined}>
           {open ? sortedCards.map((card) => <Card key={card.uid}
             card={viewUpgrades && cardDef(card.defId).upgrade ? { ...card, upgraded: true } : card}
             playable={inspectable} onClick={inspectable ? () => setInspectedUid(card.uid) : undefined} />) : null}

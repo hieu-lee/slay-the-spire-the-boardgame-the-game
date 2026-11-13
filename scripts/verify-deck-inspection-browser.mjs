@@ -46,7 +46,8 @@ try {
     const previous = inspection.getByRole('button', { name: 'Previous card' })
     const next = inspection.getByRole('button', { name: 'Next card' })
     const bash = grid.locator('.card[data-card-name="Bash"]')
-    await activate(bash)
+    // A programmatic click leaves the card unfocused, as Safari does for real clicks.
+    await bash.evaluate(element => { document.activeElement?.blur(); element.click() })
     await inspection.waitFor()
     assert.equal(await previous.count(), 0, 'the first card must not offer wraparound navigation')
     assert.equal(await checkbox.isChecked(), false)
