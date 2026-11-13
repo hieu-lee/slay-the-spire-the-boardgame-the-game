@@ -2279,32 +2279,16 @@ function CombatScreenView({
   useLayoutEffect(() => {
     const statuses = boardRef.current?.querySelectorAll<HTMLElement>('.seat__meta') ?? []
     // Keep Orbs above wrapped statuses without moving the hero. A row change remounts the seat, so rebind per seat.
-    // The board clips its children, so Orbs shrink instead of rising past its top edge.
     const measure = (element: HTMLElement) => {
-      const seat = element.closest<HTMLElement>('.seat__interactive')
-      const board = boardRef.current
-      if (!seat || !board) return
-      const height = element.offsetHeight
-      seat.style.setProperty('--temporary-status-height', `${height}px`)
-      seat.style.removeProperty('--orb-size-cap')
-      if (height === 0) return
-      const orbs = seat.querySelector('.orbs')?.getBoundingClientRect()
-      const orbSize = seat.querySelector('.orbs .token--orb')?.getBoundingClientRect().height
-      if (!orbs || !orbSize) return
-      const overflow = board.getBoundingClientRect().top - (orbs.top - orbSize * 0.16)
-      if (overflow > 0) seat.style.setProperty('--orb-size-cap', `${orbSize - overflow * 1.2}px`)
+      element.closest<HTMLElement>('.seat__interactive')?.style
+        .setProperty('--temporary-status-height', `${element.offsetHeight}px`)
     }
     statuses.forEach(measure)
     if (typeof ResizeObserver === 'undefined') return
-    // Board and seat resizes move the head too, so every geometry change remeasures all seats.
-    const observer = new ResizeObserver(() => statuses.forEach(measure))
-    const board = boardRef.current
-    if (board) observer.observe(board)
-    statuses.forEach(element => {
-      observer.observe(element)
-      const seat = element.closest('.seat__interactive')
-      if (seat) observer.observe(seat)
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) if (entry.target instanceof HTMLElement) measure(entry.target)
     })
+    statuses.forEach(element => observer.observe(element))
     return () => observer.disconnect()
   }, [state.combatId, statusSeats])
 

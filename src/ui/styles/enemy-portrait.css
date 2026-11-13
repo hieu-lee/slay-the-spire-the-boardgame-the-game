@@ -77,7 +77,7 @@
    clearance above the painted head for pending-effect and Potion chips. */
 .orbs {
   --orb-count: 3;
-  --orb-size: clamp(1.7rem, min(calc(11rem / var(--orb-count)), var(--orb-size-cap, 3rem)), 3rem);
+  --orb-size: clamp(1.7rem, calc(11rem / var(--orb-count)), 3rem);
   --orb-margin: calc((var(--orb-count) - 1) * 0.525rem + var(--orb-clearance));
   position: absolute;
   z-index: 4;

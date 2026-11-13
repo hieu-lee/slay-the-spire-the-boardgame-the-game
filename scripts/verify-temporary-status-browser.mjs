@@ -75,7 +75,7 @@ try {
           orbCount: meta.closest('.seat__interactive').querySelectorAll('.orbs .token--orb').length,
           orbsClear: [...meta.closest('.seat__interactive').querySelectorAll('.orbs .token--orb')].every(orb => {
             const rect = orb.getBoundingClientRect()
-            return rect.bottom + rect.height * 0.16 + 4 <= box.top && rect.top >= board.top
+            return rect.bottom + rect.height * 0.16 + 4 <= box.top && rect.top >= board.top - (getComputedStyle(meta.closest('.board')).overflowX === 'clip' ? Number.parseFloat(getComputedStyle(meta.closest('.board')).overflowClipMargin) : 0)
           }),
         }
       })
@@ -87,17 +87,6 @@ try {
       const after = await portrait.boundingBox()
       for (const key of ['x', 'y', 'width', 'height']) {
         assert(Math.abs(before[key] - after[key]) < 1, 'wrapping statuses must not move or resize the hero')
-      }
-      if (screen === 'horizontal-phone' && character === 'defect') {
-        for (const height of [500, 390]) {
-          await page.setViewportSize({ width: viewport.width, height })
-          await page.waitForFunction(() => {
-            const seat = document.querySelector('.seat__interactive')
-            const board = seat.closest('.board').getBoundingClientRect()
-            return [...seat.querySelectorAll('.orbs .token--orb')].every(orb => orb.getBoundingClientRect().top >= board.top) &&
-              Number.parseFloat(seat.style.getPropertyValue('--temporary-status-height')) === seat.querySelector('.seat__meta').offsetHeight
-          })
-        }
       }
       const measured = () => page.waitForFunction(() => {
         const meta = document.querySelector('.seat__meta')

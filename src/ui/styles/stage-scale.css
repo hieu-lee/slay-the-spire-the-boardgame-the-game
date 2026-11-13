@@ -18,6 +18,8 @@
 
   display: block;
   overflow: auto hidden;
+  /* Wrapped statuses raise Orbs; CombatScreen sets overflow: clip when the party fits, and this keeps them painted. */
+  overflow-clip-margin: 1.5rem;
   scrollbar-width: none;
 }
 
