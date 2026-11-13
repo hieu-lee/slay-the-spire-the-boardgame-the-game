@@ -41,7 +41,7 @@ try {
       next.combat.enemies = Array.from({ length: enemyCount }, (_, index) =>
         ({ ...next.combat.enemies[0], uid: `target-${index}`, hp: 30, maxHp: 30, block: 0, dead: false }))
       await page.evaluate(run => window.__STS_DEBUG__.setRun(run), next)
-      await page.locator(`.hand .card[title="${optional ? 'Lick+' : 'Lick'}"]`).click()
+      await page.locator(`.hand .card[data-card-name="${optional ? 'Lick+' : 'Lick'}"]`).click()
       if (optional) {
         await page.getByRole('button', { name: 'Confirm 0', exact: true }).click()
       } else if (slimes.length > 1) {
