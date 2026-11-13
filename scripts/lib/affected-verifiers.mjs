@@ -59,6 +59,11 @@ const focusedEngineOwners = ownerMap([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = ownerMap([
+  ['src/ui/chrome/rewards.css', ['verify-loot-browser.mjs', 'verify-boss-relic-picker-browser.mjs']],
+  ['src/ui/RelicRewardPicker.tsx', ['verify-boss-relic-picker-browser.mjs']],
+  ['src/ui/styles/relic-reward-picker.css', ['verify-boss-relic-picker-browser.mjs']],
+  ['src/ui/RewardScreen.tsx', ['verify-boss-relic-picker-browser.mjs', 'verify-loot-browser.mjs']],
+  ['src/ui/OnlineRewardScreen.tsx', ['verify-boss-relic-picker-browser.mjs']],
   ['src/ui/chrome/tooltips.css', ['verify-die-relic-browser.mjs']],
   ['src/ui/chrome/item-tiles.css', ['verify-map-header-browser.mjs']],
   ['src/ui/App.tsx', ['verify-ascension-sync-browser.mjs', 'verify-restricted-browser.mjs', 'verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
@@ -390,6 +395,8 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       else for (const candidate of scripts) selected.add(candidate)
     }
     if (file.startsWith('scripts/verify-') && file.endsWith('.mjs')) covered = true
+    // verify-architecture forbids any script from launching Playwright without the silent launcher; a browser-lane verifier or helper edit alone would never reach it in CI's light lane.
+    if (/^scripts\/.+\.(mjs|js|ts)$/.test(file) && scripts.includes('verify-architecture.mjs')) selected.add('verify-architecture.mjs')
     if (file.startsWith('scripts/')) {
       let browserCovered = false
       for (const script of browser) {
