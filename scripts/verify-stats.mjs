@@ -880,7 +880,9 @@ try {
     assert(source > 0)
     assertEqual(mounts[source - 1], '--ro-bind')
     assertEqual(mounts[source + 1], '/node-runtime/node')
-    assert(mounts.includes('/node-runtime/node'))
+    const chdir = mounts.indexOf('--chdir')
+    assert(chdir >= 0)
+    assertEqual(mounts[chdir + 2], '/node-runtime/node')
     assert(!mounts.includes(isolatedHome), 'the user home must not be mounted')
   })
   const envKeyStatus = spawnSync('bash', [calls[0].options.codexPathOverride, 'login', 'status'], {
