@@ -103,7 +103,7 @@ assert((await socketPanel.getAttribute('aria-describedby'))?.endsWith('-descript
   'Gem picker does not expose its host and unchosen-Gem rule to assistive technology')
 assert((await socketPanel.getByText(/Socket into Crystal Edge/).textContent())?.includes('Unchosen Gems'),
   'Gem picker does not identify its Socket host or unchosen-Gem rule')
-await socketPanel.locator('button[title="Ruby"]').click()
+await socketPanel.locator('.card[data-card-name="Ruby"]').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().pendingGuardianSockets.length === 0)
 const localGuardianSocket = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck
   .find((card) => card.uid === 'browser-guardian-socket')?.attachedGemId)
