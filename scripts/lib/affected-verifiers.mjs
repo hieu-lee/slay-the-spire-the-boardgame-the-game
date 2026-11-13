@@ -28,6 +28,8 @@ export function ownerMap(entries) {
 // too broad for dependency inference. Keep the few domain owners explicit so
 // an engine helper change does not launch the entire visual matrix.
 const focusedEngineOwners = ownerMap([
+  ...['src/game/relics.ts', 'src/game/run/rooms.ts', 'src/game/run/encounters.ts']
+    .map(file => [file, ['verify-relic-refresh-browser.mjs']]),
   ['src/game/types.ts', ['verify-skins.mjs']],
   // The registry: registering a skin extends every verifier below (they iterate SKINS), so a registry change reruns them all.
   ['src/game/skins.ts', ['verify-skins.mjs', 'verify-skin-browser.mjs', 'verify-test-skins-browser.mjs', 'verify-assets.mjs',
