@@ -1867,15 +1867,12 @@ await page.evaluate(() => {
   run.players = run.players.map((player) => ({ ...player, gold: 0 }))
   debug.setRun(run)
 })
-await page.getByRole('button', { name: /Card Removal Service/ }).click()
-await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
 const brokePartyControlsDisabled = await page.waitForFunction(() => {
   const buttons = [...document.querySelectorAll('button')]
   return buttons.some((button) => button.textContent?.includes('Anchor') && button.disabled) &&
-    buttons.some((button) => button.textContent?.includes('Remove') && button.disabled)
+    buttons.some((button) => button.textContent?.includes('Card Removal Service') && button.disabled)
 }).then((handle) => handle.jsonValue())
 check('Merchant disables purchases and removal when the whole party is broke', () => assert(brokePartyControlsDisabled))
-await page.getByRole('button', { name: 'Cancel' }).click()
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
