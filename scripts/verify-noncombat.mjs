@@ -17,6 +17,7 @@ import {
   createRun,
   decideCourier,
   enterRoom,
+  pendingRelicEligibleCards,
   pendingRelicPreview,
   revealCardReward,
   revealCourier,
@@ -574,6 +575,29 @@ check('The Courier run hook is once per combat and keeps its reveal stable', () 
   assertEqual(revealCourier(run, 'p1', 'potion'), run)
   assertEqual(revealed.itemDecks.relics.at(-1), 'old_coin')
 })
+
+for (const [relicId, type, cost] of [['war_paint', 'skill', 8], ['whetstone', 'attack', 7]]) {
+  check(`${relicId} bought from The Courier waits for combat to end, then resolves`, () => {
+    let run = postNeowRun(41, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
+    run.players[0].relics.push({ defId: 'the_courier', spent: false })
+    run.players[0].gold = cost
+    run.itemDecks.relics = [relicId, ...run.itemDecks.relics.filter((id) => id !== relicId)]
+    run = enterRoom(run, roomChoices(run)[0].id)
+    run = revealCourier(run, 'p1', 'relic')
+    run = decideCourier(run, 'p1', 'buy', { p1: cost })
+    assert(run.combat.players[0].relics.some((relic) => relic.defId === relicId && relic.pending))
+    assertEqual(pendingRelicPreview(run, 'p1'), null)
+    run = resolveCombat({ ...run, combat: { ...run.combat, phase: 'won' } })
+    assertEqual(run.phase, 'reward')
+    assertEqual(pendingRelicPreview(run, 'p1')?.relicId, relicId)
+    const eligible = pendingRelicEligibleCards(run.players[0], relicId)
+    assert(eligible.length > 0)
+    const resolved = resolvePendingRelic(run, 'p1', [eligible[0].uid])
+    assert(resolved !== run)
+    assert(!resolved.players[0].relics.some((relic) => relic.defId === relicId))
+    assert(resolved.players[0].deck.find((card) => card.uid === eligible[0].uid).upgraded)
+  })
+}
 
 check('The Courier bottoms combat-used Potions before its same-combat draw', () => {
   let run = postNeowRun(42, [{ id: 'p1', name: 'Ann', character: 'ironclad' }])
