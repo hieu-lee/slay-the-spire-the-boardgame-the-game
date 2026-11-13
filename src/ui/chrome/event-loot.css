@@ -133,13 +133,13 @@
   text-align: center;
 }
 
-.sts-scope .event-stage .event-loot .event-potion-replacement > button {
+.sts-scope .event-stage .event-loot .event-potion-replacement > .potion-chip > button {
   min-width: 2.5rem;
   min-height: 2.5rem;
   padding: 0.2rem;
 }
 
-.sts-scope .event-stage .event-loot .event-potion-replacement > button[aria-pressed='true'] {
+.sts-scope .event-stage .event-loot .event-potion-replacement > .potion-chip > button[aria-pressed='true'] {
   outline: 2px solid #e36e4f;
   outline-offset: 1px;
 }

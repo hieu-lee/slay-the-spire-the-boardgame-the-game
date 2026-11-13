@@ -92,7 +92,7 @@ try {
     await targets.waitFor()
     assert.equal(await targets.getByRole('button').count(), 2, `${name}: Grudge must offer both enemies`)
     await page.screenshot({ path: `${out}/${name}-curse-target.png` })
-    await targets.getByRole('button').first().click()
+    await targets.getByRole('button', { name: /Jaw Worm #1$/ }).click()
     await page.waitForFunction(() => {
       const combat = window.__STS_DEBUG__.getRun().combat
       return combat.phase === 'player' && combat.players[0].chamber[0]?.defId === 'hermit_grudge'
@@ -148,9 +148,9 @@ try {
       curseSphere.players, [enemy('e0', 0), enemy('e1', 1)], 'setup-sphere-curse'))
     await page.evaluate((next) => window.__STS_DEBUG__.setRun(next), curseSphere)
     const cursePicker = page.getByRole('group', { name: 'Load 1 card' })
-    await cursePicker.getByRole('button', { name: 'Load Grudge at Jaw Worm (row 2)' }).scrollIntoViewIfNeeded()
+    await cursePicker.getByRole('button', { name: 'Load Grudge at Jaw Worm #2' }).scrollIntoViewIfNeeded()
     await page.screenshot({ path: `${out}/${name}-sphere-curse-target.png` })
-    await cursePicker.getByRole('button', { name: 'Load Grudge at Jaw Worm (row 2)' }).click()
+    await cursePicker.getByRole('button', { name: 'Load Grudge at Jaw Worm #2' }).click()
     await page.waitForFunction(() => {
       const prepared = window.__STS_DEBUG__.getRun().roomState?.preparedCombat
       return prepared?.pendingHermitSetupLoads.length === 0 && prepared.startTurnProgress?.pauseAfterDraw &&

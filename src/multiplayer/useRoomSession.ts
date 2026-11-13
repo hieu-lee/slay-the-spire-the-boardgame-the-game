@@ -123,6 +123,7 @@ export type VisibleCombat = {
   /** Slayer Pack: a Ritual Dagger+ reveal is null for everyone but its owner. */
   pendingSlayerChoices?: CombatState['pendingSlayerChoices']
   playedCardsThisTurn: PlayedCard[]
+  viewerStanceChangedThisTurn?: boolean
   presentationEvents: CombatPresentationEvent[]
   pendingSummons: {
     sourceUid: string
