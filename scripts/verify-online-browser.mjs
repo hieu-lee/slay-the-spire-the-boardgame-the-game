@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium, setTestUsername } from './lib/profile-browser.mjs'
 import { createServer as createViteServer } from 'vite'
 import { createRoomServer } from './room-server.mjs'
-import { createCombat, defaultStartTurnChoices } from '../src/game/combat.ts'
+import { createCombat, defaultStartTurnChoices, enemyLabel } from '../src/game/combat.ts'
 import { bruiserSlime } from '../src/game/downfall/slime-boss.ts'
 import { createRng } from '../src/game/rng.ts'
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
@@ -2035,7 +2035,8 @@ try {
   rooms.publishRoom(code)
   const dieRetargetPrompt = a.getByRole('region', { name: 'Die Relic card choice' })
   await dieRetargetPrompt.getByText('Choose a new enemy target').waitFor()
-  await dieRetargetPrompt.locator('div').getByRole('button').first().click()
+  await dieRetargetPrompt.locator('div').getByRole('button',
+    { name: enemyLabel(liveRoom.run.combat.enemies, dieRetarget), exact: true }).click()
   await dieRetargetPrompt.getByRole('button', { name: 'Resolve Duality' }).click()
   await dieRetargetPrompt.waitFor({ state: 'hidden' })
   check('a target-only die Relic retry is playable through the online UI', () => {
