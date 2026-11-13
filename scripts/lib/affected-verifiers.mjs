@@ -28,6 +28,8 @@ export function ownerMap(entries) {
 // too broad for dependency inference. Keep the few domain owners explicit so
 // an engine helper change does not launch the entire visual matrix.
 const focusedEngineOwners = ownerMap([
+  ...['src/game/relics.ts', 'src/game/run/rooms.ts', 'src/game/run/encounters.ts']
+    .map(file => [file, ['verify-relic-refresh-browser.mjs']]),
   ['src/game/types.ts', ['verify-skins.mjs']],
   // The registry: registering a skin extends every verifier below (they iterate SKINS), so a registry change reruns them all.
   ['src/game/skins.ts', ['verify-skins.mjs', 'verify-skin-browser.mjs', 'verify-test-skins-browser.mjs', 'verify-assets.mjs',
@@ -57,6 +59,11 @@ const focusedEngineOwners = ownerMap([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = ownerMap([
+  ['src/ui/chrome/rewards.css', ['verify-loot-browser.mjs', 'verify-boss-relic-picker-browser.mjs']],
+  ['src/ui/RelicRewardPicker.tsx', ['verify-boss-relic-picker-browser.mjs']],
+  ['src/ui/styles/relic-reward-picker.css', ['verify-boss-relic-picker-browser.mjs']],
+  ['src/ui/RewardScreen.tsx', ['verify-boss-relic-picker-browser.mjs', 'verify-loot-browser.mjs']],
+  ['src/ui/OnlineRewardScreen.tsx', ['verify-boss-relic-picker-browser.mjs']],
   ['src/ui/chrome/tooltips.css', ['verify-die-relic-browser.mjs']],
   ['src/ui/chrome/item-tiles.css', ['verify-map-header-browser.mjs']],
   ['src/ui/App.tsx', ['verify-ascension-sync-browser.mjs', 'verify-restricted-browser.mjs', 'verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
@@ -131,13 +138,13 @@ const focusedUiOwners = ownerMap([
   ]],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-defect-chan-evoke-browser.mjs']],
   ['src/ui/styles/compendium.css', ['verify-compendium-browser.mjs']],
-  ['src/ui/styles/prompt.css', ['verify-hermit-combo-browser.mjs']],
+  ['src/ui/styles/prompt.css', ['verify-hermit-combo-browser.mjs', 'verify-choice-backdrop-browser.mjs']],
   ['src/ui/TokenRow.tsx', [
     'verify-turn-targets-browser.mjs', 'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs',
   ]],
   ['src/ui/styles/enemy-portrait.css', ['verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs', 'verify-end-turn-drag-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
-  ['src/ui/styles/stage-scale.css', ['verify-act-four-facing-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs']],
+  ['src/ui/styles/stage-scale.css', ['verify-act-four-facing-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs', 'verify-temporary-status-browser.mjs']],
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = ownerMap([
@@ -390,6 +397,8 @@ export function affectedVerifiers(root, changedFiles, scripts) {
       else for (const candidate of scripts) selected.add(candidate)
     }
     if (file.startsWith('scripts/verify-') && file.endsWith('.mjs')) covered = true
+    // verify-architecture forbids any script from launching Playwright without the silent launcher; a browser-lane verifier or helper edit alone would never reach it in CI's light lane.
+    if (/^scripts\/.+\.(mjs|js|ts)$/.test(file) && scripts.includes('verify-architecture.mjs')) selected.add('verify-architecture.mjs')
     if (file.startsWith('scripts/')) {
       let browserCovered = false
       for (const script of browser) {

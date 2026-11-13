@@ -153,25 +153,31 @@ export function resolveEnemyTargets(
 }
 
 /**
- * What to call an enemy in the log.
- *
- * A four-player board routinely spawns two of the same creature, and "Cultist
- * is dead" then names a tile nobody can identify. The row disambiguates only
- * when it needs to, so a single Cultist stays "Cultist".
+ * Shared board, target-picker and log names. Include defeated enemies so
+ * surviving duplicates keep their numbers when a neighbour dies.
  */
-type LabeledEnemy = Pick<Enemy, 'uid' | 'defId' | 'row' | 'ascension'>
+type LabeledEnemy = Pick<Enemy, 'uid' | 'defId' | 'row' | 'ascension' | 'copy'>
+
+const sameNameAs = (enemies: readonly LabeledEnemy[], name: string) =>
+  enemies.filter((other) => enemyDef(other.defId).name === name)
+
+// Enemies present from the start count by position among themselves; a summon
+// carries the number it was given, since it can be inserted before the boss.
+function enemyNumber(sameName: readonly LabeledEnemy[], enemy: LabeledEnemy): number {
+  return enemy.copy ?? sameName.filter((other) => other.copy === undefined)
+    .findIndex((other) => other.uid === enemy.uid) + 1
+}
+
+export function nextEnemyCopy(enemies: readonly LabeledEnemy[], name: string): number {
+  const sameName = sameNameAs(enemies, name)
+  return Math.max(0, ...sameName.map((other) => enemyNumber(sameName, other))) + 1
+}
 
 export function enemyLabel(enemies: readonly LabeledEnemy[], enemy: LabeledEnemy): string {
   const name = enemyDef(enemy.defId, enemy.ascension).name
-  const sameName = enemies.filter((other) => enemyDef(other.defId).name === name)
+  const sameName = sameNameAs(enemies, name)
   if (sameName.length <= 1) return name
-  const sameRow = sameName.filter((other) => other.row === enemy.row)
-  // The row is the natural way to tell two of a creature apart, but a row card
-  // routinely puts both of them in the SAME row -- and then both print
-  // "Cultist (row 1)" and the log reads as striking a corpse. Fall back to a
-  // position within the row, which is the only thing left that separates them.
-  if (sameRow.length <= 1) return `${name} (row ${enemy.row + 1})`
-  return `${name} (row ${enemy.row + 1}, #${sameRow.findIndex((other) => other.uid === enemy.uid) + 1})`
+  return `${name} #${enemyNumber(sameName, enemy)}`
 }
 
 /**
