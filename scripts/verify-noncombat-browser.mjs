@@ -1351,8 +1351,7 @@ const stackedRoomScreens = await page.evaluate(() => {
     return counts
   })()
 })
-// Boss Relics are ordinary claimable Loot rows, matching the other post-combat
-// rewards while remaining shared across the party.
+// Boss relics have one entry in Loot; the separate picker owns the actual choices.
 const bossRelicShape = await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const before = structuredClone(debug.getRun())
@@ -1389,14 +1388,14 @@ const bossRelicShape = await page.evaluate(() => {
       // the app's global icon size is 1.8rem — which left a 28px relic adrift in
       // a 218px pick until the picker sized it itself.
       art: Math.round(Math.min(...picks.map((pick) =>
-        pick.querySelector('.item-icon-image')?.getBoundingClientRect().width ?? 0), Infinity)),
+        pick.querySelector('.loot-choice__icon img')?.getBoundingClientRect().width ?? 0), Infinity)),
     }
     debug.setRun(before)
     done(result)
   })))
 })
-check('boss Relics render as three readable, hittable Loot choices', () => {
-  assertEqual(bossRelicShape.picks, 3, 'boss Relics did not render three Loot choices')
+check('boss Relics render as one readable, hittable Loot entry', () => {
+  assertEqual(bossRelicShape.picks, 1, 'boss Relics did not collapse to one Loot entry')
   assert(bossRelicShape.spread <= 2, `boss relic picks differ in width by ${bossRelicShape.spread}px`)
   assert(bossRelicShape.named, 'a boss Relic Loot choice omitted its name')
   assert(bossRelicShape.inside, 'a boss relic pick escaped the reward screen')
