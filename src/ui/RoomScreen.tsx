@@ -1217,7 +1217,7 @@ function EventScreen({
             {fullBelt ? <p className="event-loot__note">{fullBelt.id === player.id ? 'Your belt is full' : `${fullBelt.name}’s belt is full`}</p> : null}
             {swap ? <fieldset className="event-potion-replacement" aria-label="Replace">
               <legend>Belt full · swap out</legend>
-              {swapChoices(at).map(({ id, heldIndex }) => <PotionTooltipAnchor key={`${id}-${heldIndex}`} id={id}>
+              {swapChoices(at).map(({ id, heldIndex }) => <PotionTooltipAnchor key={`${id}-${heldIndex}`} id={id} confirmLabel="swap it out">
                 <button type="button" aria-pressed={potionReplacementIds[at] === id}
                   aria-description={potionDef(id).text}
                   onClick={() => setPotionReplacementIds((current) => current.map((held, idIndex) => idIndex === at ? id : held))}>

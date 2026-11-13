@@ -188,8 +188,12 @@ try {
       await page.keyboard.press('Escape')
     }
     const replacement = swaps.getByRole('button').first()
-    if (options.hasTouch) await replacement.tap()
-    else await replacement.click()
+    if (options.hasTouch) {
+      await replacement.tap()
+      assert.equal(await replacement.getAttribute('aria-pressed'), 'false', `${screen}: first tap only reads the potion rules`)
+      await page.locator('.potion-tip').filter({ hasText: /Tap again to swap it out/i }).waitFor()
+      await replacement.tap()
+    } else await replacement.click()
     assert.equal(await replacement.getAttribute('aria-pressed'), 'true')
     assert.deepEqual(await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].potions), heldPotions)
     await page.getByRole('button', { name: /Resolve rewards/ }).click()

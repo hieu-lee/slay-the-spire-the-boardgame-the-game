@@ -94,19 +94,20 @@ export function relicNote(relic: RelicInstance): string | undefined {
 }
 
 /** The bar's exact tooltip content, portalled out of scrollable relic choices. */
-export function RelicTooltipAnchor({ relic, children, className, focusable = false, hoverable = false }: {
+export function RelicTooltipAnchor({ relic, children, className, focusable = false, hoverable = false, confirmLabel }: {
   relic: RelicInstance
   children: ReactNode
   className?: string
   focusable?: boolean
   hoverable?: boolean
+  confirmLabel?: string
 }) {
   const def = relicDef(relic.defId)
   const note = relicNote(relic)
   return <PotionTooltipAnchor id={relic.defId} name={def.name} kindLabel={RELIC_POOL_LABEL[def.pool]}
     text={[def.text, distinctRule(def), note].filter(Boolean).join(' ')}
     tooltipContent={<RelicTooltipContent id={relic.defId} note={note} />}
-    className={className} focusable={focusable} hoverable={hoverable}>
+    className={className} focusable={focusable} hoverable={hoverable} confirmLabel={confirmLabel}>
     {children}
   </PotionTooltipAnchor>
 }
