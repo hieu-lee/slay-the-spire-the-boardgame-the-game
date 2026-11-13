@@ -94,7 +94,7 @@ try {
     await inspect(screen, 'solo-shield', { cues: 1 })
     assert.match(await page.locator('.seat').getAttribute('aria-label'), /Facing Spire Shield/)
     check(/16/.test(await enemy('shield').locator('.enemy__intent').innerText()), `${screen}: Shield intent ignores its actual Vulnerable target in row 2`)
-    const strike = page.locator('.hand .card[title="Strike"]')
+    const strike = page.locator('.hand .card[data-card-name="Strike"]')
     await activate(strike)
     if (phone) {
       assert(await strike.evaluate(card => document.activeElement === card), 'the first tap must reveal the card')
