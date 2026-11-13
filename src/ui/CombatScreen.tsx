@@ -4459,9 +4459,9 @@ function CombatScreenView({
     setArmedEndTurnAbilityId((current) => current === ability.id ? null : ability.id)
   }
 
-  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, chamber = false) {
+  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, playable: boolean, chamber = false) {
     if (event.button !== 0) return
-    const canDrag = chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card)
+    const canDrag = playable && (chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card))
     const staged = chamber ? stageHermitChamberViewer(viewer!, card,
       state.pendingHermitChamberPlays?.[0]?.playerId === viewerId &&
       state.pendingHermitChamberPlays[0].cardUids[0] === card.uid &&
@@ -7745,7 +7745,7 @@ function CombatScreenView({
                 : activateCard}
               onPointerDown={handPicksOnly && !chamberCard
                 ? undefined
-                : (event) => onCardPointerDown(card, event, chamberCard)}
+                : (event, playable) => onCardPointerDown(card, event, playable, chamberCard)}
               onPointerMove={handPicksOnly && !chamberCard ? undefined : onCardPointerMove}
               onPointerUp={handPicksOnly && !chamberCard ? undefined : finishCardDrag}
               onPointerCancel={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}
