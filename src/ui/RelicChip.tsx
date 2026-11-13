@@ -93,7 +93,11 @@ export function relicNote(relic: RelicInstance): string | undefined {
         : undefined
 }
 
-/** The bar's exact tooltip content, portalled out of scrollable relic choices. */
+/**
+ * The bar's exact tooltip content, portalled out of scrollable relic choices. Choice
+ * lists leave `hoverable` off on purpose: a hit-testable panel opened below one
+ * option would sit on top of the next option the pointer is travelling to.
+ */
 export function RelicTooltipAnchor({ relic, children, className, focusable = false, hoverable = false, confirmLabel }: {
   relic: RelicInstance
   children: ReactNode

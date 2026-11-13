@@ -5383,7 +5383,7 @@ function CombatScreenView({
         ? `${state.combatId}:${state.turn}` : undefined}
       onClick={(event) => {
         if (!(event.target instanceof Element) || event.target.closest(
-          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips',
+          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips, .die-relic__head, .potion-tip',
         )) return
         if (!pending || usingCard || pending.choiceCards || pending.card.uid === forcedCardUid ||
           (!pending.cardInHand && !pending.chamberPlay)) return
