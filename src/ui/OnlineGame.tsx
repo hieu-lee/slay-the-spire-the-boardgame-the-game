@@ -765,6 +765,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const discardOwner = snapshot.seats.find((seat) => seat.playerId === snapshot.startTurnDiscard?.playerId)
   const foreignStartTurnDiscard = discardOwner !== undefined && discardOwner.playerId !== snapshot.you.playerId
   const foreignInteractionLock = blockingForeignCardChoice || foreignTrigger || foreignStartTurnDiscard
+  const mutationsLocked = giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const headerViewer = run.phase === 'combat' ? combatViewer ?? viewer : viewer
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
@@ -789,7 +790,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {run.phase === 'combat' && combat ? <CourierPeek placement="header" players={combat.players} viewerId={snapshot.you.playerId} usedBy={run.courier.usedBy}
             active={!run.courier.offer && courierPeekPhase(combat) && room.connection === 'connected' && !foreignInteractionLock && !giveUpStartPending}
             onReveal={revealCourierOnline} /> : null}
-          {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} /> : null}
+          {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`}
+            die={run.phase === 'combat' ? run.combat?.die : undefined} /> : null}
           {viewer && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
           !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
             <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
@@ -911,8 +913,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       </p> : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock || undefined}
-        aria-disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock || undefined}>
+      <div className="online-mutations" inert={mutationsLocked || undefined}
+        aria-disabled={mutationsLocked || undefined}>
       {run.phase === 'combat' && combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           key={combatResyncs}
@@ -993,7 +995,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       ) : pendingSocket && pendingSocketOwner ? <section className="room-screen" role="status">
         Waiting for {pendingSocketOwner.name} to socket a Guardian Gem.
       </section> : null}
-      {run.phase !== 'neow' && !viewerRewardPending &&
+      {run.phase !== 'neow' && run.phase !== 'combat' && !viewerRewardPending &&
       !snapshot.pendingRelic && snapshot.pendingRelicStatus ? <section className="room-screen" role="status">
         Waiting for {snapshot.pendingRelicStatus.playerName} to resolve{' '}
         {relicDef(snapshot.pendingRelicStatus.relicId).name}.
@@ -1045,6 +1047,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           run={run}
           viewerId={snapshot.you.playerId}
           waitingForTeammate={Boolean(snapshot.pendingTeammateAcquisitionPlayerId)}
+          locked={mutationsLocked}
           onAction={room.act}
         />
       ) : null}

@@ -88,6 +88,33 @@ try {
     await capture('solo')
     await page.getByRole('button', { name: 'Reveal Card Reward', exact: true }).click()
     await page.locator('.reward-screen--card-choice').waitFor()
+    if (!phone) {
+      const card = page.locator('.reward-screen__cards .card').first()
+      await page.locator('.reward-screen--card-choice').evaluate(async element =>
+        Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)))
+      const previousMotion = await page.evaluate(() => document.documentElement.dataset.reducedMotion)
+      for (const mode of ['system', 'game']) {
+        await page.emulateMedia({ reducedMotion: mode === 'system' ? 'reduce' : 'no-preference' })
+        await page.evaluate(mode => { document.documentElement.dataset.reducedMotion = String(mode === 'game') }, mode)
+        await page.mouse.move(5, 5)
+        const resting = await card.boundingBox()
+        await card.hover()
+        const hovered = await card.boundingBox()
+        assert(Math.abs(hovered.width / resting.width - 1.25) < .01,
+          `${mode}: reduced motion suppressed Neow reward inspection`)
+        assert(await card.evaluate(element => getComputedStyle(element).transitionDuration
+          .split(',').every(duration => parseFloat(duration) <= .001)),
+        `${mode}: reduced-motion inspection must not animate`)
+        await page.mouse.move(5, 5)
+        assert(Math.abs((await card.boundingBox()).width - resting.width) < 1,
+          `${mode}: reduced-motion inspection must return immediately`)
+      }
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await page.evaluate(previous => {
+        if (previous === undefined) delete document.documentElement.dataset.reducedMotion
+        else document.documentElement.dataset.reducedMotion = previous
+      }, previousMotion)
+    }
     await page.screenshot({ path: join(out, `reward-${viewport.width}.png`) })
     await page.getByRole('button', { name: 'Skip', exact: true }).click()
     await page.locator('.neow-options').waitFor()

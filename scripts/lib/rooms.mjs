@@ -161,7 +161,7 @@ import {
   scryPlayCardPlayable,
 } from '../../src/game/combat.ts'
 import { previewTinyHouseRewardCard } from '../../src/game/run/relic-acquisition.ts'
-import { chosenDieRelicAbilities } from '../../src/game/relics.ts'
+import { chosenDieRelicAbilities, refreshCombatRelic } from '../../src/game/relics.ts'
 import { reachesEnemy } from '../../src/game/combat/queries.ts'
 import { discardNeedsChoice, discardTopNeedsChoice } from '../../src/game/combat/end-turn.ts'
 import {
@@ -465,7 +465,11 @@ export function createStore({ file, restartRecovery = false, restartReconnectMs 
         if (recordedRuns.length) room.recordedRuns = recordedRuns
         else delete room.recordedRuns
         if (room.run) {
-          for (const player of room.run.players ?? []) normalizeLegacyPlayer(player)
+          for (const player of room.run.players ?? []) {
+            normalizeLegacyPlayer(player)
+            // Older servers left spent combat relics face down between fights; an active combat keeps its own state.
+            if (room.run.phase !== 'combat') player.relics = player.relics.map(refreshCombatRelic)
+          }
           assignPendingRelicIds(room.run)
           for (const player of room.run.combat?.players ?? []) normalizeLegacyPlayer(player)
           for (const player of room.run.roomState?.preparedCombat?.players ?? []) normalizeLegacyPlayer(player)
@@ -5614,7 +5618,8 @@ export function snapshotFor(room, seatToken, shared = {}) {
   }
   const visibleRun = run && visibleCombat !== run.combat ? { ...run, combat: visibleCombat } : run
   const viewerPlayer = run?.players.find((player) => player.id === viewerId)
-  const pendingOwner = run?.players.find((player) => player.relics.some((relic) => relic.pending))
+  const pendingOwner = run?.phase === 'combat' ? undefined
+    : run?.players.find((player) => player.relics.some((relic) => relic.pending))
   const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
   const giveUpVote = activeGiveUpVote(room)
   const postRollPending = run?.combat?.phase === 'start' && roomPostRollChoicePending(room)
