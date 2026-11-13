@@ -8,7 +8,7 @@ import type { CombatState } from '../game/combat.ts'
 import { relicIconPath } from '../game/assets.ts'
 import { chosenDieRelicAbilities, relicDef } from '../game/relics.ts'
 import type { Enemy, Player } from '../game/types.ts'
-import { relicOptionLabel, RelicTooltipAnchor } from './RelicChip.tsx'
+import { relicNote, relicOptionLabel, RelicTooltipAnchor } from './RelicChip.tsx'
 
 export type DieRelicChoice = {
   owner: Player
@@ -81,7 +81,7 @@ export function DieRelicChoiceList({ state, choices, pressed, onChoose }: {
         if (group.length === 1 && !first.enemy && !first.targetPlayer) {
           return <RelicTooltipAnchor key={key} relic={held} className="die-relic-choice">
             <button type="button" className="die-relic die-relic--single"
-            aria-description={relicOptionLabel(first.defId)}
+            aria-description={relicOptionLabel(first.defId, false, relicNote(held))}
             aria-pressed={pressed?.(first)} onClick={() => onChoose(first)}>
             {heading}
             </button>

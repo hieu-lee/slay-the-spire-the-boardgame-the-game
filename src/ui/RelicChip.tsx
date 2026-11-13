@@ -86,7 +86,7 @@ function RelicTooltipContent({ id, note }: { id: string; note?: string }) {
   )
 }
 
-function relicNote(relic: RelicInstance): string | undefined {
+export function relicNote(relic: RelicInstance): string | undefined {
   return relic.spent ? 'Face down — already used.'
     : relic.uses === 0 ? 'Used up.'
       : relic.uses !== undefined ? `${relic.uses} use${relic.uses === 1 ? '' : 's'} remaining.`
@@ -126,9 +126,9 @@ export function RelicTooltipAnchor({ relic, children, className, focusable = fal
  * "(0 Gold)" rather than going silent — on The Moai Head that zero is the whole
  * decision, and it is the case a plain `cost === undefined` check hid.
  */
-export function relicOptionLabel(id: string, withCost = false): string {
+export function relicOptionLabel(id: string, withCost = false, note?: string): string {
   const def = relicDef(id)
-  return `${def.name}${withCost ? ` (${def.cost ?? 0} Gold)` : ''} — ${def.text}`
+  return `${def.name}${withCost ? ` (${def.cost ?? 0} Gold)` : ''} — ${def.text}${note ? ` ${note}` : ''}`
 }
 
 /**
@@ -150,11 +150,11 @@ export function relicOptionLabel(id: string, withCost = false): string {
  * touch screen-reader player, which is the opposite of the point. It joins the
  * button's accessible name instead.
  */
-export function RelicOptionText({ id, withCost = false }: { id: string; withCost?: boolean }) {
+export function RelicOptionText({ id, withCost = false, note }: { id: string; withCost?: boolean; note?: string }) {
   const def = relicDef(id)
   return (
     <span className="relic-option__text">
-      {withCost ? `(${def.cost ?? 0} Gold) ` : ''}{def.text}
+      {withCost ? `(${def.cost ?? 0} Gold) ` : ''}{def.text}{note ? ` ${note}` : ''}
     </span>
   )
 }
