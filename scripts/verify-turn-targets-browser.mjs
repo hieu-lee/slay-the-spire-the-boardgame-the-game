@@ -100,13 +100,12 @@ try {
       assert.deepEqual(await hp(), [30 - damage, 30 - damage])
       assert.equal((await combat()).players[0].orbs[slot], null, 'Dual Cast must consume its selected Orb')
     }
-    await load({ player: { hand: [c('single-frost-dual', 'dual_cast')], orbs: [null, 'frost', null] } })
+    // A second playable card keeps auto end turn from clearing the Frost Block mid-assertion.
+    await load({ player: { hand: [c('single-frost-dual', 'dual_cast'), c('spare-strike', 'strike_defect')], orbs: [null, 'frost', null] } })
     await page.locator('.hand .card[title="Dual Cast"]').click()
-    // Block is gone once auto end turn fires, so catch it in the page the moment the card resolves.
-    await page.waitForFunction(() => {
-      const player = window.__STS_DEBUG__.getRun().combat.players[0]
-      return player.hand.length === 0 && player.block === 2 && player.orbs.every((orb) => orb === null)
-    }, undefined, { polling: 'raf' })
+    await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 1)
+    assert.equal((await combat()).players[0].block, 2, 'one Frost Orb must resolve both Evokes without an Orb-picker click')
+    assert.deepEqual((await combat()).players[0].orbs, [null, null, null])
 
     // A card Evoke still offers a real choice when several Orbs are channeled.
     await load({ player: { hand: [c('dual', 'dual_cast')], orbs: ['lightning', 'frost', 'dark'] } })
