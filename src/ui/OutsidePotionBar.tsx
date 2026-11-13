@@ -6,6 +6,7 @@ import type { Player } from '../game/types.ts'
 import type { RuleSet } from '../game/meta.ts'
 import { ItemImage } from './ItemImage.tsx'
 import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
+import { PotionSlots } from './PotionSlots.tsx'
 
 type Props = {
   players: Player[]
@@ -41,8 +42,8 @@ export function OutsidePotionBar({ players, viewerId, ascension, ruleset, disabl
   // reversible, which is nothing to read first and nothing to promise.
   const choosingReplacement = (index: number, id: string) =>
     replacing?.context === inventoryContext && replacing.index === index && replacing.id === id
-  if (!viewer?.potions.length) return null
-  return <aside className="outside-potions" aria-label="Potion inventory" aria-disabled={disabled || undefined}>
+  if (!viewer) return null
+  return <PotionSlots player={viewer} ascension={ascension} disabled={disabled}>
     <strong>Potions</strong>
     {viewer.potions.map((id, index) => <div className="outside-potions__item" key={`${id}-${index}`}>
       {id !== 'blood_potion' && id !== 'entropic_brew' ? <PotionIcon id={id} /> : null}
@@ -93,5 +94,5 @@ export function OutsidePotionBar({ players, viewerId, ascension, ruleset, disabl
           </button>)}
       </div> : null}
     </div>)}
-  </aside>
+  </PotionSlots>
 }

@@ -19,17 +19,19 @@
 /* Event card pickers name a single card and nothing else, so they keep the
    key's default height and just take a tighter gutter. */
 .sts-scope .event-cards button { padding: 0.4rem 0.8rem; }
+.sts-scope .event-cards > .event-relic-choice { max-width: 100%; }
+.sts-scope .event-relic-choice > button { max-width: 100%; }
 
 /* A relic option button shows an icon and a name, and kept its printed rules in
-   a `title` — the one tooltip a touchscreen cannot open. These buttons ask
+   a hover tooltip. These buttons ask
    which relic to give up or trade, so on a phone the decision was being made
    blind. The prose is always in the DOM (see RelicOptionText) and appears only
-   where there is no hover to open the `title` with, which is exactly the
+   where there is no hover, which is exactly the
    substitution the merchant shelves make in chrome/merchant-rug.css.
 
    Hidden with `display: none` rather than clipped, which takes it out of the
    accessible tree along with the view. That is right only on a hover device,
-   where the `title` is reachable and printing the same sentence again would be
+   where the tooltip is reachable and printing the same sentence again would be
    duplicate clutter. Where it IS shown it joins the button's accessible name on
    purpose — see RelicOptionText, which explains why a `title` cannot be relied
    on to carry these rules on a phone. */
@@ -115,7 +117,8 @@
 
    Local grid shell: every row gap is 8px, so any band that follows another row
    needs -0.5rem. Only a band sitting directly under the HEADER also has to
-   cancel the header's own 12px `margin-bottom`, for -1.25rem.
+   cancel the header's own 12px `margin-bottom`, for -1.25rem. Dialogs and
+   hidden siblings do not occupy a row and must not break that adjacency.
    Below: a band in the middle track has the 8px gap plus the shell's 16px
    padding under it (-1.5rem); a band that is the LAST track has only the
    padding (-1rem).
@@ -123,11 +126,13 @@
    already touches whatever is above (0), while below it the shell's trailing
    gap is still there (-1.5rem).
 
-   All of these tie on specificity and resolve by SOURCE ORDER — keep the
-   header-adjacent and online rules after the general ones. */
+   Keep the header-adjacent and online rules after the general ones. */
 .sts-scope .map { margin-top: -0.5rem; margin-bottom: -1rem; }
 
-.sts-scope .app-shell__header + .map { margin-top: -1.25rem; margin-bottom: -1.5rem; }
+.app-shell.sts-scope > .map:where(:nth-child(2 of :not(dialog, [hidden]))) {
+  margin-top: -1.25rem;
+  margin-bottom: -1.5rem;
+}
 
 .app-shell--online .map { margin-bottom: -1.5rem; }
 
