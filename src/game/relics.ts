@@ -174,8 +174,8 @@ ordinary({ id: 'blue_candle', name: 'Blue Candle', cost: 7, effects: [], activat
   rule: 'Exhaust up to 2 cards in your hand.',
   text: 'Once per combat: Exhaust up to 2 cards in your hand.' })
 ordinary({ id: 'calipers', name: 'Calipers', cost: 6, effects: [], activation: 'oncePerCombat',
-  rule: 'Keep your leftover Block from last turn.',
-  text: 'Once per combat: keep your leftover Block from last turn.' })
+  rule: 'Keep any Block left after enemy attacks into your next turn only.',
+  text: 'Once per combat: click Calipers before ending the turn in which you want to save extra Block. Keep any Block left after enemy attacks into your next turn only. It is not automatic and cannot restore Block already lost.' })
 ordinary({ id: 'captains_wheel', name: "Captain's Wheel", cost: 8,
   trigger: { kind: 'dieRelic', faces: [3] }, effects: [{ kind: 'block', amount: 3 }],
   text: 'On a 3: gain 3 Block.' })

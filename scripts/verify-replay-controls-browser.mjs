@@ -55,6 +55,38 @@ assert(events >= MOVES, `Recorded log has only ${events} moves`)
 // Jumping to a move must give exactly the state that playing up to it gives, whatever order the jumps come in.
 const checking = await browser.newPage()
 await checking.goto(origin, { waitUntil: 'networkidle' })
+const selectorFallback = await checking.evaluate(async () => {
+  const { queryRunLogControl } = await import('/src/ui/run-log.ts')
+  const fixture = document.createElement('div')
+  fixture.style.cssText = 'position:fixed;left:8px;top:8px;z-index:9999'
+  const inspection = document.createElement('dialog')
+  inspection.className = 'settings-dialog'
+  const old = document.createElement('button')
+  old.id = 'replay-old-selector'
+  old.textContent = 'Replay selector fixture action'
+  inspection.append(old)
+  const live = old.cloneNode(true)
+  live.id = 'replay-current-selector'
+  fixture.append(inspection, live)
+  document.body.append(fixture)
+  const find = selector => queryRunLogControl(document, { selector, name: old.textContent })?.id ?? null
+  try {
+    const closedDialog = find('#replay-old-selector')
+    inspection.open = true
+    inspection.style.visibility = 'hidden'
+    const invisibleInspection = find('#replay-old-selector')
+    inspection.style.visibility = ''
+    const visibleInspection = find('#replay-old-selector')
+    const exactGameplay = find('#replay-current-selector')
+    return { closedDialog, invisibleInspection, visibleInspection, exactGameplay }
+  } finally { fixture.remove() }
+})
+assert.deepEqual(selectorFallback, {
+  closedDialog: 'replay-current-selector',
+  invisibleInspection: 'replay-current-selector',
+  visibleInspection: null,
+  exactGameplay: 'replay-current-selector',
+}, 'hidden inspection controls must not suppress a valid name fallback; visible inspection must still be refused')
 const consistency = await checking.evaluate(async (text) => {
   const { applyRunLogEvent, runLogEventChoice } = await import('/src/ui/run-log.ts')
   const { ReplayTimeline } = await import('/src/ui/run-replay.ts')

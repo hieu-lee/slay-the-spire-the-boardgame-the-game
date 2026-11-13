@@ -39,7 +39,8 @@ type CardProps = {
   /** Appended to the accessible name, e.g. to tell a just-drawn duplicate apart. */
   accessibleNote?: string
   onClick?: (card: CardInstance) => void
-  onPointerDown?: React.PointerEventHandler<HTMLButtonElement>
+  /** `playable` is the card's state at press time, so a press can pan without starting a play. */
+  onPointerDown?: (event: React.PointerEvent<HTMLButtonElement>, playable: boolean) => void
   onPointerMove?: React.PointerEventHandler<HTMLButtonElement>
   onPointerUp?: React.PointerEventHandler<HTMLButtonElement>
   onPointerCancel?: React.PointerEventHandler<HTMLButtonElement>
@@ -752,6 +753,7 @@ export function Card({
   onLostPointerCapture,
 }: CardProps) {
   const touchNeedsInspection = useRef(false)
+  const blockedMousePress = useRef(false)
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
   const skin = useCardSkin(def)
@@ -790,7 +792,9 @@ export function Card({
       onPointerDown={(event) => {
         touchNeedsInspection.current = inspectOnTouch && event.pointerType === 'touch' &&
           document.activeElement !== event.currentTarget
-        onPointerDown?.(event)
+        blockedMousePress.current = event.pointerType === 'mouse' && !playable
+        if (blockedMousePress.current) event.preventDefault()
+        onPointerDown?.(event, playable)
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -799,11 +803,13 @@ export function Card({
       onClick={(event) => {
         const inspect = touchNeedsInspection.current && event.detail !== 0
         touchNeedsInspection.current = false
+        const blocked = blockedMousePress.current && event.detail !== 0
+        if (event.detail !== 0) blockedMousePress.current = false
         if (inspect) {
           event.currentTarget.focus({ preventScroll: true })
           return
         }
-        if (!playable) {
+        if (blocked || !playable) {
           event.preventDefault()
           return
         }
@@ -813,7 +819,7 @@ export function Card({
         ? `, socketed with ${attachedGem.name}: ${cardRuleDescription(attachedGem)}` : ''}${
         accessibleNote ? `, ${accessibleNote}` : ''}`}
       aria-pressed={selected || picked}
-      title={def.name}
+      data-card-name={def.name}
     >
       {hasPublisherScan ? <img
         className="card__art"
