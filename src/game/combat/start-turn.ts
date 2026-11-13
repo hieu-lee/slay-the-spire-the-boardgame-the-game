@@ -39,7 +39,7 @@ import {
   triggerSources,
 } from './effects.ts'
 import { applyEnemyAction } from './enemy-turn.ts'
-import { canActivatePotion, canActivateRelic } from './items.ts'
+import { canActivatePotion, canActivateRelic } from './item-windows.ts'
 import { addStatus, damageEnemy } from './pieces.ts'
 import { discardOrderNeedsChoice, effectEvokePlan, effectIsActive, invalidPlayChoice, mandatoryChoicePending, owedPlayerChoices, reachesEnemy } from './queries.ts'
 import type {
