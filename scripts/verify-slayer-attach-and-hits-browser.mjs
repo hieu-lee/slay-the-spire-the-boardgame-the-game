@@ -182,7 +182,7 @@ try {
     await reattach.waitFor()
     await assertOnTop(reattach)
     await shot('nightmare-plus-reattach')
-    await reattach.getByRole('button').last().click()
+    await reattach.getByRole('button', { name: 'Cultist #3' }).click()
     await page.waitForFunction(() => !window.__STS_DEBUG__.getRun().combat.pendingSlayerChoices)
     assert.equal((await combat()).enemies[2].slayerAttachments[0].card.uid, 'nmp')
 

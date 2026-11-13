@@ -92,7 +92,7 @@ try {
     await targets.waitFor()
     assert.equal(await targets.getByRole('button').count(), 2, `${name}: Grudge must offer both enemies`)
     await page.screenshot({ path: `${out}/${name}-curse-target.png` })
-    await targets.getByRole('button').first().click()
+    await targets.getByRole('button', { name: /Jaw Worm #1$/ }).click()
     await page.waitForFunction(() => {
       const combat = window.__STS_DEBUG__.getRun().combat
       return combat.phase === 'player' && combat.players[0].chamber[0]?.defId === 'hermit_grudge'
