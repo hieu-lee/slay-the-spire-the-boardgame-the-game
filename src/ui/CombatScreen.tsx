@@ -196,6 +196,7 @@ import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { Card, slimeCommandText } from './Card.tsx'
+import { relicTooltipText } from './RelicChip.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
@@ -622,6 +623,25 @@ function CombatScreenView({
   useEffect(() => registerCardZoomCloser(closeSlimeCardZoom.current), [])
   const prefersReducedMotion = reducedMotion
   const boardRef = useRef<HTMLDivElement | null>(null)
+  const combatBarRef = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    const bar = combatBarRef.current
+    const combat = bar?.parentElement
+    if (!bar || !combat) return
+    const measure = () => {
+      combat.style.setProperty('--combat-bar-bottom', `${bar.offsetTop + bar.offsetHeight}px`)
+      combat.style.setProperty('--combat-bar-viewport-bottom', `${bar.getBoundingClientRect().bottom}px`)
+    }
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure)
+    observer?.observe(bar)
+    observer?.observe(combat)
+    window.addEventListener('resize', measure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [state.combatId])
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const itemDialogRef = useRef<HTMLDialogElement | null>(null)
   const startTurnScryDialogRef = useRef<HTMLDialogElement | null>(null)
@@ -5400,7 +5420,7 @@ function CombatScreenView({
         ? `${state.combatId}:${state.turn}` : undefined}
       onClick={(event) => {
         if (!(event.target instanceof Element) || event.target.closest(
-          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips',
+          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips, .die-relic__head, .potion-tip',
         )) return
         if (!pending || usingCard || pending.choiceCards || pending.card.uid === forcedCardUid ||
           (!pending.cardInHand && !pending.chamberPlay)) return
@@ -5428,7 +5448,7 @@ function CombatScreenView({
       } as React.CSSProperties}
     >
       {groundedVfx}
-      <header className="combat__bar">
+      <header ref={combatBarRef} className="combat__bar">
         <span className="combat__turn">Turn {state.turn}</span>
         <span className="combat__die" title="The round's shared die">
           <Icon name={dieIcon(state.die)} size={26} decorative={false} />
@@ -6346,9 +6366,10 @@ function CombatScreenView({
           <section aria-label="Relic abilities">
           {viewer.relics.flatMap((held, relicIndex) => {
             const def = relicDef(held.defId)
+            const description = relicTooltipText(held.defId, state.die)
             const simpleAction = <PotionTooltipAnchor id={held.defId} key={`${held.defId}-${relicIndex}`}
-              name={def.name} text={def.text} kindLabel="Relic" confirmLabel="use">
-              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${def.text}`}
+              name={def.name} text={description} kindLabel="Relic" confirmLabel="use">
+              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${description}`}
                 onClick={() => useRelic(relicIndex)}>
                 <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />
               </button>
