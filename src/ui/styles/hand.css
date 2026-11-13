@@ -189,21 +189,24 @@
   pointer-events: none;
 }
 
+/* Sits on the printed type ribbon beside its label, clear of the illustration and the rules text. */
 .card__stance-bonus {
   position: absolute;
   z-index: 2;
-  top: 42%;
-  left: 10%;
-  right: 10%;
-  padding: 0.2em 0.35em;
+  top: 51.5%;
+  left: 7%;
+  width: 28%;
+  box-sizing: border-box;
+  padding: 0.1em 0;
   border: 1px solid #8a939c;
-  border-radius: 0.35em;
+  border-radius: 0.3em;
   background: rgb(24 29 35 / 0.95);
   color: #e5e9ed;
-  font-size: calc(var(--card-width) * 0.06);
+  font-size: calc(var(--card-width) * 0.055);
   font-weight: 700;
-  line-height: 1.2;
+  line-height: 1.1;
   text-align: center;
+  white-space: nowrap;
   pointer-events: none;
 }
 

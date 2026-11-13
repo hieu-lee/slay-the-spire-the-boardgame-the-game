@@ -47,30 +47,30 @@ try {
     const flurries = page.locator('.hand .card[aria-label^="Flurry of Blows"]')
     const badge = flurries.locator('.card__stance-bonus')
     await flurries.first().waitFor()
-    assert.deepEqual(await badge.allTextContents(), ['No stance change', 'No stance change'])
+    assert.deepEqual(await badge.allTextContents(), ['Stance ✕', 'Stance ✕'])
     assert.equal(await page.locator('.hand .card:not([aria-label^="Flurry"]) .card__stance-bonus').count(), 0)
     const play = async name => {
       await page.locator(`.hand .card[aria-label^="${name},"]`).click()
     }
     await play('Tranquility')
-    assert.deepEqual(await badge.allTextContents(), ['No stance change', 'No stance change'],
+    assert.deepEqual(await badge.allTextContents(), ['Stance ✕', 'Stance ✕'],
       'entering the current stance must not activate Flurry')
     await flurries.first().focus()
     await page.waitForFunction(() => !document.querySelector('.hand[data-hand-moving]'))
     await page.screenshot({ path: `${output}/${screen}-inactive.png` })
     await play('Crescendo')
-    assert.deepEqual(await badge.allTextContents(), ['Stance changed', 'Stance changed'])
+    assert.deepEqual(await badge.allTextContents(), ['Stance ✓', 'Stance ✓'])
     await play('Empty Body')
     assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getState().players[0].stance), 'neutral')
-    assert.deepEqual(await badge.allTextContents(), ['Stance changed', 'Stance changed'],
+    assert.deepEqual(await badge.allTextContents(), ['Stance ✓', 'Stance ✓'],
       'leaving stance must not clear an already-earned bonus')
     await page.waitForFunction(() => JSON.parse(localStorage.getItem('sts-solo-run')).run.combat.stanceChangedThisTurn.includes('p1'))
     await page.reload()
     await page.getByRole('button', { name: 'Resume', exact: true }).click()
     await flurries.first().waitFor()
-    assert.deepEqual(await badge.allTextContents(), ['Stance changed', 'Stance changed'],
+    assert.deepEqual(await badge.allTextContents(), ['Stance ✓', 'Stance ✓'],
       'solo Resume preserves upstream’s exact mid-turn stance bonus')
-    assert.deepEqual(await badge.allTextContents(), ['Stance changed', 'Stance changed'])
+    assert.deepEqual(await badge.allTextContents(), ['Stance ✓', 'Stance ✓'])
     await flurries.first().focus()
     assert.match(await flurries.first().evaluate(card => document.getElementById(card.getAttribute('aria-describedby')).textContent),
       /You changed stance this turn/)
@@ -87,14 +87,15 @@ try {
       const card = mark.parentElement.getBoundingClientRect(), box = mark.getBoundingClientRect()
       const damage = mark.parentElement.querySelector('.card__live-damage')?.getBoundingClientRect()
       return box.left >= card.left && box.right <= card.right && box.top >= card.top &&
-        box.bottom < card.top + card.height * 0.58 && mark.scrollWidth <= mark.clientWidth &&
+        box.top >= card.top + card.height * 0.49 && box.bottom <= card.top + card.height * 0.585 &&
+        box.right <= card.left + card.width * 0.38 && mark.scrollWidth <= mark.clientWidth &&
         (!damage || box.top >= damage.bottom || box.bottom <= damage.top || box.left >= damage.right || box.right <= damage.left)
-    }), `the badge must fit above the printed rules and not cover the damage preview: ${JSON.stringify(badgeLayout)}`)
+    }), `the badge must sit on the type ribbon, clear of the illustration, the rules and the damage preview: ${JSON.stringify(badgeLayout)}`)
     await page.screenshot({ path: `${output}/${screen}-active.png` })
     await page.getByRole('button', { name: /^Current deck,/ }).click()
     const deck = page.getByRole('dialog', { name: 'Current deck', exact: true })
     await deck.waitFor()
-    assert((await deck.locator('.card__stance-bonus').allTextContents()).every(text => text === 'Stance changed'))
+    assert((await deck.locator('.card__stance-bonus').allTextContents()).every(text => text === 'Stance ✓'))
     await deck.getByRole('button', { name: 'Back', exact: true }).click()
     await play('Flurry of Blows+')
     await page.locator('[data-enemy-id="target"] .enemy__head').click()
@@ -105,7 +106,7 @@ try {
       return state.turn === 2 && state.phase === 'player'
     })
     assert((await badge.count()) >= 2)
-    assert((await badge.allTextContents()).every(text => text === 'No stance change'),
+    assert((await badge.allTextContents()).every(text => text === 'Stance ✕'),
       'the indicator must reset with the engine at the next turn')
     assert.deepEqual(errors, [])
     await page.close()

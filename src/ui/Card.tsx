@@ -655,6 +655,14 @@ export function cardKeywordTips(def: CardDef): readonly CardKeywordTip[] {
 }
 
 const EMPTY_KEYWORD_TIPS: readonly CardKeywordTip[] = []
+const STANCE_EARNED_TIPS: readonly CardKeywordTip[] = [{
+  name: 'Stance bonus',
+  text: 'You changed stance this turn. Flurry of Blows gains its extra hits, even if you return to your original stance.',
+}]
+const STANCE_PENDING_TIPS: readonly CardKeywordTip[] = [{
+  name: 'Stance bonus',
+  text: 'You have not changed stance this turn. Change stance to activate Flurry of Blows\' extra hits. Entering your current stance does not count.',
+}]
 
 /** The keyword rules for a card plus anything its attached Gem adds; the hover help and the deck inspector share it. */
 export function composeCardKeywordTips(
@@ -767,12 +775,7 @@ export function Card({
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
   const showStanceBonus = def.id === 'flurry_of_blows' && stanceChangedThisTurn !== undefined
-  const stanceTips = useMemo(() => showStanceBonus ? [{
-    name: 'Stance bonus',
-    text: stanceChangedThisTurn
-      ? 'You changed stance this turn. Flurry of Blows gains its extra hits, even if you return to your original stance.'
-      : 'You have not changed stance this turn. Change stance to activate Flurry of Blows\' extra hits. Entering your current stance does not count.',
-  }] : [], [showStanceBonus, stanceChangedThisTurn])
+  const stanceTips = !showStanceBonus ? EMPTY_KEYWORD_TIPS : stanceChangedThisTurn ? STANCE_EARNED_TIPS : STANCE_PENDING_TIPS
   const skin = useCardSkin(def)
   const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined, skin)
   const hasPublisherScan = def.publisherScan !== false
@@ -863,7 +866,7 @@ export function Card({
       /> : null}
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
       {showStanceBonus ? <span className="card__stance-bonus" data-active={stanceChangedThisTurn} aria-hidden="true">
-        {stanceChangedThisTurn ? 'Stance changed' : 'No stance change'}
+        {stanceChangedThisTurn ? 'Stance ✓' : 'Stance ✕'}
       </span> : null}
       {attachedGem && scanUnavailable ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
         draggable={false} title={`${attachedGem.name}: ${cardRuleDescription(attachedGem)}`} /> : null}
