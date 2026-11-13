@@ -126,7 +126,7 @@ check('browser automation cannot bypass the silent launcher', () => {
       const specifier = ts.isImportDeclaration(node) || ts.isExportDeclaration(node) ? node.moduleSpecifier
         : ts.isCallExpression(node) && (node.expression.kind === ts.SyntaxKind.ImportKeyword ||
           ts.isIdentifier(node.expression) && node.expression.text === 'require') ? node.arguments[0] : undefined
-      if (specifier && ts.isStringLiteral(specifier) && /^(?:playwright(?:-core)?|@playwright\/test)(?:\/|$)/.test(specifier.text)) {
+      if (specifier && ts.isStringLiteralLike(specifier) && /^(?:playwright(?:-core)?|@playwright\/test)(?:\/|$)/.test(specifier.text)) {
         violations.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`)
       }
       ts.forEachChild(node, visit)
