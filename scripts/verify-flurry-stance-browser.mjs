@@ -96,6 +96,9 @@ try {
     const deck = page.getByRole('dialog', { name: 'Current deck', exact: true })
     await deck.waitFor()
     assert((await deck.locator('.card__stance-bonus').allTextContents()).every(text => text === 'Stance ✓'))
+    assert((await deck.locator('.card__stance-bonus').evaluateAll(marks => marks.length > 0 && marks.every(mark =>
+      parseFloat(getComputedStyle(mark).fontSize) >= 7 && mark.scrollWidth <= mark.clientWidth))),
+    'the badge text must stay readable inside the deck dialog')
     await deck.getByRole('button', { name: 'Back', exact: true }).click()
     await play('Flurry of Blows+')
     await page.locator('[data-enemy-id="target"] .enemy__head').click()

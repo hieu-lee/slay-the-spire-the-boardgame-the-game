@@ -194,15 +194,16 @@
   position: absolute;
   z-index: 2;
   top: 51.5%;
-  left: 7%;
-  width: 28%;
+  left: 6%;
+  width: 31%;
   box-sizing: border-box;
   padding: 0.1em 0;
   border: 1px solid #8a939c;
   border-radius: 0.3em;
   background: rgb(24 29 35 / 0.95);
   color: #e5e9ed;
-  font-size: calc(var(--card-width) * 0.055);
+  /* Card collections set --card-width as a percentage, which resolves to nothing in a font size. */
+  font-size: max(7px, calc(var(--card-width) * 0.055));
   font-weight: 700;
   line-height: 1.1;
   text-align: center;
