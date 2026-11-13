@@ -6257,7 +6257,8 @@ try {
   const lastStandNotice = await fourPages[0].getByRole('status').filter({ hasText: 'cannot continue to the next Act' }).count()
   const forbiddenNextAct = await fourPages[0].getByRole('button', { name: 'Climb to Act 2' }).count()
   const recordLastStand = await fourPages[0].getByRole('button', { name: 'Stop and record result' }).count()
-  const terminalPotions = await fourPages[0].locator('.outside-potions').count()
+  const terminalInventory = await fourPages[0].locator('.outside-potions').count()
+  const terminalPotionActions = await fourPages[0].locator('.outside-potions__give, .outside-potions button[aria-label^="Use "]').count()
   const compactTitle = await fourPages[0].locator('.player-title').evaluate((heading) => {
     const box = heading.getBoundingClientRect()
     const range = document.createRange()
@@ -6268,7 +6269,8 @@ try {
     assertEqual(lastStandNotice, 1)
     assertEqual(forbiddenNextAct, 0)
     assertEqual(recordLastStand, 1)
-    assertEqual(terminalPotions, 0)
+    assertEqual(terminalInventory, 1)
+    assertEqual(terminalPotionActions, 0)
     assert(compactTitle.width >= 100 && compactTitle.width + 1 >= compactTitle.textWidth,
       'the online header crushed the game title')
   })
