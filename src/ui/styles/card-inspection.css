@@ -16,6 +16,7 @@
 .card-inspection[open] { display: grid; place-content: center; justify-items: center; gap: 1.5rem; }
 .card-inspection__stage { position: relative; display: grid; grid-template-columns: 3.5rem var(--inspect-card-width) 3.5rem; align-items: center; gap: 1.5rem; }
 .card-inspection .card-inspection__card { width: var(--inspect-card-width); filter: drop-shadow(0 1rem 1rem #000); cursor: default; }
+.card-inspection__back.ribbon-back { position: absolute; bottom: 1rem; left: 1rem; }
 .card-inspection__footer { min-height: 2rem; color: #f3d268; font-size: 1.35rem; }
 .card-inspection__footer label { display: flex; align-items: center; gap: .6rem; cursor: pointer; }
 .card-inspection__footer input { width: 1.3rem; height: 1.3rem; }
@@ -40,6 +41,7 @@
   .card-inspection { --inspect-card-width: min(24vw, calc((100dvh - 5rem) / var(--card-ratio))); }
   .card-inspection[open] { gap: .65rem; }
   .card-inspection__stage { grid-template-columns: 2.75rem var(--inspect-card-width) 2.75rem; gap: .75rem; }
+  .card-inspection__back.ribbon-back { bottom: .35rem; left: .35rem; }
   .card-inspection__footer { font-size: 1rem; }
   .card-inspection__tips { left: calc(100% + .5rem); width: min(15rem, calc((100vw - var(--inspect-card-width)) / 2 - 4.5rem)); }
 }

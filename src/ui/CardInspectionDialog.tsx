@@ -73,6 +73,9 @@ export function CardInspectionDialog({
           {tips.map((tip, index) => <section key={`${tip.name}:${index}`}><h3>{tip.name}</h3><p>{tip.text}</p></section>)}
         </aside> : null}
       </div>
+      <button type="button" className="ribbon-back card-inspection__back" aria-label="Back" title="Back" onClick={onClose}>
+        <span aria-hidden="true" />
+      </button>
       <footer className="card-inspection__footer">
         {cardDef(card.defId).upgrade ? <label>
           <input type="checkbox" checked={upgraded} onChange={(event) => {

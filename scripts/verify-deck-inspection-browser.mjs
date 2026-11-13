@@ -15,6 +15,14 @@ try {
   ]) {
     const page = await browser.newPage({ viewport, hasTouch: phone, isMobile: phone, reducedMotion: 'reduce' })
     page.setDefaultTimeout(10_000)
+    await page.addInitScript(() => {
+      const tools = new Map()
+      Object.defineProperty(document, 'modelContext', { configurable: true, value: {
+        registerTool(tool) { tools.set(tool.name, tool); return Promise.resolve() },
+        getTools() { return Promise.resolve([...tools.values()]) },
+        async executeTool(tool, input = {}) { return JSON.stringify(await tools.get(tool.name).execute(input, { signal: new AbortController().signal })) },
+      } })
+    })
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.goto(`http://127.0.0.1:${server.httpServer.address().port}`)
@@ -68,6 +76,13 @@ try {
         })
     }), `${screen}: enlarged card and controls must fit`)
     await page.screenshot({ path: `${output}/${screen}-upgraded.png` })
+    const agentControls = await page.evaluate(async () => {
+      const inspect = (await document.modelContext.getTools()).find(tool => tool.name === 'inspect_game')
+      return JSON.parse(await document.modelContext.executeTool(inspect, { offset: 0 })).controls.map(control => control.label ?? control.name ?? '')
+    })
+    assert(agentControls.some(label => /Next card/.test(label)), `WebMCP must see the inspector controls: ${agentControls}`)
+    assert(!agentControls.some(label => /upgrade preview|A - Z/.test(label)),
+      `WebMCP must not offer the covered deck controls while inspecting: ${agentControls}`)
     await activate(next)
     assert.equal(await preview.getAttribute('data-card-name'), 'Defend+')
     assert(await checkbox.isChecked(), 'owned upgrades open on their upgraded face')
@@ -119,6 +134,11 @@ try {
     assert(await inspection.isVisible(), 'deck shortcut must not close a background dialog')
     await page.keyboard.press('Escape')
     await inspection.waitFor({ state: 'detached' })
+    await activate(grid.locator('.card').first())
+    await inspection.waitFor()
+    await activate(inspection.getByRole('button', { name: 'Back', exact: true }))
+    await inspection.waitFor({ state: 'detached' })
+    assert(await deck.isVisible(), 'the inspector Back control must close only the inspector')
     await activate(deck.getByRole('button', { name: 'Back', exact: true }))
     await deck.waitFor({ state: 'hidden' })
     await activate(page.getByRole('button', { name: /^Current deck,/ }))
