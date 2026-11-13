@@ -4,6 +4,7 @@ import { chromium } from './lib/profile-browser.mjs'
 import { createServer } from 'vite'
 import { createRun } from '../src/game/run.ts'
 import { createCombat } from '../src/game/combat.ts'
+import { relicDef } from '../src/game/relics.ts'
 
 const out = 'artifacts/die-relic'
 mkdirSync(out, { recursive: true })
@@ -55,6 +56,25 @@ try {
     assert(panelBox && panelBox.x >= 0 && panelBox.x + panelBox.width <= width &&
       panelBox.y + panelBox.height <= height, `${name}: the die Relic panel runs off screen`)
     await page.screenshot({ path: `${out}/${name}-mirror-red-mask.png` })
+    const beforeInspection = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
+    for (const [id, anchor] of [
+      ['red_mask', redMaskGroup.getByRole('img')],
+      ['necronomicon', mirror.locator('.die-relic--single').filter({ hasText: 'Necronomicon' })],
+    ]) {
+      await page.mouse.move(2, 2)
+      await anchor.focus()
+      const help = page.locator('.potion-tip').filter({ hasText: relicDef(id).name })
+      await help.waitFor()
+      assert((await help.innerText()).includes(relicDef(id).text))
+      assert(await help.evaluate(tip => {
+        const box = tip.getBoundingClientRect()
+        return tip.parentElement === document.body && box.left >= 0 && box.top >= 0 &&
+          box.right <= innerWidth && box.bottom <= innerHeight
+      }), `${name}: die-relic help must escape the choice panel`)
+      await page.keyboard.press('Escape')
+    }
+    assert.equal(await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun())), beforeInspection,
+      'reading die-relic rules must not activate an ability or select an enemy')
     await redMask.click()
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].relics[0].spent)
     assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.enemies[0].weak), 1,
