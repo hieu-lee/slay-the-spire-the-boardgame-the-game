@@ -9,6 +9,7 @@ import {
   clone,
   combatIsOver,
   enemyLabel,
+  nextEnemyCopy,
   findPlayer,
   lightningTargetOptions,
   livingEnemies,
@@ -125,6 +126,7 @@ export function resolveDueSummons(next: CombatState, timing: 'startOfTurn' | 'en
             : 0) + (summonBuff?.kind === 'buffSummons' ? summonBuff.strength : 0),
         vulnerable: 0, weak: 0, poison: 0, goldReward: 0, cardReward: null,
         actionIndex: 0, phase: 0, abilityUsed: false, dead: false,
+        copy: nextEnemyCopy(next.enemies, def.name),
       }
       const sourceIndex = source && source.row === summon.row &&
         (source.isBoss || enemyDef(source.defId, source.ascension).elite)

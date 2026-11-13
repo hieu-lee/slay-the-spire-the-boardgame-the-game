@@ -793,6 +793,26 @@ check('printed-name variants share stable encounter-wide numbers', () => {
   assertDeepEqual(foes.map(foe => enemyLabel(foes, foe)), names)
 })
 
+check('a summoned copy keeps numbers stable when it enters before the boss', () => {
+  const heads = [
+    enemy({ uid: 'a', defId: 'torch_head', row: 0, hp: 0, dead: true }),
+    enemy({ uid: 'boss', defId: 'the_collector', row: 0, isBoss: true }),
+    enemy({ uid: 'b', defId: 'torch_head', row: 1 }),
+  ]
+  const [a, , b] = heads
+  const before = [a, b].map(head => enemyLabel(heads, head))
+  const state = {
+    ...inEnemyPhase([player()], heads),
+    pendingSummons: [{ sourceUid: 'boss', row: 0, defIds: ['torch_head'], turn: 1, direct: true }],
+    phase: 'roundEnd',
+  }
+  const started = startPlayerTurn(state)
+  const summoned = started.enemies.find(({ uid }) => uid.startsWith('boss-summon'))
+  assertEqual(started.enemies.indexOf(summoned), 1, 'the summon enters before the boss')
+  assertDeepEqual([a, b, summoned].map(head => enemyLabel(started.enemies, head)),
+    [...before, 'Torch Head #3'])
+})
+
 check('an ongoing effect is credited to itself, not to the player', () => {
   CARDS.fixture_striker = {
     id: 'fixture_striker',

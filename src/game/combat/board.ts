@@ -156,13 +156,28 @@ export function resolveEnemyTargets(
  * Shared board, target-picker and log names. Include defeated enemies so
  * surviving duplicates keep their numbers when a neighbour dies.
  */
-type LabeledEnemy = Pick<Enemy, 'uid' | 'defId' | 'row' | 'ascension'>
+type LabeledEnemy = Pick<Enemy, 'uid' | 'defId' | 'row' | 'ascension' | 'copy'>
+
+const sameNameAs = (enemies: readonly LabeledEnemy[], name: string) =>
+  enemies.filter((other) => enemyDef(other.defId).name === name)
+
+// Enemies present from the start count by position among themselves; a summon
+// carries the number it was given, since it can be inserted before the boss.
+function enemyNumber(sameName: readonly LabeledEnemy[], enemy: LabeledEnemy): number {
+  return enemy.copy ?? sameName.filter((other) => other.copy === undefined)
+    .findIndex((other) => other.uid === enemy.uid) + 1
+}
+
+export function nextEnemyCopy(enemies: readonly LabeledEnemy[], name: string): number {
+  const sameName = sameNameAs(enemies, name)
+  return Math.max(0, ...sameName.map((other) => enemyNumber(sameName, other))) + 1
+}
 
 export function enemyLabel(enemies: readonly LabeledEnemy[], enemy: LabeledEnemy): string {
   const name = enemyDef(enemy.defId, enemy.ascension).name
-  const sameName = enemies.filter((other) => enemyDef(other.defId).name === name)
+  const sameName = sameNameAs(enemies, name)
   if (sameName.length <= 1) return name
-  return `${name} #${sameName.findIndex((other) => other.uid === enemy.uid) + 1}`
+  return `${name} #${enemyNumber(sameName, enemy)}`
 }
 
 /**
