@@ -54,7 +54,7 @@ try {
       await statuses.getByText('Cannot draw more cards this turn', { exact: true }).waitFor()
       await page.waitForFunction(() => {
         const meta = document.querySelector('.seat__meta')
-        return Number.parseFloat(meta.parentElement.style.getPropertyValue('--temporary-status-height')) === meta.offsetHeight
+        return Number.parseFloat(meta.closest('.seat__interactive').style.getPropertyValue('--temporary-status-height')) === meta.offsetHeight
       })
       const geometry = await statuses.evaluate(meta => {
         const box = meta.getBoundingClientRect()
@@ -72,20 +72,36 @@ try {
               rect.top >= box.top - 1 && rect.bottom <= box.bottom + 1 &&
               chip.scrollWidth <= chip.clientWidth + 1 && chip.scrollHeight <= chip.clientHeight + 1
           }),
-          orbsClear: [...meta.parentElement.querySelectorAll('.orbs .token--orb')].every(orb => {
+          orbCount: meta.closest('.seat__interactive').querySelectorAll('.orbs .token--orb').length,
+          orbsClear: [...meta.closest('.seat__interactive').querySelectorAll('.orbs .token--orb')].every(orb => {
             const rect = orb.getBoundingClientRect()
-            return rect.bottom + rect.height * 0.16 + 4 <= box.top && rect.top >= board.top
+            return rect.bottom + rect.height * 0.16 + 4 <= box.top && rect.top >= 0
           }),
         }
       })
       await page.screenshot({ path: `${output}/${screen}-${character}.png` })
       assert(!['auto', 'scroll'].includes(geometry.overflow), 'temporary statuses must not create a scroll container')
       assert(geometry.scrollWidth <= geometry.width + 1 && geometry.scrollHeight <= geometry.height + 1 &&
-        geometry.chipsFit && geometry.visible && geometry.orbsClear,
+        geometry.chipsFit && geometry.visible && geometry.orbsClear && geometry.orbCount === (character === 'defect' ? 3 : 0),
       `${screen}/${character}: statuses must remain readable without clipping or covering Orbs: ${JSON.stringify(geometry)}`)
       const after = await portrait.boundingBox()
       for (const key of ['x', 'y', 'width', 'height']) {
         assert(Math.abs(before[key] - after[key]) < 1, 'wrapping statuses must not move or resize the hero')
+      }
+      const measured = () => page.waitForFunction(() => {
+        const meta = document.querySelector('.seat__meta')
+        return meta.offsetHeight > 0 &&
+          Number.parseFloat(meta.closest('.seat__interactive').style.getPropertyValue('--temporary-status-height')) === meta.offsetHeight
+      })
+      for (const row of [1, 0]) {
+        await page.evaluate(row => {
+          const run = structuredClone(window.__STS_DEBUG__.getRun())
+          run.combat.players[0].row = row
+          window.__STS_DEBUG__.setRun(run)
+        }, row)
+        await page.waitForFunction(row => document.querySelector('.seat__interactive')?.closest('.row')?.style
+          .getPropertyValue('--stage-row') !== undefined && window.__STS_DEBUG__.getRun().combat.players[0].row === row, row)
+        await measured()
       }
       await page.evaluate(() => {
         const run = structuredClone(window.__STS_DEBUG__.getRun())
@@ -93,7 +109,7 @@ try {
         window.__STS_DEBUG__.setRun(run)
       })
       await statuses.waitFor({ state: 'hidden' })
-      await page.waitForFunction(() => document.querySelector('.seat__meta').parentElement.style
+      await page.waitForFunction(() => document.querySelector('.seat__meta').closest('.seat__interactive').style
         .getPropertyValue('--temporary-status-height') === '0px')
     }
     assert.deepEqual(errors, [])
