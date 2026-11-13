@@ -806,7 +806,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
           volume={settings.voiceVolume} compact />
         {viewer?.deck ? (
-          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable>
+          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
+            stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.viewerStanceChangedThisTurn : undefined}>
             <img src={assetPath('menu/current-deck.webp')} alt="" />
             <span aria-hidden="true">{viewer.deck.length}</span>
           </CardCollectionOverlay>
@@ -925,6 +926,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           courierUsedBy={run.courier.usedBy}
           onCourierReveal={run.courier.offer ? undefined : revealCourierOnline}
           drawCount={combatViewer?.drawCount}
+          viewerStanceChangedThisTurn={run.combat?.viewerStanceChangedThisTurn}
           decidedPlayerIds={snapshot.endTurnDecided}
           requiredEndTurnPlayerIds={snapshot.endTurnRequired}
           endTurnTopPlayerIds={snapshot.endTurnTopPlayerIds}

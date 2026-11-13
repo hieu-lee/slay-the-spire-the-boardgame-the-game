@@ -12,25 +12,28 @@ type CardCollectionOverlayProps = {
   children: ReactNode
   dataPile?: 'draw' | 'discard' | 'exhaust'
   ordered?: boolean
+  stanceChangedThisTurn?: boolean
   inspectable?: boolean
 }
 
 /** One read-only card viewer for the deck and combat piles. */
 export function CardCollectionOverlay({
-  cards, label, triggerClassName, children, dataPile, ordered = true, inspectable = false,
+  cards, label, triggerClassName, children, dataPile, ordered = true, inspectable = false, stanceChangedThisTurn,
 }: CardCollectionOverlayProps) {
   const [open, setOpen] = useState(false)
   return <>
     <button type="button" className={triggerClassName} data-pile={dataPile}
       aria-label={`${label}, ${cards.length} card${cards.length === 1 ? '' : 's'}`}
       title={label} onClick={() => setOpen(true)}>{children}</button>
-    <CardCollectionDialog cards={cards} label={label} open={open} ordered={ordered} inspectable={inspectable} onClose={() => setOpen(false)} />
+    <CardCollectionDialog cards={cards} label={label} open={open} ordered={ordered} inspectable={inspectable}
+      stanceChangedThisTurn={stanceChangedThisTurn} onClose={() => setOpen(false)} />
   </>
 }
 
-export function CardCollectionDialog({ cards, label, onClose, open = true, ordered = true, inspectable = false }: {
+export function CardCollectionDialog({ cards, label, onClose, open = true, ordered = true, inspectable = false, stanceChangedThisTurn }: {
   cards: readonly CardInstance[]; label: string; onClose: () => void; open?: boolean; ordered?: boolean
   inspectable?: boolean
+  stanceChangedThisTurn?: boolean
 }) {
   const [sort, setSort] = useState<'obtained' | 'type' | 'cost' | 'name'>(() => ordered ? 'obtained' : 'name')
   const [ascending, setAscending] = useState(true)
@@ -91,11 +94,12 @@ export function CardCollectionDialog({ cards, label, onClose, open = true, order
         } : undefined}>
           {open ? sortedCards.map((card) => <Card key={card.uid}
             card={viewUpgrades && cardDef(card.defId).upgrade ? { ...card, upgraded: true } : card}
-            playable={inspectable} onClick={inspectable ? () => setInspectedUid(card.uid) : undefined} />) : null}
+            playable={inspectable}
+            stanceChangedThisTurn={stanceChangedThisTurn} onClick={inspectable ? () => setInspectedUid(card.uid) : undefined} />) : null}
           {open && cards.length === 0 ? <span className="muted">No cards.</span> : null}
         </div>
         {open && inspectedUid !== null ? <CardInspectionDialog cards={sortedCards} initialCardUid={inspectedUid}
-          viewAllUpgraded={viewUpgrades} onClose={() => setInspectedUid(null)} /> : null}
+          viewAllUpgraded={viewUpgrades} stanceChangedThisTurn={stanceChangedThisTurn} onClose={() => setInspectedUid(null)} /> : null}
         <footer className="card-collection__footer">
           <button type="button" className="ribbon-back" aria-label="Back" title="Back" onClick={onClose}><span aria-hidden="true" /></button>
           <label><input type="checkbox" aria-label={`${label} upgrade preview`} checked={viewUpgrades}

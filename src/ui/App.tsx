@@ -1276,7 +1276,8 @@ function LocalGame({ onOnline, settings, onSettings, active }: {
           ) : null}
         </div>
         {viewer ? (
-          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable>
+          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
+            stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.stanceChangedThisTurn.includes(viewerId) : undefined}>
             <img src={assetPath('menu/current-deck.webp')} alt="" />
             <span aria-hidden="true">{viewer.deck.length}</span>
           </CardCollectionOverlay>

@@ -143,6 +143,18 @@ function claimRewardGold(room, ...seats) {
   }
 }
 
+check('stance bonus snapshots report only the viewer and reset next turn', () => {
+  const { room, a, b } = twoSeatRoom()
+  room.run.combat.stanceChangedThisTurn = [a.playerId]
+  assertEqual(snapshotFor(room, a.token).run.combat.viewerStanceChangedThisTurn, true)
+  assertEqual(snapshotFor(room, b.token).run.combat.viewerStanceChangedThisTurn, false)
+  markDisconnected(room, a.token)
+  joinRoom(room, { token: a.token })
+  assertEqual(snapshotFor(room, a.token).run.combat.viewerStanceChangedThisTurn, true)
+  room.run.combat = preparePlayerTurn({ ...room.run.combat, phase: 'roundEnd' })
+  assertEqual(snapshotFor(room, a.token).run.combat.viewerStanceChangedThisTurn, false)
+})
+
 check('a persisted legacy end-turn order resets safely into the drag flow', () => {
   const { room, a, b } = twoSeatRoom()
   for (const player of room.run.combat.players) player.hand = []

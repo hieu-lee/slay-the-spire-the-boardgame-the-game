@@ -1,15 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardInstance } from '../game/types.ts'
-import { Card, composeCardKeywordTips } from './Card.tsx'
+import { Card, composeCardKeywordTips, stanceBonusTips } from './Card.tsx'
 import './styles/card-inspection.css'
 
 export function CardInspectionDialog({
-  cards, initialCardUid, viewAllUpgraded, onClose,
+  cards, initialCardUid, viewAllUpgraded, stanceChangedThisTurn, onClose,
 }: {
   cards: readonly CardInstance[]
   initialCardUid: string
   viewAllUpgraded: boolean
+  stanceChangedThisTurn?: boolean
   onClose: () => void
 }) {
   const [selectedUid, setSelectedUid] = useState(initialCardUid)
@@ -22,7 +23,7 @@ export function CardInspectionDialog({
   const upgraded = upgradeOverride ?? Boolean(card?.upgraded || previewAll)
   const def = card ? faceOf(cardDef(card.defId), upgraded && Boolean(cardDef(card.defId).upgrade)) : null
   const gem = card?.attachedGemId ? cardDef(card.attachedGemId) : null
-  const tips = composeCardKeywordTips(def ?? undefined, gem, undefined)
+  const tips = composeCardKeywordTips(def ?? undefined, gem, undefined, def ? stanceBonusTips(def.id, stanceChangedThisTurn) : undefined)
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -63,7 +64,8 @@ export function CardInspectionDialog({
           <svg viewBox="0 0 100 110" aria-hidden="true"><path d="M88 7 Q94 3 94 13 L94 97 Q94 107 85 102 L9 61 Q0 55 9 49 Z" /></svg>
         </button>
         <Card key={card.uid} card={{ ...card, upgraded: upgraded && Boolean(cardDef(card.defId).upgrade) }}
-          className="card-inspection__card" playable={false} tabIndex={-1} />
+          className="card-inspection__card" playable={false} tabIndex={-1}
+          stanceChangedThisTurn={stanceChangedThisTurn} />
         <button type="button" className="card-inspection__nav card-inspection__nav--next" aria-label="Next card"
           style={{ visibility: index < cards.length - 1 ? undefined : 'hidden' }} disabled={index === cards.length - 1}
           onClick={() => navigate(1)}>
