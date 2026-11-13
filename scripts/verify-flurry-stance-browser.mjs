@@ -44,13 +44,13 @@ try {
     fixture.combat.enemies = [{ ...fixture.combat.enemies[0], uid: 'target', defId: 'small_slime',
       hp: 30, maxHp: 30, block: 0, dead: false }]
     await page.evaluate(run => window.__STS_DEBUG__.setRun(run), fixture)
-    const flurries = page.locator('.hand .card[title^="Flurry of Blows"]')
+    const flurries = page.locator('.hand .card[aria-label^="Flurry of Blows"]')
     const badge = flurries.locator('.card__stance-bonus')
     await flurries.first().waitFor()
     assert.deepEqual(await badge.allTextContents(), ['No stance change', 'No stance change'])
-    assert.equal(await page.locator('.hand .card:not([title^="Flurry"]) .card__stance-bonus').count(), 0)
+    assert.equal(await page.locator('.hand .card:not([aria-label^="Flurry"]) .card__stance-bonus').count(), 0)
     const play = async name => {
-      await page.locator(`.hand .card[title="${name}"]`).click()
+      await page.locator(`.hand .card[aria-label^="${name},"]`).click()
     }
     await play('Tranquility')
     assert.deepEqual(await badge.allTextContents(), ['No stance change', 'No stance change'],
