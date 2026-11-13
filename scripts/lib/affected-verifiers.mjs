@@ -57,6 +57,7 @@ const focusedEngineOwners = ownerMap([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = ownerMap([
+  ['src/ui/chrome/tooltips.css', ['verify-die-relic-browser.mjs']],
   ['src/ui/chrome/item-tiles.css', ['verify-map-header-browser.mjs']],
   ['src/ui/App.tsx', ['verify-ascension-sync-browser.mjs', 'verify-restricted-browser.mjs', 'verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-courier-browser.mjs',
     'verify-combat-vfx-preload-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-enemy-hover-browser.mjs', 'verify-skin-browser.mjs']],
@@ -66,12 +67,15 @@ const focusedUiOwners = ownerMap([
   ['src/ui/CompendiumScreen.tsx', ['verify-compendium-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs']],
   ['src/ui/StatsScreen.tsx', ['verify-stats-browser.mjs', 'verify-skin-cards-browser.mjs']],
   ['src/ui/skin-context.tsx', ['verify-skin-cards-browser.mjs', 'verify-card-rendering-browser.mjs']],
-  ['src/ui/Card.tsx', ['verify-card-rendering-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-card-damage-preview-browser.mjs']],
+  ['src/ui/Card.tsx', ['verify-card-rendering-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-card-damage-preview-browser.mjs',
+    'verify-disabled-card-press-browser.mjs']],
   ['src/ui/CardFace.tsx', ['verify-card-rendering-browser.mjs', 'verify-skin-cards-browser.mjs']],
   ['src/ui/ShopScreen.tsx', ['verify-shop-browser.mjs', 'verify-wallet-sync-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-monogatari-skins-browser.mjs']],
   ['src/ui/styles/shop.css', ['verify-shop-browser.mjs']],
   ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
+    'verify-empty-scry-browser.mjs',
+    'verify-singleton-slime-command-browser.mjs',
     'verify-act-four-facing-browser.mjs', 'verify-combat-video-browser.mjs',
     'verify-unload-shivs-browser.mjs',
     'verify-start-turn-party-browser.mjs',
@@ -105,7 +109,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/MailBox.tsx', ['verify-mail-browser.mjs']],
   ['src/ui/MapScreen.tsx', ['verify-wing-focus-browser.mjs']],
-  ['src/ui/RoomScreen.tsx', ['verify-scrap-ooze-browser.mjs', 'verify-event-panels-browser.mjs', 'verify-face-trader-solo-browser.mjs']],
+  ['src/ui/RoomScreen.tsx', ['verify-joust-browser.mjs', 'verify-scrap-ooze-browser.mjs', 'verify-event-panels-browser.mjs', 'verify-face-trader-solo-browser.mjs']],
   ['src/ui/chrome/event-phone.css', ['verify-event-panels-browser.mjs', 'verify-scrap-ooze-browser.mjs']],
   ['src/ui/chrome/event-loot.css', ['verify-event-panels-browser.mjs', 'verify-scrap-ooze-browser.mjs']],
   ['src/ui/chrome/merchant-arrival.css', ['verify-event-panels-browser.mjs', 'verify-merchant-overflow-browser.mjs', 'verify-assets.mjs']],
