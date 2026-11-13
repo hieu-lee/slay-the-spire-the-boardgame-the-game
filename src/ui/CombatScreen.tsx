@@ -6340,6 +6340,7 @@ function CombatScreenView({
                 Activate
               </button>
               <button type="button" onClick={(event) => {
+                if (relicActionPending.current) return
                 setRelicCardUids([])
                 const details = event.currentTarget.closest('details')
                 if (details) {
