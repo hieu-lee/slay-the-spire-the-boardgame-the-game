@@ -197,9 +197,7 @@ try {
     'Skip changes color on hover instead of smoothly brightening')
   await page.screenshot({ path: join(out, 'desktop-card-skip-hover.png') })
   const card = page.locator('.reward-screen__cards .card').first()
-  await page.emulateMedia({ reducedMotion: 'reduce' })
   await checkRewardSweep(page, page.locator('.reward-screen__cards > .card'))
-  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await checkRewardHover(card)
   await page.screenshot({ path: join(out, 'desktop-card-hover.png') })
   await card.click()
@@ -308,9 +306,7 @@ try {
   assert(compactCards.every((box) => box.left >= 0 && box.right <= 1024),
     `five-card reward clips compact desktop: ${JSON.stringify(compactCards)}`)
   await page.setViewportSize({ width: 844, height: 390 })
-  await page.emulateMedia({ reducedMotion: 'reduce' })
   await checkRewardSweep(page, fiveCardReward.locator('.reward-screen__cards > .card'))
-  await page.emulateMedia({ reducedMotion: 'no-preference' })
   await checkRewardHover(fiveCardReward.locator('.reward-screen__cards > .card').nth(2))
   const hoveredPhoneCards = await fiveCardReward.locator('.card').evaluateAll(cards => cards.map(card => {
     const box = card.getBoundingClientRect()
@@ -320,6 +316,16 @@ try {
   await page.screenshot({ path: join(out, 'horizontal-phone-card-hover.png') })
   await page.setViewportSize({ width: 1024, height: 768 })
   await page.emulateMedia({ reducedMotion: 'reduce' })
+  const osReducedCard = fiveCardReward.locator('.reward-screen__cards > .card').nth(1)
+  await osReducedCard.hover()
+  const osReducedInspection = await osReducedCard.evaluate((card) => ({
+    transform: getComputedStyle(card).transform,
+    duration: getComputedStyle(card).transitionDuration,
+  }))
+  assert(osReducedInspection.transform === 'matrix(1.25, 0, 0, 1.25, 0, 0)' &&
+    osReducedInspection.duration.split(',').every(duration => parseFloat(duration) <= .001),
+  'the OS reduced motion preference must keep reward inspection instant, not eased')
+  await page.mouse.move(5, 5)
   await page.evaluate(() => { document.documentElement.dataset.reducedMotion = 'true' })
   const reducedCard = fiveCardReward.locator('.reward-screen__cards > .card').first()
   await reducedCard.hover()

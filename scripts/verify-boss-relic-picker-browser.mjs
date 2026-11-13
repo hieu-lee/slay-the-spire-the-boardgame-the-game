@@ -67,9 +67,7 @@ try {
     assert.equal(await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun())), before)
     await checkLoot(page)
     await picker(page).locator('.item-card-image').evaluateAll((images) => Promise.all(images.map((image) => image.decode())))
-    await page.emulateMedia({ reducedMotion: 'reduce' })
     await checkRewardSweep(page, picker(page).locator('.relic-reward__choice'))
-    await page.emulateMedia({ reducedMotion: 'no-preference' })
     const hoverChoice = picker(page).getByRole('button', { name: 'Fusion Hammer', exact: true })
     await page.mouse.move(5, 5)
     await picker(page).evaluate(async dialog => {

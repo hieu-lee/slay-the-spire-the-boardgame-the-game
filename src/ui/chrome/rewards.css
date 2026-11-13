@@ -398,7 +398,14 @@
   .sts-scope .reward-screen--card-choice .reward-screen__cards > .card { width: min(21vh, 10rem); }
 }
 
-/* Like the hand, reward inspection follows the visible in-game motion toggle. */
+/* Like the hand, reward inspection follows the visible in-game motion toggle,
+   and the OS preference everywhere except phones, which expose their own toggle. */
 html[data-reduced-motion='true'] .sts-scope .reward-screen--card-choice .reward-screen__cards > :is(.card, .relic-reward__choice) {
   transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-mobile-performance='true']) .sts-scope .reward-screen--card-choice .reward-screen__cards > :is(.card, .relic-reward__choice) {
+    transition: none;
+  }
 }
