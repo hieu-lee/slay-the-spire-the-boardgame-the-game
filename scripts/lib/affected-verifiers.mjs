@@ -47,6 +47,7 @@ const focusedEngineOwners = ownerMap([
   ['src/game/combat/board.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/game/combat/create.ts', ['verify-combat-layout-reload-browser.mjs']],
   ['src/game/combat/items.ts', ['verify-die-relic-browser.mjs']],
+  ['src/game/combat/item-windows.ts', ['verify-die-relic-browser.mjs']],
   ['src/game/noncombat.ts', ['verify-courier-browser.mjs']],
   ['src/game/run/merchant.ts', ['verify-merchant-overflow-browser.mjs', 'verify-courier-browser.mjs']],
   ['src/game/run/neow.ts', [
@@ -59,6 +60,7 @@ const focusedEngineOwners = ownerMap([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = ownerMap([
+  ['src/ui/CardCollectionOverlay.tsx', ['verify-deck-inspection-browser.mjs', 'verify-card-picker-browser.mjs']],
   ['src/ui/chrome/rewards.css', ['verify-loot-browser.mjs', 'verify-boss-relic-picker-browser.mjs']],
   ['src/ui/RelicRewardPicker.tsx', ['verify-boss-relic-picker-browser.mjs']],
   ['src/ui/styles/relic-reward-picker.css', ['verify-boss-relic-picker-browser.mjs']],
@@ -82,6 +84,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
     'verify-flurry-stance-browser.mjs',
+    'verify-runic-pyramid-browser.mjs',
     'verify-empty-scry-browser.mjs',
     'verify-singleton-slime-command-browser.mjs',
     'verify-act-four-facing-browser.mjs', 'verify-combat-video-browser.mjs',
@@ -103,6 +106,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/combat-screen/hooks.ts', ['verify-card-damage-preview-browser.mjs', 'verify-skin-attack-browser.mjs']],
   ['src/ui/combat-screen/staged-attacks.ts', ['verify-assets.mjs', 'verify-skin-attack-browser.mjs']],
   ['src/ui/chrome/campfire.css', ['verify-art-scenes-browser.mjs', 'verify-card-picker-browser.mjs']],
+  ['src/ui/chrome/combat-relic-actions.css', ['verify-runic-pyramid-browser.mjs']],
   ['src/ui/styles/staged-attacks.css', ['verify-skin-attack-browser.mjs']],
   ['src/ui/styles/attack-timing.css', ['verify-defect-chan-evoke-browser.mjs']],
   ['src/ui/SettingsDialog.tsx', ['verify-card-damage-preview-browser.mjs']],
@@ -149,6 +153,8 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = ownerMap([
+  ['src/ui/CardInspectionDialog.tsx', ['verify-deck-inspection-browser.mjs']],
+  ['src/ui/styles/card-inspection.css', ['verify-deck-inspection-browser.mjs']],
   ...['src/ui/PotionSlots.tsx', 'src/ui/chrome/potion-belt.css']
     .map(file => [file, ['verify-potion-header-browser.mjs']]),
   ['.github/workflows/ci.yml', ['verify-assets.mjs', 'verify-pipeline.mjs']],

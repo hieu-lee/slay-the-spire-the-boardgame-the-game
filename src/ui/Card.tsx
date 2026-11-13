@@ -656,6 +656,27 @@ export function cardKeywordTips(def: CardDef): readonly CardKeywordTip[] {
 
 const EMPTY_KEYWORD_TIPS: readonly CardKeywordTip[] = []
 
+/** The keyword rules for a card plus anything its attached Gem adds; the hover help and the deck inspector share it. */
+export function composeCardKeywordTips(
+  def: CardDef | undefined, additionalDef: CardDef | null | undefined, gemPowerDamage: boolean | undefined,
+  extraTips: readonly CardKeywordTip[] = EMPTY_KEYWORD_TIPS,
+) {
+  const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
+  const attachedGemPowerDamage = (gemPowerDamage ?? def?.guardian?.printedType === 'Gem Power') &&
+    attachedTips.some((tip) => tip.name === 'Hit')
+  const additionalTips = additionalDef ? [
+    { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
+    ...attachedTips.filter((tip) => tip.name !== 'Unplayable' && !(tip.name === 'Hit' && attachedGemPowerDamage)),
+    ...(attachedGemPowerDamage ? [{
+      name: 'Gem Power damage',
+      text: 'Damage printed by a Gem on a Gem Power ignores Strength, Weak, Vulnerable, and Vigor.',
+      icon: 'attack' as IconName,
+    }] : []),
+  ] : []
+  return [...(def ? cardKeywordTips(def) : []), ...additionalTips, ...extraTips]
+    .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
+}
+
 export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = EMPTY_KEYWORD_TIPS, hover = false, children }: {
   def?: CardDef
   hover?: boolean
@@ -670,20 +691,7 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
   }) => React.ReactNode
 }) {
   const { tips, tipsKey, description } = useMemo(() => {
-    const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
-    const attachedGemPowerDamage = (gemPowerDamage ?? def?.guardian?.printedType === 'Gem Power') &&
-      attachedTips.some((tip) => tip.name === 'Hit')
-    const additionalTips = additionalDef ? [
-      { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
-      ...attachedTips.filter((tip) => tip.name !== 'Unplayable' && !(tip.name === 'Hit' && attachedGemPowerDamage)),
-      ...(attachedGemPowerDamage ? [{
-        name: 'Gem Power damage',
-        text: 'Damage printed by a Gem on a Gem Power ignores Strength, Weak, Vulnerable, and Vigor.',
-        icon: 'attack' as IconName,
-      }] : []),
-    ] : []
-    const tips = [...(def ? cardKeywordTips(def) : []), ...additionalTips, ...extraTips]
-      .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
+    const tips = composeCardKeywordTips(def, additionalDef, gemPowerDamage, extraTips)
     return { tips, tipsKey: JSON.stringify(tips), description: tips.map((tip) => `${tip.name}: ${tip.text}`).join(' ') }
   }, [def, additionalDef, gemPowerDamage, extraTips])
   const tooltipId = `card-keyword-help-${useId()}`

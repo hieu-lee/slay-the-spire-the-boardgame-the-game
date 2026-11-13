@@ -101,7 +101,9 @@ function interactionPending() {
 }
 
 function activeScopes(): HTMLElement[] {
-  const modal = document.querySelector<HTMLElement>('dialog:modal, [role="dialog"][aria-modal="true"]')
+  const modals = 'dialog:modal, [role="dialog"][aria-modal="true"]'
+  // A modal opened from inside another one (the deck card inspector) owns the screen.
+  const modal = [...document.querySelectorAll<HTMLElement>(modals)].find((candidate) => !candidate.querySelector(modals))
   if (modal) return [modal]
   const root = document.getElementById('root')
   return root ? [root] : []

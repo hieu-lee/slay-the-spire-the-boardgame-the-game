@@ -61,6 +61,7 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-run-replay-browser.mjs', 'verify-unload-shivs-browser.mjs',
     'verify-boss-heavy-attacks-browser.mjs', 'verify-double-tap-recover-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
+  assert(combat.includes('verify-runic-pyramid-browser.mjs'))
   assert(combat.includes('verify-empty-scry-browser.mjs'))
   assert(combat.includes('verify-singleton-slime-command-browser.mjs'))
   assertEqual(combat.length, 44, 'combat screen selected an unrelated browser suite')
