@@ -201,7 +201,7 @@
 }
 
 @media (max-height: 30rem) {
-  .combat .choice-modal:not(.hermit-trigger-choice) { width: min(760px, calc(100vw - 10rem)); }
+  .combat .choice-modal:not(.hermit-trigger-choice, .card-collection) { width: min(760px, calc(100vw - 10rem)); }
 }
 
 .choice-modal__panel {
