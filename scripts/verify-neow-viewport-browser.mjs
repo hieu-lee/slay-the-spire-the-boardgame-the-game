@@ -88,6 +88,33 @@ try {
     await capture('solo')
     await page.getByRole('button', { name: 'Reveal Card Reward', exact: true }).click()
     await page.locator('.reward-screen--card-choice').waitFor()
+    if (!phone) {
+      const card = page.locator('.reward-screen__cards .card').first()
+      await page.locator('.reward-screen--card-choice').evaluate(async element =>
+        Promise.all(element.getAnimations({ subtree: true }).map(animation => animation.finished)))
+      const previousMotion = await page.evaluate(() => document.documentElement.dataset.reducedMotion)
+      for (const mode of ['system', 'game']) {
+        await page.emulateMedia({ reducedMotion: mode === 'system' ? 'reduce' : 'no-preference' })
+        await page.evaluate(mode => { document.documentElement.dataset.reducedMotion = String(mode === 'game') }, mode)
+        await page.mouse.move(5, 5)
+        const resting = await card.boundingBox()
+        await card.hover()
+        const hovered = await card.boundingBox()
+        assert(Math.abs(hovered.width / resting.width - 1.25) < .01,
+          `${mode}: reduced motion suppressed Neow reward inspection`)
+        assert(await card.evaluate(element => getComputedStyle(element).transitionDuration
+          .split(',').every(duration => parseFloat(duration) <= .001)),
+        `${mode}: reduced-motion inspection must not animate`)
+        await page.mouse.move(5, 5)
+        assert(Math.abs((await card.boundingBox()).width - resting.width) < 1,
+          `${mode}: reduced-motion inspection must return immediately`)
+      }
+      await page.emulateMedia({ reducedMotion: 'no-preference' })
+      await page.evaluate(previous => {
+        if (previous === undefined) delete document.documentElement.dataset.reducedMotion
+        else document.documentElement.dataset.reducedMotion = previous
+      }, previousMotion)
+    }
     await page.screenshot({ path: join(out, `reward-${viewport.width}.png`) })
     await page.getByRole('button', { name: 'Skip', exact: true }).click()
     await page.locator('.neow-options').waitFor()
@@ -126,6 +153,15 @@ try {
     await page.evaluate(() => window.__NEOW_SOCKETS__.at(-1).close())
     await page.locator('.connection--reconnecting').waitFor()
     await capture('party-disconnected')
+    const relic = page.locator('.app-shell__header .relic-chip').first()
+    await relic.focus()
+    await relic.locator('.relic-tip').waitFor({ state: 'visible' })
+    assert(await relic.locator('.relic-tip').evaluate(tip => {
+      const box = tip.getBoundingClientRect()
+      return box.left >= 0 && box.right <= innerWidth && box.bottom <= innerHeight
+    }), 'reconnecting must not push the relic explanation outside the viewport')
+    await page.keyboard.press('Escape')
+    await relic.evaluate(element => element.blur())
     assert.equal(await page.locator('.neow-action button:enabled').count(), 0)
     await context.setOffline(false)
     // Reconnect preserves the viewer and pending choices in the same bounded shell.

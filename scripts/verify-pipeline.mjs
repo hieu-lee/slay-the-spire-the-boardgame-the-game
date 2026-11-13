@@ -62,7 +62,9 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-boss-heavy-attacks-browser.mjs', 'verify-double-tap-recover-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
   assert(combat.includes('verify-runic-pyramid-browser.mjs'))
-  assertEqual(combat.length, 42, 'combat screen selected an unrelated browser suite')
+  assert(combat.includes('verify-empty-scry-browser.mjs'))
+  assert(combat.includes('verify-singleton-slime-command-browser.mjs'))
+  assertEqual(combat.length, 44, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
@@ -89,7 +91,7 @@ check('frontend surfaces select their cores and named focused browser checks', (
   assertDeepEqual(affectedBrowser('src/ui/CourierPanel.tsx'), ['verify-courier-browser.mjs'])
   assertDeepEqual(affectedBrowser('src/ui/chrome/courier.css'), ['verify-courier-browser.mjs'])
   assertDeepEqual(affectedBrowser('src/ui/run-log.ts'), ['verify-replay-controls-browser.mjs', 'verify-run-replay-browser.mjs'])
-  assertDeepEqual(affected('scripts/mail-admin.mjs'), ['verify-mail.mjs', 'verify-pipeline.mjs'])
+  assertDeepEqual(affected('scripts/mail-admin.mjs'), ['verify-architecture.mjs', 'verify-mail.mjs', 'verify-pipeline.mjs'])
   for (const file of ['src/ui/ReplayBar.tsx', 'src/ui/run-replay.ts', 'src/ui/styles/replay-bar.css']) {
     assertDeepEqual(affectedBrowser(file), ['verify-replay-controls-browser.mjs'])
   }
@@ -233,8 +235,10 @@ check('assets and the selector itself keep focused checks', () => {
   includesEvery(affected('src/ui/Card.tsx'), [
     'verify-card-rendering-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-card-damage-preview-browser.mjs',
   ], 'Card.tsx owners')
-  assertDeepEqual(affected('scripts/lib/affected-verifiers.mjs'), ['verify-pipeline.mjs'])
-  assertDeepEqual(affected('scripts/verify-all.mjs'), ['verify-pipeline.mjs'])
+  assertDeepEqual(affected('scripts/lib/affected-verifiers.mjs'), ['verify-architecture.mjs', 'verify-pipeline.mjs'])
+  assertDeepEqual(affected('scripts/verify-all.mjs'), ['verify-architecture.mjs', 'verify-pipeline.mjs'])
+  assert(affected('scripts/lib/browser-screen-audit.mjs').includes('verify-architecture.mjs'), 'a helper edit must reach the Playwright import guard')
+  assertDeepEqual(affected('scripts/verify-leaderboard-browser.mjs'), ['verify-architecture.mjs', 'verify-leaderboard-browser.mjs', 'verify-pipeline.mjs'])
   assertDeepEqual(affected('scripts/verify-deleted.mjs'), everyRoutineCheck)
   assertDeepEqual(affected('scripts/lib/browser-screen-audit.mjs').filter((script) => script.includes('browser')), [
     'verify-browser.mjs', 'verify-hover-overflow-browser.mjs', 'verify-neow-viewport-browser.mjs',

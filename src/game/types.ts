@@ -298,6 +298,8 @@ export type Enemy = {
   ascension?: number
   /** A mode change printed for the start of the next Player Turn. */
   pendingDefId?: string
+  /** Number printed after a duplicate name; fixed when summoned so inserting it never renumbers the others. */
+  copy?: number
 
   hp: number
   maxHp: number

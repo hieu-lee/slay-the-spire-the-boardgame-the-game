@@ -9140,7 +9140,7 @@ check('two of the same enemy in ONE row can still be told apart', () => {
     `a position within the row is what separates them: ${next.log.join(' | ')}`,
   )
 
-  // And two in DIFFERENT rows still use the row alone -- no needless "#1".
+  // Numbers also disambiguate enemies in different rows.
   const split = combat(
     [makePlayer({ character: 'silent', hand: [instance('dagger_spray')] })],
     [
@@ -9153,8 +9153,8 @@ check('two of the same enemy in ONE row can still be told apart', () => {
     playerId: null,
   })
   assert(
-    !apart.log.some((line) => /#\d/.test(line)),
-    `the row alone already separates these: ${apart.log.join(' | ')}`,
+    apart.log.some((line) => /Green Louse #1/.test(line)),
+    `the log must match the numbered board label: ${apart.log.join(' | ')}`,
   )
 })
 
@@ -11091,6 +11091,84 @@ check('Loaded Die follows its printed Block faces and resolves only once per tur
     assertEqual(resolveStartPlayerTurn(resolved, []).players[0].block, resolved.players[0].block,
       'replaying start-of-turn resolution granted Block twice')
     assertEqual(state.players[0].block, 0, 'start-of-turn mutated the input state')
+  }
+})
+
+check('Snecko Eye cost faces resolve through the ordinary start-turn ability pipeline', () => {
+  for (const [die, cost, abilityIndex] of [[5, 2, 2], [6, 0, 3]]) {
+    const state = combat([makePlayer({
+      draw: Array.from({ length: 7 }, () => instance('defend_ironclad')),
+      relics: [{ defId: 'snecko_eye', spent: false }],
+    })], [makeEnemy()])
+    state.rng.replayValues = [(die - 1) / 6 + 0.01]
+    const before = structuredClone(state)
+    const prepared = preparePlayerTurn(state)
+    assertEqual(prepared.die, die)
+    assertEqual(prepared.players[0].nextCardCost, null, 'the cost must not bypass start-turn ordering')
+    assert(startTurnAbilities(prepared).some(ability => ability.id === `p1/relic:0:${abilityIndex}`),
+      `Snecko Eye face ${die} is missing from the normal ability list`)
+    const resolved = resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+    assertEqual(resolved.players[0].nextCardCost, cost)
+    const first = playCard(resolved, 'p1', resolved.players[0].hand[0].uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(first.players[0].energy, 3 - cost)
+    assertEqual(first.players[0].nextCardCost, null)
+    const second = playCard(first, 'p1', first.players[0].hand[0].uid, { enemyUid: null, playerId: 'p1' })
+    assertEqual(second.players[0].energy, 2 - cost, 'only the first card gets the override')
+    assertDeepEqual(state, before)
+  }
+})
+
+check('changing the die selects Snecko Eye’s final face without leaving a stale card price', () => {
+  for (const [initialDie, changer, finalDie, cost, energy] of [
+    [5, 'toolbox', 4, null, 4], [4, 'the_abacus', 5, 2, 3],
+  ]) {
+    const state = combat([makePlayer({
+      draw: Array.from({ length: 7 }, () => instance('defend_ironclad')),
+      relics: [{ defId: 'snecko_eye', spent: false }, { defId: changer, spent: false }],
+    })], [makeEnemy()])
+    state.rng.replayValues = [(initialDie - 1) / 6 + 0.01]
+    const prepared = preparePlayerTurn(state)
+    const changed = activateRelic(prepared, 'p1', 1)
+    assertEqual(changed.die, finalDie)
+    const resolved = resolveStartPlayerTurn(changed, defaultStartTurnChoices(changed))
+    assertEqual(resolved.players[0].nextCardCost, cost)
+    assertEqual(resolved.players[0].energy, energy)
+  }
+})
+
+check('Snecko Eye and another next-card price can be ordered explicitly', () => {
+  const state = combat([makePlayer({
+    draw: Array.from({ length: 5 }, () => instance('defend_ironclad')),
+    relics: [{ defId: 'snecko_eye', spent: false }, { defId: 'chronometer', spent: false }],
+  })], [makeEnemy()])
+  state.rng.replayValues = [0.7]
+  const prepared = preparePlayerTurn(state)
+  assertEqual(prepared.die, 5)
+  assert(startTurnNeedsChoice(prepared), 'different fixed prices must not resolve in an arbitrary order')
+  const choices = defaultStartTurnChoices(prepared)
+  assertEqual(resolveStartPlayerTurn(prepared, choices).players[0].nextCardCost, 2)
+  assertEqual(resolveStartPlayerTurn(prepared, [...choices].reverse()).players[0].nextCardCost, 1)
+})
+
+check('Loaded Die and Dolly’s Mirror can trigger both Snecko Eye cost faces for the relic owner', () => {
+  for (const [source, die] of [['loaded_die', 6], ['dollys_mirror', 1]]) {
+    for (const teammate of [false, true]) for (const [abilityIndex, cost] of [[2, 2], [3, 0]]) {
+      const state = { ...combat([
+        makePlayer({ relics: [{ defId: source, spent: false },
+          ...teammate ? [] : [{ defId: 'snecko_eye', spent: false }]] }),
+        ...teammate ? [makePlayer({ id: 'p2', row: 1, relics: [{ defId: 'snecko_eye', spent: false }] })] : [],
+      ], [makeEnemy()]), phase: 'start', die }
+      const before = structuredClone(state)
+      const used = activateRelic(state, 'p1', 0, {
+        targetRelicPlayerId: teammate ? 'p2' : 'p1',
+        targetRelicIndex: teammate ? 0 : 1, targetAbilityIndex: abilityIndex,
+      })
+      assertEqual(used.players[teammate ? 1 : 0].nextCardCost, cost)
+      assertEqual(used.players[0].relics[0].spent, true)
+      assertEqual(used.players[teammate ? 1 : 0].relics[teammate ? 0 : 1].spent, false)
+      if (teammate) assertEqual(used.players[0].nextCardCost ?? null, null)
+      assertDeepEqual(state, before)
+    }
   }
 })
 

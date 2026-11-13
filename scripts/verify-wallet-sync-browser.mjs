@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict'
 import { mkdirSync } from 'node:fs'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/silent-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
 import { CARD_PACK_PRICE, SKIN_PRICE } from '../src/game/coins.ts'
 import { SKIN_IDS } from '../src/game/skins.ts'
