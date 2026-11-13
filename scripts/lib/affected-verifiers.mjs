@@ -74,6 +74,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/shop.css', ['verify-shop-browser.mjs']],
   ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
+    'verify-empty-scry-browser.mjs',
     'verify-singleton-slime-command-browser.mjs',
     'verify-act-four-facing-browser.mjs', 'verify-combat-video-browser.mjs',
     'verify-unload-shivs-browser.mjs',

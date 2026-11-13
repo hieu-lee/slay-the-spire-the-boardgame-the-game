@@ -28,7 +28,7 @@ try {
         const room = run.map.rows[0][0]
         run.map.rooms[room].kind = 'encounter'
         await page.evaluate(run => window.__STS_DEBUG__.setRun(run), enterRoom(run, room))
-        const card = page.locator('.hand .card[title="Strike"]').first()
+        const card = page.locator('.hand .card[data-card-name="Strike"]').first()
         await card.waitFor()
         await page.waitForFunction(() => [...document.querySelectorAll('.hand .card')].every(e =>
           e.getAnimations().every(animation => animation.playState === 'finished')))
