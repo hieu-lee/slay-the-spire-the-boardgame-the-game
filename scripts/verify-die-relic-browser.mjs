@@ -117,14 +117,74 @@ try {
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.enemies[0].weak === 1)
     await page.screenshot({ path: `${out}/${name}-cheat-picked.png` })
 
-    run.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
-    run.combat.players[0].relics = run.players[0].relics
-    run.combat.players[0].potions = []
-    await page.evaluate(run => window.__STS_DEBUG__.setRun(run), run)
+    for (const [source, die] of [['loaded_die', 6], ['dollys_mirror', 1]]) {
+      for (const [face, cost] of [[5, 2], [6, 0]]) {
+        const next = structuredClone(run)
+        next.campaign.runId = `snecko-choice-${name}-${source}-${face}`
+        next.combat.combatId = `snecko-choice-${name}-${source}-${face}`
+        Object.assign(next.combat, { phase: 'start', die, turn: 2, startTurnStage: 'effects',
+          startTurnProgress: undefined, pendingTriggers: [], powerTriggersUsedThisTurn: [] })
+        next.combat.players[0].nextCardCost = null
+        next.combat.players[0].potions = ['gamblers_brew']
+        next.combat.players[0].relics = [
+          { defId: source, spent: false }, { defId: 'snecko_eye', spent: false },
+        ]
+        next.players[0].relics = structuredClone(next.combat.players[0].relics)
+        await page.evaluate(run => window.__STS_DEBUG__.setRun(run), next)
+        await page.locator('.card-morph').waitFor({ state: 'detached' })
+        const open = page.locator('.relic-actions details')
+          .filter({ hasText: source === 'loaded_die' ? 'Loaded Die' : "Dolly's Mirror" }).locator('summary')
+        await open.click()
+        const choices = page.locator('.relic-actions .die-relic-list').getByRole('button')
+        const five = choices.filter({ hasText: 'Snecko Eye' }).filter({ hasText: 'die 5' })
+        const six = choices.filter({ hasText: 'Snecko Eye' }).filter({ hasText: 'die 6' })
+        await five.waitFor()
+        await six.waitFor()
+        assert(await five.isEnabled() && await six.isEnabled(), 'both cost faces must be selectable')
+        await page.screenshot({ path: `${out}/${name}-${source}-snecko-${face}.png` })
+        await (face === 5 ? five : six).click()
+        await page.waitForFunction(cost => window.__STS_DEBUG__.getRun().combat.players[0].nextCardCost === cost, cost)
+        assert.equal(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].relics[0].spent), true)
+      }
+    }
+    await page.evaluate(() => {
+      const current = structuredClone(window.__STS_DEBUG__.getRun())
+      current.players[0].relics = [{ defId: 'snecko_eye', spent: false }]
+      current.combat.players[0].relics = current.players[0].relics
+      current.combat.players[0].potions = []
+      window.__STS_DEBUG__.setRun(current)
+    })
+    await page.locator('.card-morph').waitFor({ state: 'hidden' })
     const snecko = page.locator('.relic-chip[data-relic="snecko_eye"]')
     await snecko.hover()
     const sneckoTip = snecko.locator('.relic-tip')
     await sneckoTip.waitFor({ state: 'visible' })
+    const tipImage = await sneckoTip.screenshot({ path: `${out}/${name}-chamfer.png`, animations: 'disabled' })
+    const corners = await sneckoTip.evaluate(async (tip, png) => {
+      const image = new Image()
+      image.src = `data:image/png;base64,${png}`
+      await image.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = image.width; canvas.height = image.height
+      const context = canvas.getContext('2d')
+      context.drawImage(image, 0, 0)
+      const style = getComputedStyle(tip)
+      context.fillStyle = style.getPropertyValue('--trim-dim')
+      context.fillRect(0, 0, 1, 1)
+      const expected = [...context.getImageData(0, 0, 1, 1).data].slice(0, 3)
+      const box = tip.getBoundingClientRect()
+      const inset = parseFloat(style.getPropertyValue('--chamfer')) / 2 + 1
+      return [[false, false], [true, false], [false, true], [true, true]].map(([right, bottom]) => {
+        const x = Math.floor((right ? box.width - inset : inset) * image.width / box.width)
+        const y = Math.floor((bottom ? box.height - inset : inset) * image.height / box.height)
+        const pixels = context.getImageData(x - 1, y - 1, 3, 3).data
+        for (let i = 0; i < pixels.length; i += 4) {
+          if (expected.every((channel, index) => Math.abs(pixels[i + index] - channel) <= 15)) return true
+        }
+        return false
+      })
+    }, tipImage.toString('base64'))
+    assert(corners.every(Boolean), `${name}: all four cut corners must retain visible trim: ${JSON.stringify(corners)}`)
     const sneckoText = await sneckoTip.innerText()
     assert(sneckoText.includes('On a 5: your next card this turn costs 2 Energy.'),
       `${name}: Snecko Eye does not explain roll 5`)
@@ -135,6 +195,36 @@ try {
       sneckoBox.x + sneckoBox.width <= width && sneckoBox.y + sneckoBox.height <= height,
     `${name}: Snecko Eye's complete rules are clipped`)
     await page.screenshot({ path: `${out}/${name}-snecko-tooltip.png` })
+    for (const [id, label] of [['blue_candle', 'Blue Candle'], ['runic_pyramid', 'Runic Pyramid']]) {
+      const fixture = structuredClone(run)
+      Object.assign(fixture.combat, { phase: 'player', combatId: `cancel-${name}-${id}`,
+        pendingTriggers: [], startTurnProgress: undefined })
+      Object.assign(fixture.combat.players[0], {
+        relics: [{ defId: id, spent: false }], potions: [], energy: 3,
+        hand: [{ uid: 'cancel-card', defId: 'strike_ironclad', upgraded: false }],
+      })
+      await page.evaluate(run => window.__STS_DEBUG__.setRun(run), fixture)
+      const panel = page.locator('.relic-actions details').filter({ hasText: label })
+      const summary = panel.locator('summary')
+      await summary.click()
+      const before = await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun()))
+      for (const select of [false, true]) {
+        if (select) await panel.locator('.card').click()
+        await panel.getByRole('button', { name: 'Cancel', exact: true }).click()
+        assert.equal(await panel.getAttribute('open'), null)
+        assert(await summary.evaluate(element => element === document.activeElement))
+        assert.equal(await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun())), before,
+          'cancelling must not consume cards or the relic')
+        await summary.click()
+        assert.equal(await panel.locator('.card--selected').count(), 0)
+      }
+      if (id === 'blue_candle') {
+        await panel.locator('.card').click()
+        await panel.getByRole('button', { name: 'Activate', exact: true }).click()
+        await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].relics[0].spent)
+        assert(await page.evaluate(() => window.__STS_DEBUG__.getRun().combat.players[0].exhaust.some(card => card.uid === 'cancel-card')))
+      }
+    }
     await page.close()
   }
   assert.deepEqual(errors, [])
