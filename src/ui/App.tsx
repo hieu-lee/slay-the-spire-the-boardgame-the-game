@@ -79,6 +79,7 @@ import { refreshCombatRelic, relicDef } from '../game/relics.ts'
 import { IconValue } from './Icon.tsx'
 import { RelicBar } from './RelicChip.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
+import { PotionSlots } from './PotionSlots.tsx'
 import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { StartMenu } from './StartMenu.tsx'
 import { TutorialCoach } from './TutorialCoach.tsx'
@@ -1258,10 +1259,6 @@ function LocalGame({ onOnline, settings, onSettings, active }: {
               <span className="pip" title="Gold">
                 <IconValue name="gold" value={headerViewer.gold} size={20} />
               </span>
-              {run.phase === 'combat' && run.combat ? <CourierPeek placement="header" active={!run.courier.offer && courierPeekPhase(run.combat)}
-                players={run.combat.players} viewerId={viewerId} usedBy={run.courier.usedBy} onReveal={revealLocalCourier} /> : null}
-              <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`}
-                die={run.phase === 'combat' ? run.combat?.die : undefined} />
               {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
               !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
                 <OutsidePotionBar players={run.players} viewerId={viewerId}
@@ -1270,7 +1267,11 @@ function LocalGame({ onOnline, settings, onSettings, active }: {
                   onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
                   onUse={(potionId, replacePotionId) => setRun((current) =>
                     usePotionOutsideCombat(current, viewerId, potionId, replacePotionId))} />
-              ) : null}
+              ) : <PotionSlots player={headerViewer} ascension={run.ascension} />}
+              {run.phase === 'combat' && run.combat ? <CourierPeek placement="header" active={!run.courier.offer && courierPeekPhase(run.combat)}
+                players={run.combat.players} viewerId={viewerId} usedBy={run.courier.usedBy} onReveal={revealLocalCourier} /> : null}
+              <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`}
+                die={run.phase === 'combat' ? run.combat?.die : undefined} />
             </>
           ) : null}
         </div>
