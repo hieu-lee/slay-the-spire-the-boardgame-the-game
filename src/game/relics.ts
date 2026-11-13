@@ -174,8 +174,8 @@ ordinary({ id: 'blue_candle', name: 'Blue Candle', cost: 7, effects: [], activat
   rule: 'Exhaust up to 2 cards in your hand.',
   text: 'Once per combat: Exhaust up to 2 cards in your hand.' })
 ordinary({ id: 'calipers', name: 'Calipers', cost: 6, effects: [], activation: 'oncePerCombat',
-  rule: 'Keep your leftover Block from last turn.',
-  text: 'Once per combat: keep your leftover Block from last turn.' })
+  rule: 'Keep any Block left after enemy attacks into your next turn only.',
+  text: 'Once per combat: click Calipers before ending the turn in which you want to save extra Block. Keep any Block left after enemy attacks into your next turn only. It is not automatic and cannot restore Block already lost.' })
 ordinary({ id: 'captains_wheel', name: "Captain's Wheel", cost: 8,
   trigger: { kind: 'dieRelic', faces: [3] }, effects: [{ kind: 'block', amount: 3 }],
   text: 'On a 3: gain 3 Block.' })
@@ -383,7 +383,11 @@ boss({ id: 'ring_of_serpent', name: 'Ring of Serpent', trigger: { kind: 'startOf
   effects: [{ kind: 'draw', amount: 1 }], text: 'Start of turn: draw a card.' })
 boss({ id: 'snecko_eye', name: 'Snecko Eye',
   trigger: { kind: 'dieRelic', faces: [1, 2] }, effects: [{ kind: 'draw', amount: 2 }],
-  abilities: [{ trigger: { kind: 'dieRelic', faces: [3, 4] }, effects: [{ kind: 'gainEnergy', amount: 1 }] }],
+  abilities: [
+    { trigger: { kind: 'dieRelic', faces: [3, 4] }, effects: [{ kind: 'gainEnergy', amount: 1 }] },
+    { trigger: { kind: 'dieRelic', faces: [5] }, effects: [{ kind: 'setNextCardCost', amount: 2 }] },
+    { trigger: { kind: 'dieRelic', faces: [6] }, effects: [{ kind: 'setNextCardCost', amount: 0 }] },
+  ],
   text: 'On a 1 or 2: draw 2. On a 3 or 4: gain 1 Energy. On a 5: your next card this turn costs 2 Energy. On a 6: your next card this turn costs 0 Energy.' })
 boss({ id: 'sozu', name: 'Sozu', trigger: { kind: 'startOfTurn' },
   effects: [{ kind: 'gainEnergy', amount: 1 }], rule: 'You cannot gain Potions.',
