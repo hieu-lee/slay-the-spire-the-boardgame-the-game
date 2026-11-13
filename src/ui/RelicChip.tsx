@@ -61,6 +61,15 @@ function distinctRule(def: RelicDef): string | undefined {
   return flatten(def.text).includes(flatten(def.rule)) ? undefined : def.rule
 }
 
+export function relicTooltipText(id: string, die?: number): string {
+  const text = relicDef(id).text
+  const baseId = id.replace(/^downfall_/, '')
+  const adjustment = baseId === 'the_abacus' ? 1 : baseId === 'toolbox' ? -1 : 0
+  if (!adjustment || die === undefined || !Number.isInteger(die) || die < 1 || die > 6) return text
+  const result = ((die - 1 + adjustment + 6) % 6) + 1
+  return text.replace(/\(\d becomes \d\)/, `(${die} --> ${result})`)
+}
+
 /**
  * Name, rarity, printed text and any physical rule, in the tooltip frame.
  *
@@ -68,18 +77,18 @@ function distinctRule(def: RelicDef): string | undefined {
  * already says, and a `role="tooltip"` nothing points at with
  * `aria-describedby` is inert anyway.
  */
-function RelicTooltip({ id, note }: { id: string; note?: string }) {
-  return <span className="relic-tip" aria-hidden="true"><RelicTooltipContent id={id} note={note} /></span>
+function RelicTooltip({ id, note, die }: { id: string; note?: string; die?: number }) {
+  return <span className="relic-tip" aria-hidden="true"><RelicTooltipContent id={id} note={note} die={die} /></span>
 }
 
-function RelicTooltipContent({ id, note }: { id: string; note?: string }) {
+function RelicTooltipContent({ id, note, die }: { id: string; note?: string; die?: number }) {
   const def = relicDef(id)
   const rule = distinctRule(def)
   return (
     <>
       <strong className="relic-tip__name">{def.name}</strong>
       <span className="relic-tip__pool">{RELIC_POOL_LABEL[def.pool]}</span>
-      <span className="relic-tip__text">{def.text}</span>
+      <span className="relic-tip__text">{relicTooltipText(id, die)}</span>
       {rule ? <span className="relic-tip__rule">{rule}</span> : null}
       {note ? <span className="relic-tip__note">{note}</span> : null}
     </>
@@ -98,8 +107,9 @@ export function relicNote(relic: RelicInstance): string | undefined {
  * lists leave `hoverable` off on purpose: a hit-testable panel opened below one
  * option would sit on top of the next option the pointer is travelling to.
  */
-export function RelicTooltipAnchor({ relic, children, className, focusable = false, hoverable = false, confirmLabel }: {
+export function RelicTooltipAnchor({ relic, children, className, focusable = false, hoverable = false, confirmLabel, die }: {
   relic: RelicInstance
+  die?: number
   children: ReactNode
   className?: string
   focusable?: boolean
@@ -109,8 +119,8 @@ export function RelicTooltipAnchor({ relic, children, className, focusable = fal
   const def = relicDef(relic.defId)
   const note = relicNote(relic)
   return <PotionTooltipAnchor id={relic.defId} name={def.name} kindLabel={RELIC_POOL_LABEL[def.pool]}
-    text={[def.text, distinctRule(def), note].filter(Boolean).join(' ')}
-    tooltipContent={<RelicTooltipContent id={relic.defId} note={note} />}
+    text={[relicTooltipText(relic.defId, die), distinctRule(def), note].filter(Boolean).join(' ')}
+    tooltipContent={<RelicTooltipContent id={relic.defId} note={note} die={die} />}
     className={className} focusable={focusable} hoverable={hoverable} confirmLabel={confirmLabel}>
     {children}
   </PotionTooltipAnchor>
@@ -175,12 +185,13 @@ export function RelicOptionText({ id, withCost = false, note }: { id: string; wi
  * prohibited and several screen readers drop it, so the relic would have
  * announced nothing at all.
  */
-function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
+function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped, die }: {
   relic: RelicInstance
   chipKey: string
   tapOpen: boolean
   onTapOpen: (key: string, open: boolean) => void
   unclipped?: boolean
+  die?: number
 }) {
   const def = relicDef(relic.defId)
   const rarity = RELIC_POOL_LABEL[def.pool]
@@ -260,7 +271,7 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
   // spent, not as "0 uses remaining".
   const note = relicNote(relic)
   if (unclipped) return (
-    <RelicTooltipAnchor relic={relic} focusable hoverable>
+    <RelicTooltipAnchor relic={relic} die={die} focusable hoverable>
       <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`}>
         <img className="item-icon-image" src={relicIconPath(relic.defId)} alt="" />
       </span>
@@ -304,9 +315,9 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
         onTapOpen(chipKey, true)
         setDismissed(false)
       } : undefined}
-      aria-label={[`${def.name}.`, `${rarity}.`, def.text, distinctRule(def), note].filter(Boolean).join(' ')}>
+      aria-label={[`${def.name}.`, `${rarity}.`, relicTooltipText(relic.defId, die), distinctRule(def), note].filter(Boolean).join(' ')}>
       <img className="item-icon-image" src={relicIconPath(relic.defId)} alt="" />
-      <RelicTooltip id={relic.defId} note={note} />
+      <RelicTooltip id={relic.defId} note={note} die={die} />
     </span>
   )
 }
@@ -322,7 +333,7 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
  * the row ("Ironclad's relics"), and in multiplayer a bare "Relics" would leave
  * a screen-reader user unable to tell whose row they had landed on.
  */
-export function RelicBar({ relics, label, unclipped }: { relics: readonly RelicInstance[]; label: string; unclipped?: boolean }) {
+export function RelicBar({ relics, label, unclipped, die }: { relics: readonly RelicInstance[]; label: string; unclipped?: boolean; die?: number }) {
   // Deliberately NOT guarded against an id `relicDef` does not know. CombatScreen
   // and RoomScreen read this same array unguarded, and the engine reads it in a
   // dozen more places — so skipping unknown relics here would not save the run,
@@ -362,7 +373,7 @@ export function RelicBar({ relics, label, unclipped }: { relics: readonly RelicI
     <span className="relic-bar" role="group" aria-label={label} ref={bar}>
       {relics.map((relic, index) => {
         const key = `${relic.defId}-${index}`
-        return <RelicChip key={key} relic={relic} chipKey={key} tapOpen={openId === key} unclipped={unclipped}
+        return <RelicChip key={key} relic={relic} chipKey={key} tapOpen={openId === key} unclipped={unclipped} die={die}
           onTapOpen={openChip} />
       })}
     </span>
