@@ -5,14 +5,16 @@ export { devices } from 'playwright'
 export function silenceBrowserAudio() {
   const installed = Symbol.for('sts-test-audio-muted')
   if (globalThis[installed]) return
-  Object.defineProperty(globalThis, installed, { value: true })
+  // Records what the page asked for, so a test can still assert that the game requests muted media.
+  const requested = new WeakMap()
+  Object.defineProperty(globalThis, installed, { value: requested })
 
   const muted = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'muted')
   if (!muted?.set) throw new Error('Cannot silence browser media output')
   const mute = media => muted.set.call(media, true)
   Object.defineProperty(HTMLMediaElement.prototype, 'muted', {
     ...muted,
-    set() { mute(this) },
+    set(value) { requested.set(this, Boolean(value)); mute(this) },
   })
   const play = HTMLMediaElement.prototype.play
   HTMLMediaElement.prototype.play = function (...args) {

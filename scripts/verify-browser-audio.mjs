@@ -22,9 +22,12 @@ for (const [name, engine] of [
       audio.muted = false
       const video = document.querySelector('video')
       video.muted = false
-      return audio.muted && video.muted
+      const requested = globalThis[Symbol.for('sts-test-audio-muted')]
+      const wantedSound = requested.get(video) === false
+      video.muted = true
+      return audio.muted && video.muted && wantedSound && requested.get(video) === true
     })
-    assert(mediaMuted, 'media must stay muted even when the test requests sound')
+    assert(mediaMuted, 'media must stay muted while still reporting what the page requested')
     await page.evaluate(() => {
       document.querySelector('button').onclick = async () => {
         const context = new AudioContext()
