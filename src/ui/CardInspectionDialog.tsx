@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardInstance } from '../game/types.ts'
-import { Card, cardKeywordTips, cardRuleDescription } from './Card.tsx'
+import { Card, composeCardKeywordTips } from './Card.tsx'
 import './styles/card-inspection.css'
 
 export function CardInspectionDialog({
@@ -22,9 +22,7 @@ export function CardInspectionDialog({
   const upgraded = upgradeOverride ?? Boolean(card?.upgraded || previewAll)
   const def = card ? faceOf(cardDef(card.defId), upgraded && Boolean(cardDef(card.defId).upgrade)) : null
   const gem = card?.attachedGemId ? cardDef(card.attachedGemId) : null
-  const tips = def ? [...cardKeywordTips(def), ...(gem ? [
-    { name: gem.name, text: cardRuleDescription(gem) },
-  ] : [])] : []
+  const tips = composeCardKeywordTips(def ?? undefined, gem, undefined)
 
   useEffect(() => {
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null

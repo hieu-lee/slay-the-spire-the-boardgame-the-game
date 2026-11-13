@@ -125,6 +125,17 @@ try {
     assert.equal(await inspection.count(), 0, 'reopening the deck must not restore a stale inspector')
     assert.equal(await page.evaluate(() => JSON.stringify(window.__STS_DEBUG__.getRun())), original,
       'all inspection controls must leave the live run unchanged')
+    await page.evaluate(() => {
+      const run = structuredClone(window.__STS_DEBUG__.getRun())
+      run.players[0].deck = [{ uid: 'gem-strike', defId: 'guardian_strike', upgraded: false, attachedGemId: 'guardian_emerald' }]
+      window.__STS_DEBUG__.setRun(run)
+    })
+    await activate(grid.locator('.card').first())
+    await inspection.waitFor()
+    const keywords = inspection.getByRole('complementary', { name: 'Card keywords' })
+    for (const name of ['Emerald', 'Weak'])
+      assert(await keywords.getByRole('heading', { name, exact: true }).isVisible(),
+        `a socketed Gem must explain ${name} in the inspector`)
     assert.deepEqual(errors, [])
     await page.close()
     console.log(`PASS ${screen}: card inspection, both faces, navigation, focus, nested dismissal and read-only state`)
