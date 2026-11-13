@@ -235,6 +235,7 @@ check('assets and the selector itself keep focused checks', () => {
   ], 'Card.tsx owners')
   assertDeepEqual(affected('scripts/lib/affected-verifiers.mjs'), ['verify-pipeline.mjs'])
   assertDeepEqual(affected('scripts/verify-all.mjs'), ['verify-pipeline.mjs'])
+  assertDeepEqual(affected('scripts/verify-leaderboard-browser.mjs'), ['verify-architecture.mjs', 'verify-leaderboard-browser.mjs', 'verify-pipeline.mjs'])
   assertDeepEqual(affected('scripts/verify-deleted.mjs'), everyRoutineCheck)
   assertDeepEqual(affected('scripts/lib/browser-screen-audit.mjs').filter((script) => script.includes('browser')), [
     'verify-browser.mjs', 'verify-hover-overflow-browser.mjs', 'verify-neow-viewport-browser.mjs',
