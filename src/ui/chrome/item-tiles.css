@@ -115,7 +115,8 @@
 
    Local grid shell: every row gap is 8px, so any band that follows another row
    needs -0.5rem. Only a band sitting directly under the HEADER also has to
-   cancel the header's own 12px `margin-bottom`, for -1.25rem.
+   cancel the header's own 12px `margin-bottom`, for -1.25rem. Dialogs and
+   hidden siblings do not occupy a row and must not break that adjacency.
    Below: a band in the middle track has the 8px gap plus the shell's 16px
    padding under it (-1.5rem); a band that is the LAST track has only the
    padding (-1rem).
@@ -123,11 +124,13 @@
    already touches whatever is above (0), while below it the shell's trailing
    gap is still there (-1.5rem).
 
-   All of these tie on specificity and resolve by SOURCE ORDER — keep the
-   header-adjacent and online rules after the general ones. */
+   Keep the header-adjacent and online rules after the general ones. */
 .sts-scope .map { margin-top: -0.5rem; margin-bottom: -1rem; }
 
-.sts-scope .app-shell__header + .map { margin-top: -1.25rem; margin-bottom: -1.5rem; }
+.app-shell.sts-scope > .map:where(:nth-child(2 of :not(dialog, [hidden]))) {
+  margin-top: -1.25rem;
+  margin-bottom: -1.5rem;
+}
 
 .app-shell--online .map { margin-bottom: -1.5rem; }
 
