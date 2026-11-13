@@ -145,7 +145,7 @@ export const EVENT_DEFINITIONS: Readonly<Record<string, EventDefinition>> = {
   cursed_tome: {
     id: 'cursed_tome', name: 'Cursed Tome', scope: 'player',
     options: [
-      option('take', 'Take', 'Gain a Rare Reward and a Curse.', [fx('rare-reward'), fx('gain-curse')]),
+      option('take', 'Take', 'Gain a Rare Card Reward and a Curse.', [fx('rare-reward'), fx('gain-curse')]),
       option('read', 'Read', 'Add a random rare card to your deck. Lose 2 HP.', [fx('card-reward', { source: 'rare', random: true }), fx('lose-hp', { amount: 2 })]),
       option('skim', 'Skim', 'Gain a Card Reward. Lose 1 HP.', [fx('card-reward'), fx('lose-hp', { amount: 1 })]),
     ],
