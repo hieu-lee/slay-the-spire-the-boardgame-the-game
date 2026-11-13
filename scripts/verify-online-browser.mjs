@@ -5611,6 +5611,7 @@ try {
       upgraded: false, potion: false, relic: false, bossRelics: ['black_blood', 'orrery'] })),
   })
   rooms.publishRoom(code)
+  await Promise.all([a, b].map((page) => page.getByRole('button', { name: 'Choose 1 of 2 relics', exact: true }).click()))
   await Promise.all([a, b].map((page) => page.getByRole('button', { name: 'Black Blood' }).waitFor()))
   await b.getByRole('button', { name: 'Orrery' }).click()
   await b.getByRole('heading', { name: 'Loot!' }).waitFor()
