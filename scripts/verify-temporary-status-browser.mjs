@@ -88,6 +88,17 @@ try {
       for (const key of ['x', 'y', 'width', 'height']) {
         assert(Math.abs(before[key] - after[key]) < 1, 'wrapping statuses must not move or resize the hero')
       }
+      if (screen === 'horizontal-phone' && character === 'defect') {
+        for (const height of [500, 390]) {
+          await page.setViewportSize({ width: viewport.width, height })
+          await page.waitForFunction(() => {
+            const seat = document.querySelector('.seat__interactive')
+            const board = seat.closest('.board').getBoundingClientRect()
+            return [...seat.querySelectorAll('.orbs .token--orb')].every(orb => orb.getBoundingClientRect().top >= board.top) &&
+              Number.parseFloat(seat.style.getPropertyValue('--temporary-status-height')) === seat.querySelector('.seat__meta').offsetHeight
+          })
+        }
+      }
       const measured = () => page.waitForFunction(() => {
         const meta = document.querySelector('.seat__meta')
         return meta.offsetHeight > 0 &&

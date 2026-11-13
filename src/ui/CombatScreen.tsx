@@ -2284,8 +2284,10 @@ function CombatScreenView({
       const seat = element.closest<HTMLElement>('.seat__interactive')
       const board = boardRef.current
       if (!seat || !board) return
-      seat.style.setProperty('--temporary-status-height', `${element.offsetHeight}px`)
+      const height = element.offsetHeight
+      seat.style.setProperty('--temporary-status-height', `${height}px`)
       seat.style.removeProperty('--orb-size-cap')
+      if (height === 0) return
       const orbs = seat.querySelector('.orbs')?.getBoundingClientRect()
       const orbSize = seat.querySelector('.orbs .token--orb')?.getBoundingClientRect().height
       if (!orbs || !orbSize) return
@@ -2294,10 +2296,15 @@ function CombatScreenView({
     }
     statuses.forEach(measure)
     if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) if (entry.target instanceof HTMLElement) measure(entry.target)
+    // Board and seat resizes move the head too, so every geometry change remeasures all seats.
+    const observer = new ResizeObserver(() => statuses.forEach(measure))
+    const board = boardRef.current
+    if (board) observer.observe(board)
+    statuses.forEach(element => {
+      observer.observe(element)
+      const seat = element.closest('.seat__interactive')
+      if (seat) observer.observe(seat)
     })
-    statuses.forEach(element => observer.observe(element))
     return () => observer.disconnect()
   }, [state.combatId, statusSeats])
 
