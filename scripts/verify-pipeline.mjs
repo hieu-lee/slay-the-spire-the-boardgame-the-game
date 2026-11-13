@@ -89,7 +89,7 @@ check('frontend surfaces select their cores and named focused browser checks', (
   assertDeepEqual(affectedBrowser('src/ui/CourierPanel.tsx'), ['verify-courier-browser.mjs'])
   assertDeepEqual(affectedBrowser('src/ui/chrome/courier.css'), ['verify-courier-browser.mjs'])
   assertDeepEqual(affectedBrowser('src/ui/run-log.ts'), ['verify-replay-controls-browser.mjs', 'verify-run-replay-browser.mjs'])
-  assertDeepEqual(affected('scripts/mail-admin.mjs'), ['verify-mail.mjs', 'verify-pipeline.mjs'])
+  assertDeepEqual(affected('scripts/mail-admin.mjs'), ['verify-architecture.mjs', 'verify-mail.mjs', 'verify-pipeline.mjs'])
   for (const file of ['src/ui/ReplayBar.tsx', 'src/ui/run-replay.ts', 'src/ui/styles/replay-bar.css']) {
     assertDeepEqual(affectedBrowser(file), ['verify-replay-controls-browser.mjs'])
   }
@@ -233,8 +233,9 @@ check('assets and the selector itself keep focused checks', () => {
   includesEvery(affected('src/ui/Card.tsx'), [
     'verify-card-rendering-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-card-damage-preview-browser.mjs',
   ], 'Card.tsx owners')
-  assertDeepEqual(affected('scripts/lib/affected-verifiers.mjs'), ['verify-pipeline.mjs'])
-  assertDeepEqual(affected('scripts/verify-all.mjs'), ['verify-pipeline.mjs'])
+  assertDeepEqual(affected('scripts/lib/affected-verifiers.mjs'), ['verify-architecture.mjs', 'verify-pipeline.mjs'])
+  assertDeepEqual(affected('scripts/verify-all.mjs'), ['verify-architecture.mjs', 'verify-pipeline.mjs'])
+  assert(affected('scripts/lib/browser-screen-audit.mjs').includes('verify-architecture.mjs'), 'a helper edit must reach the Playwright import guard')
   assertDeepEqual(affected('scripts/verify-leaderboard-browser.mjs'), ['verify-architecture.mjs', 'verify-leaderboard-browser.mjs', 'verify-pipeline.mjs'])
   assertDeepEqual(affected('scripts/verify-deleted.mjs'), everyRoutineCheck)
   assertDeepEqual(affected('scripts/lib/browser-screen-audit.mjs').filter((script) => script.includes('browser')), [
