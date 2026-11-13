@@ -64,7 +64,7 @@ check('frontend surfaces select their cores and named focused browser checks', (
   assert(combat.includes('verify-runic-pyramid-browser.mjs'))
   assert(combat.includes('verify-empty-scry-browser.mjs'))
   assert(combat.includes('verify-singleton-slime-command-browser.mjs'))
-  assertEqual(combat.length, 44, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 45, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))
