@@ -124,7 +124,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/non-combat-rooms.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/chrome/mailbox.css', ['verify-mail-browser.mjs']],
   ['src/multiplayer/useRoomSession.ts', ['verify-ascension-sync-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']],
-  ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs']],
+  ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs', 'verify-toolbox-browser.mjs']],
   ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']],
   ['src/ui/OnlineCampfireScreen.tsx', ['verify-art-scenes-browser.mjs', 'verify-monogatari-online-browser.mjs']],
   ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-skin-browser.mjs']],
@@ -138,13 +138,13 @@ const focusedUiOwners = ownerMap([
   ]],
   ['src/ui/combat-screen/vfx.tsx', ['verify-lightning-act2-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-defect-chan-evoke-browser.mjs']],
   ['src/ui/styles/compendium.css', ['verify-compendium-browser.mjs']],
-  ['src/ui/styles/prompt.css', ['verify-hermit-combo-browser.mjs']],
+  ['src/ui/styles/prompt.css', ['verify-hermit-combo-browser.mjs', 'verify-choice-backdrop-browser.mjs']],
   ['src/ui/TokenRow.tsx', [
     'verify-turn-targets-browser.mjs', 'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs',
   ]],
   ['src/ui/styles/enemy-portrait.css', ['verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs', 'verify-end-turn-drag-browser.mjs']],
   ['src/ui/styles/presentation-overlays.css', ['verify-lightning-act2-browser.mjs']],
-  ['src/ui/styles/stage-scale.css', ['verify-act-four-facing-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs']],
+  ['src/ui/styles/stage-scale.css', ['verify-act-four-facing-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-hero-potions-browser.mjs', 'verify-temporary-status-browser.mjs']],
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = ownerMap([

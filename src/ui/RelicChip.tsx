@@ -4,7 +4,7 @@
 // definition id, so a player could see that they owned six relics and read what
 // none of them did.
 //
-// RelicBar and RelicOptionText are exported; RelicChip is deliberately not, because
+// RelicBar, RelicOptionText and RelicTooltipAnchor are exported; RelicChip is not, because
 // the tooltip is positioned against the BAR rather than against its own chip —
 // see the comment on `.relic-bar` in src/ui/chrome/tooltips.css — so a lone chip
 // outside a bar would place its tooltip against whatever happened to be
@@ -12,6 +12,7 @@
 // formatter, no DOM. `RelicOptionText` is the prose those option buttons print
 // on a device that cannot open a `title`.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { relicDef } from '../game/relics.ts'
 import type { RelicDef } from '../game/relics.ts'
 import type { RelicInstance } from '../game/types.ts'
@@ -60,6 +61,15 @@ function distinctRule(def: RelicDef): string | undefined {
   return flatten(def.text).includes(flatten(def.rule)) ? undefined : def.rule
 }
 
+export function relicTooltipText(id: string, die?: number): string {
+  const text = relicDef(id).text
+  const baseId = id.replace(/^downfall_/, '')
+  const adjustment = baseId === 'the_abacus' ? 1 : baseId === 'toolbox' ? -1 : 0
+  if (!adjustment || die === undefined || !Number.isInteger(die) || die < 1 || die > 6) return text
+  const result = ((die - 1 + adjustment + 6) % 6) + 1
+  return text.replace(/\(\d becomes \d\)/, `(${die} --> ${result})`)
+}
+
 /**
  * Name, rarity, printed text and any physical rule, in the tooltip frame.
  *
@@ -67,18 +77,53 @@ function distinctRule(def: RelicDef): string | undefined {
  * already says, and a `role="tooltip"` nothing points at with
  * `aria-describedby` is inert anyway.
  */
-function RelicTooltip({ id, note }: { id: string; note?: string }) {
+function RelicTooltip({ id, note, die }: { id: string; note?: string; die?: number }) {
+  return <span className="relic-tip" aria-hidden="true"><RelicTooltipContent id={id} note={note} die={die} /></span>
+}
+
+function RelicTooltipContent({ id, note, die }: { id: string; note?: string; die?: number }) {
   const def = relicDef(id)
   const rule = distinctRule(def)
   return (
-    <span className="relic-tip" aria-hidden="true">
+    <>
       <strong className="relic-tip__name">{def.name}</strong>
       <span className="relic-tip__pool">{RELIC_POOL_LABEL[def.pool]}</span>
-      <span className="relic-tip__text">{def.text}</span>
+      <span className="relic-tip__text">{relicTooltipText(id, die)}</span>
       {rule ? <span className="relic-tip__rule">{rule}</span> : null}
       {note ? <span className="relic-tip__note">{note}</span> : null}
-    </span>
+    </>
   )
+}
+
+export function relicNote(relic: RelicInstance): string | undefined {
+  return relic.spent ? 'Face down — already used.'
+    : relic.uses === 0 ? 'Used up.'
+      : relic.uses !== undefined ? `${relic.uses} use${relic.uses === 1 ? '' : 's'} remaining.`
+        : undefined
+}
+
+/**
+ * The bar's exact tooltip content, portalled out of scrollable relic choices. Choice
+ * lists leave `hoverable` off on purpose: a hit-testable panel opened below one
+ * option would sit on top of the next option the pointer is travelling to.
+ */
+export function RelicTooltipAnchor({ relic, children, className, focusable = false, hoverable = false, confirmLabel, die }: {
+  relic: RelicInstance
+  die?: number
+  children: ReactNode
+  className?: string
+  focusable?: boolean
+  hoverable?: boolean
+  confirmLabel?: string
+}) {
+  const def = relicDef(relic.defId)
+  const note = relicNote(relic)
+  return <PotionTooltipAnchor id={relic.defId} name={def.name} kindLabel={RELIC_POOL_LABEL[def.pool]}
+    text={[relicTooltipText(relic.defId, die), distinctRule(def), note].filter(Boolean).join(' ')}
+    tooltipContent={<RelicTooltipContent id={relic.defId} note={note} die={die} />}
+    className={className} focusable={focusable} hoverable={hoverable} confirmLabel={confirmLabel}>
+    {children}
+  </PotionTooltipAnchor>
 }
 
 /**
@@ -96,9 +141,9 @@ function RelicTooltip({ id, note }: { id: string; note?: string }) {
  * "(0 Gold)" rather than going silent — on The Moai Head that zero is the whole
  * decision, and it is the case a plain `cost === undefined` check hid.
  */
-export function relicOptionLabel(id: string, withCost = false): string {
+export function relicOptionLabel(id: string, withCost = false, note?: string): string {
   const def = relicDef(id)
-  return `${def.name}${withCost ? ` (${def.cost ?? 0} Gold)` : ''} — ${def.text}`
+  return `${def.name}${withCost ? ` (${def.cost ?? 0} Gold)` : ''} — ${def.text}${note ? ` ${note}` : ''}`
 }
 
 /**
@@ -120,11 +165,11 @@ export function relicOptionLabel(id: string, withCost = false): string {
  * touch screen-reader player, which is the opposite of the point. It joins the
  * button's accessible name instead.
  */
-export function RelicOptionText({ id, withCost = false }: { id: string; withCost?: boolean }) {
+export function RelicOptionText({ id, withCost = false, note }: { id: string; withCost?: boolean; note?: string }) {
   const def = relicDef(id)
   return (
     <span className="relic-option__text">
-      {withCost ? `(${def.cost ?? 0} Gold) ` : ''}{def.text}
+      {withCost ? `(${def.cost ?? 0} Gold) ` : ''}{def.text}{note ? ` ${note}` : ''}
     </span>
   )
 }
@@ -140,12 +185,13 @@ export function RelicOptionText({ id, withCost = false }: { id: string; withCost
  * prohibited and several screen readers drop it, so the relic would have
  * announced nothing at all.
  */
-function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
+function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped, die }: {
   relic: RelicInstance
   chipKey: string
   tapOpen: boolean
   onTapOpen: (key: string, open: boolean) => void
   unclipped?: boolean
+  die?: number
 }) {
   const def = relicDef(relic.defId)
   const rarity = RELIC_POOL_LABEL[def.pool]
@@ -223,17 +269,13 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
   // The engine drops a finite-use relic on its last use rather than leaving it
   // at zero, so this branch is defensive: if one ever does reach 0 it reads as
   // spent, not as "0 uses remaining".
-  const note = relic.spent ? 'Face down — already used.'
-    : relic.uses === 0 ? 'Used up.'
-      : relic.uses !== undefined ? `${relic.uses} use${relic.uses === 1 ? '' : 's'} remaining.`
-        : undefined
+  const note = relicNote(relic)
   if (unclipped) return (
-    <PotionTooltipAnchor id={relic.defId} name={def.name} kindLabel={rarity}
-      text={[def.text, distinctRule(def), note].filter(Boolean).join(' ')} focusable hoverable>
+    <RelicTooltipAnchor relic={relic} die={die} focusable hoverable>
       <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`}>
         <img className="item-icon-image" src={relicIconPath(relic.defId)} alt="" />
       </span>
-    </PotionTooltipAnchor>
+    </RelicTooltipAnchor>
   )
   return (
     <span className={`relic-chip${relic.spent ? ' relic-chip--spent' : ''}`} data-relic={relic.defId} tabIndex={0} role="img"
@@ -273,9 +315,9 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
         onTapOpen(chipKey, true)
         setDismissed(false)
       } : undefined}
-      aria-label={[`${def.name}.`, `${rarity}.`, def.text, distinctRule(def), note].filter(Boolean).join(' ')}>
+      aria-label={[`${def.name}.`, `${rarity}.`, relicTooltipText(relic.defId, die), distinctRule(def), note].filter(Boolean).join(' ')}>
       <img className="item-icon-image" src={relicIconPath(relic.defId)} alt="" />
-      <RelicTooltip id={relic.defId} note={note} />
+      <RelicTooltip id={relic.defId} note={note} die={die} />
     </span>
   )
 }
@@ -291,7 +333,7 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped }: {
  * the row ("Ironclad's relics"), and in multiplayer a bare "Relics" would leave
  * a screen-reader user unable to tell whose row they had landed on.
  */
-export function RelicBar({ relics, label, unclipped }: { relics: readonly RelicInstance[]; label: string; unclipped?: boolean }) {
+export function RelicBar({ relics, label, unclipped, die }: { relics: readonly RelicInstance[]; label: string; unclipped?: boolean; die?: number }) {
   // Deliberately NOT guarded against an id `relicDef` does not know. CombatScreen
   // and RoomScreen read this same array unguarded, and the engine reads it in a
   // dozen more places — so skipping unknown relics here would not save the run,
@@ -331,7 +373,7 @@ export function RelicBar({ relics, label, unclipped }: { relics: readonly RelicI
     <span className="relic-bar" role="group" aria-label={label} ref={bar}>
       {relics.map((relic, index) => {
         const key = `${relic.defId}-${index}`
-        return <RelicChip key={key} relic={relic} chipKey={key} tapOpen={openId === key} unclipped={unclipped}
+        return <RelicChip key={key} relic={relic} chipKey={key} tapOpen={openId === key} unclipped={unclipped} die={die}
           onTapOpen={openChip} />
       })}
     </span>

@@ -196,6 +196,7 @@ import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { Card, slimeCommandText } from './Card.tsx'
+import { relicTooltipText } from './RelicChip.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
@@ -2293,6 +2294,23 @@ function CombatScreenView({
     ? player.orbs.length > 0 : player.orbs.some(Boolean))
   const stagePresentationBusy = !prefersReducedMotion && (stageAttacksActive || falling.size > 0 || state.phase === 'enemy')
   const largestSlimeParty = Math.max(0, ...state.players.map(player => player.character === 'slime_boss' ? player.slimes.length : 0))
+  const statusSeats = state.players.map(player => `${player.id}:${player.row}`).join('\0')
+
+  useLayoutEffect(() => {
+    const statuses = boardRef.current?.querySelectorAll<HTMLElement>('.seat__meta') ?? []
+    // Keep Orbs above wrapped statuses without moving the hero. A row change remounts the seat, so rebind per seat.
+    const measure = (element: HTMLElement) => {
+      element.closest<HTMLElement>('.seat__interactive')?.style
+        .setProperty('--temporary-status-height', `${element.offsetHeight}px`)
+    }
+    statuses.forEach(measure)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) if (entry.target instanceof HTMLElement) measure(entry.target)
+    })
+    statuses.forEach(element => observer.observe(element))
+    return () => observer.disconnect()
+  }, [state.combatId, statusSeats])
 
   useLayoutEffect(() => {
     const board = boardRef.current
@@ -5402,7 +5420,7 @@ function CombatScreenView({
         ? `${state.combatId}:${state.turn}` : undefined}
       onClick={(event) => {
         if (!(event.target instanceof Element) || event.target.closest(
-          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips',
+          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips, .die-relic__head, .potion-tip',
         )) return
         if (!pending || usingCard || pending.choiceCards || pending.card.uid === forcedCardUid ||
           (!pending.cardInHand && !pending.chamberPlay)) return
@@ -6348,9 +6366,10 @@ function CombatScreenView({
           <section aria-label="Relic abilities">
           {viewer.relics.flatMap((held, relicIndex) => {
             const def = relicDef(held.defId)
+            const description = relicTooltipText(held.defId, state.die)
             const simpleAction = <PotionTooltipAnchor id={held.defId} key={`${held.defId}-${relicIndex}`}
-              name={def.name} text={def.text} kindLabel="Relic" confirmLabel="use">
-              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${def.text}`}
+              name={def.name} text={description} kindLabel="Relic" confirmLabel="use">
+              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${description}`}
                 onClick={() => useRelic(relicIndex)}>
                 <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />
               </button>
