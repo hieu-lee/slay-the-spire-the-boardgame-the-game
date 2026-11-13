@@ -13,10 +13,12 @@ type Props = {
   run: VisibleRun
   viewerId: string
   waitingForTeammate?: boolean
+  /** Native modal dialogs escape the ancestor `inert`, so the relic picker needs the lock passed in. */
+  locked?: boolean
   onAction: (action: object) => Promise<ActionOutcome>
 }
 
-export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, onAction }: Props) {
+export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, locked = false, onAction }: Props) {
   const [activeCard, setActiveCard] = useState(false)
   const [activeRelic, setActiveRelic] = useState(false)
   const [activeTransform, setActiveTransform] = useState(false)
@@ -114,7 +116,7 @@ export function OnlineRewardScreen({ run, viewerId, waitingForTeammate = false, 
   }
 
   if (activeRelic && Array.isArray(offer.bossRelics) && offer.bossRelics.length > 0) return <RelicRewardPicker
-    choices={offer.bossRelics} style={backdrop} disabled={lootPending} skipDisabled={waitingForTeammate}
+    choices={offer.bossRelics} style={backdrop} disabled={lootPending || locked} skipDisabled={waitingForTeammate}
     onBack={() => setActiveRelic(false)}
     onChoose={(relicId) => dispatchLoot([{ kind: 'bossRelicReward', choice: 'gain', relicId }])}
     onSkip={() => dispatchLoot([{ kind: 'bossRelicReward', choice: 'skip' }])} />
