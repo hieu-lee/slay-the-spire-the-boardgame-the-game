@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { createServer } from 'vite'
-import { chromium, devices, webkit } from 'playwright'
+import { chromium, devices, webkit } from './lib/silent-browser.mjs'
 
 const server = await createServer({ root: resolve(import.meta.dirname, '..'), logLevel: 'silent', server: { port: 0 } })
 await server.listen()
@@ -44,8 +44,9 @@ try {
         const createRoot = ReactDOM.createRoot ?? ReactDOM.default.createRoot
         createRoot(mount).render(react.createElement(Game))
       })
+      let network
       if (engine === chromium && options.isMobile) {
-        const network = await page.context().newCDPSession(page)
+        network = await page.context().newCDPSession(page)
         await network.send('Network.enable')
         await network.send('Network.emulateNetworkConditions', {
           offline: false, latency: 80, downloadThroughput: 256 * 1024, uploadThroughput: 256 * 1024,
@@ -62,9 +63,7 @@ try {
       assert(music.delayMs < 1500, `${name} started combat music ${music.delayMs.toFixed(0)} ms late`)
       console.log(`PASS ${name}: combat theme starts in ${music.delayMs.toFixed(0)} ms`)
 
-      if (engine === chromium && options.isMobile) {
-        const network = await page.context().newCDPSession(page)
-        await network.send('Network.enable')
+      if (network) {
         await network.send('Network.emulateNetworkConditions', {
           offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
         })
@@ -193,9 +192,7 @@ try {
       await page.waitForFunction(() => window.bossFetchAborted)
       await page.evaluate(() => { window.bossFetchAborted = false; window.bossFetchPending = false; window.setConnected(true) })
       await page.waitForFunction(() => window.bossFetchPending)
-      if (engine === chromium && options.isMobile) {
-        const network = await page.context().newCDPSession(page)
-        await network.send('Network.enable')
+      if (network) {
         await network.send('Network.setCacheDisabled', { cacheDisabled: true })
         await network.send('Network.emulateNetworkConditions', {
           offline: false, latency: 80, downloadThroughput: 256 * 1024, uploadThroughput: 256 * 1024,
@@ -209,9 +206,7 @@ try {
       assert.equal(streaming.path, '/assets/bgm/the-awakened-one.mp3')
       assert(streaming.delayMs < 1500, `${name} streamed boss theme ${streaming.delayMs.toFixed(0)} ms late`)
       console.log(`PASS ${name}: boss entry cancels the unfinished preload and streams in ${streaming.delayMs.toFixed(0)} ms`)
-      if (engine === chromium && options.isMobile) {
-        const network = await page.context().newCDPSession(page)
-        await network.send('Network.enable')
+      if (network) {
         await network.send('Network.setCacheDisabled', { cacheDisabled: false })
         await network.send('Network.emulateNetworkConditions', {
           offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
@@ -229,9 +224,7 @@ try {
 
       await mountBossFixture('hold')
       await page.waitForFunction(() => window.bossFetchPending)
-      if (engine === chromium && options.isMobile) {
-        const network = await page.context().newCDPSession(page)
-        await network.send('Network.enable')
+      if (network) {
         await network.send('Network.setCacheDisabled', { cacheDisabled: true })
         await network.send('Network.emulateNetworkConditions', {
           offline: false, latency: 80, downloadThroughput: 256 * 1024, uploadThroughput: 256 * 1024,
@@ -248,9 +241,7 @@ try {
       await page.waitForFunction(() => window.bossFetchCount === 2 && window.bossFetchPending)
       console.log(`PASS ${name}: hallway music interrupts the preload, which restarts after combat`)
       await page.evaluate(() => window.bossRoot.unmount())
-      if (engine === chromium && options.isMobile) {
-        const network = await page.context().newCDPSession(page)
-        await network.send('Network.enable')
+      if (network) {
         await network.send('Network.setCacheDisabled', { cacheDisabled: false })
         await network.send('Network.emulateNetworkConditions', {
           offline: false, latency: 0, downloadThroughput: -1, uploadThroughput: -1,
@@ -266,6 +257,7 @@ try {
       assert((await page.evaluate(() => window.music.src)).startsWith('blob:'), `${name} did not retry a failed preload`)
       console.log(`PASS ${name}: failed preloads retry without a phase change`)
       await page.evaluate(() => window.bossRoot.unmount())
+      await network?.detach()
     } finally {
       await browser.close()
     }

@@ -1,8 +1,8 @@
 // Gameplay verifiers start as returning players. The leaderboard/profile browser
-// verifier imports Playwright directly to exercise real first-visit registration.
+// verifier uses silent-browser without this profile seed to exercise first-visit registration.
 import { statfsSync } from 'node:fs'
-import { chromium as chromiumEngine, devices, webkit as webkitEngine } from 'playwright'
-export { devices } from 'playwright'
+import { chromium as chromiumEngine, devices, webkit as webkitEngine } from './silent-browser.mjs'
+export { devices } from './silent-browser.mjs'
 
 // Playwright always passes --disable-dev-shm-usage (Docker's /dev/shm is 64 MB), which
 // moves Chromium's shared memory into the temp dir. When that is a crowded tmpfs, the
