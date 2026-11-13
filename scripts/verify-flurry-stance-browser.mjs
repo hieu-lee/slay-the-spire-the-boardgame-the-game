@@ -99,6 +99,13 @@ try {
     assert((await deck.locator('.card__stance-bonus').evaluateAll(marks => marks.length > 0 && marks.every(mark =>
       parseFloat(getComputedStyle(mark).fontSize) >= 7 && mark.scrollWidth <= mark.clientWidth))),
     'the badge text must stay readable inside the deck dialog')
+    await deck.locator('.card[aria-label^="Flurry of Blows"]').first().click()
+    const inspector = page.getByRole('dialog', { name: /^Inspect Flurry of Blows/ })
+    await inspector.waitFor()
+    assert.deepEqual(await inspector.locator('.card__stance-bonus').allTextContents(), ['Stance ✓'])
+    assert.match(await inspector.locator('.card-inspection__tips').textContent(), /Stance bonus.*You changed stance this turn/s)
+    await page.keyboard.press('Escape')
+    await inspector.waitFor({ state: 'detached' })
     await deck.getByRole('button', { name: 'Back', exact: true }).click()
     await play('Flurry of Blows+')
     await page.locator('[data-enemy-id="target"] .enemy__head').click()

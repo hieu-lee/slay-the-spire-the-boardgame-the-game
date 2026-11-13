@@ -99,7 +99,7 @@ export function CardCollectionDialog({ cards, label, onClose, open = true, order
           {open && cards.length === 0 ? <span className="muted">No cards.</span> : null}
         </div>
         {open && inspectedUid !== null ? <CardInspectionDialog cards={sortedCards} initialCardUid={inspectedUid}
-          viewAllUpgraded={viewUpgrades} onClose={() => setInspectedUid(null)} /> : null}
+          viewAllUpgraded={viewUpgrades} stanceChangedThisTurn={stanceChangedThisTurn} onClose={() => setInspectedUid(null)} /> : null}
         <footer className="card-collection__footer">
           <button type="button" className="ribbon-back" aria-label="Back" title="Back" onClick={onClose}><span aria-hidden="true" /></button>
           <label><input type="checkbox" aria-label={`${label} upgrade preview`} checked={viewUpgrades}

@@ -664,6 +664,12 @@ const STANCE_PENDING_TIPS: readonly CardKeywordTip[] = [{
   text: 'You have not changed stance this turn. Change stance to activate Flurry of Blows\' extra hits. Entering your current stance does not count.',
 }]
 
+/** The stance-bonus explanation shown with Flurry of Blows while a combat reports the viewer's stance state. */
+export function stanceBonusTips(defId: string, stanceChangedThisTurn: boolean | undefined): readonly CardKeywordTip[] {
+  if (defId !== 'flurry_of_blows' || stanceChangedThisTurn === undefined) return EMPTY_KEYWORD_TIPS
+  return stanceChangedThisTurn ? STANCE_EARNED_TIPS : STANCE_PENDING_TIPS
+}
+
 /** The keyword rules for a card plus anything its attached Gem adds; the hover help and the deck inspector share it. */
 export function composeCardKeywordTips(
   def: CardDef | undefined, additionalDef: CardDef | null | undefined, gemPowerDamage: boolean | undefined,
@@ -775,7 +781,6 @@ export function Card({
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
   const showStanceBonus = def.id === 'flurry_of_blows' && stanceChangedThisTurn !== undefined
-  const stanceTips = !showStanceBonus ? EMPTY_KEYWORD_TIPS : stanceChangedThisTurn ? STANCE_EARNED_TIPS : STANCE_PENDING_TIPS
   const skin = useCardSkin(def)
   const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined, skin)
   const hasPublisherScan = def.publisherScan !== false
@@ -792,7 +797,7 @@ export function Card({
     .join(' ')
 
   return <CardKeywordHelp def={def} additionalDef={attachedGem}
-    extraTips={stanceTips}
+    extraTips={stanceBonusTips(def.id, stanceChangedThisTurn)}
     gemPowerDamage={gemPowerDamage}>{(keywordHelpProps) => (
     <button
       {...keywordHelpProps}
