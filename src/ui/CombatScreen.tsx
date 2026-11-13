@@ -196,6 +196,7 @@ import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
 import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { Card, slimeCommandText } from './Card.tsx'
+import { relicTooltipText } from './RelicChip.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { EnemyCard } from './EnemyCard.tsx'
 import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
@@ -623,6 +624,25 @@ function CombatScreenView({
   useEffect(() => registerCardZoomCloser(closeSlimeCardZoom.current), [])
   const prefersReducedMotion = reducedMotion
   const boardRef = useRef<HTMLDivElement | null>(null)
+  const combatBarRef = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    const bar = combatBarRef.current
+    const combat = bar?.parentElement
+    if (!bar || !combat) return
+    const measure = () => {
+      combat.style.setProperty('--combat-bar-bottom', `${bar.offsetTop + bar.offsetHeight}px`)
+      combat.style.setProperty('--combat-bar-viewport-bottom', `${bar.getBoundingClientRect().bottom}px`)
+    }
+    measure()
+    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure)
+    observer?.observe(bar)
+    observer?.observe(combat)
+    window.addEventListener('resize', measure)
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [state.combatId])
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const itemDialogRef = useRef<HTMLDialogElement | null>(null)
   const startTurnScryDialogRef = useRef<HTMLDialogElement | null>(null)
@@ -2276,6 +2296,23 @@ function CombatScreenView({
     ? player.orbs.length > 0 : player.orbs.some(Boolean))
   const stagePresentationBusy = !prefersReducedMotion && (stageAttacksActive || falling.size > 0 || state.phase === 'enemy')
   const largestSlimeParty = Math.max(0, ...state.players.map(player => player.character === 'slime_boss' ? player.slimes.length : 0))
+  const statusSeats = state.players.map(player => `${player.id}:${player.row}`).join('\0')
+
+  useLayoutEffect(() => {
+    const statuses = boardRef.current?.querySelectorAll<HTMLElement>('.seat__meta') ?? []
+    // Keep Orbs above wrapped statuses without moving the hero. A row change remounts the seat, so rebind per seat.
+    const measure = (element: HTMLElement) => {
+      element.closest<HTMLElement>('.seat__interactive')?.style
+        .setProperty('--temporary-status-height', `${element.offsetHeight}px`)
+    }
+    statuses.forEach(measure)
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) if (entry.target instanceof HTMLElement) measure(entry.target)
+    })
+    statuses.forEach(element => observer.observe(element))
+    return () => observer.disconnect()
+  }, [state.combatId, statusSeats])
 
   useLayoutEffect(() => {
     const board = boardRef.current
@@ -3961,11 +3998,44 @@ function CombatScreenView({
     setPending(null)
   }
 
+  function withEvokeSlot(next: Pending, slot: number): Pending {
+    const def = faceOf(cardDef(next.card.defId), next.card.upgraded)
+    const evokeSlots = [...next.evokeSlots, slot]
+    const orbs = chosenEvokeOrbs(def, viewer!, evokeSlots, state.die,
+      next.mode ?? undefined, next.effectEnergy ?? 0)
+    return {
+      ...next,
+      evokeSlots,
+      evokeEnemyUids: [...next.evokeEnemyUids, ...orbs.slice(next.evokeEnemyUids.length)
+        .map((orb) => orb === 'frost' ? null : undefined)],
+    }
+  }
+
   function stageOrCommit(next: Pending) {
     next = withAdjacentChoices(next)
+    if (next.choiceCards?.length === 0 &&
+      (next.choice?.kind === 'scry' || next.choice?.kind === 'scryToHand')) {
+      next = { ...next, choiceConfirmed: true }
+    }
     const def = effectiveCombatCardDef(
       faceOf(cardDef(next.card.defId), next.card.upgraded), next.corruptedShardMode ?? viewer!.guardianMode,
     )
+    if (def.id === 'dual_cast') {
+      const choice = nextEvokeChoice(def, viewer!, next.evokeSlots, state.die, next.mode ?? undefined, next.effectEnergy ?? 0)
+      if (choice?.options.length === 1) next = withEvokeSlot(next, choice.options[0]!.slot)
+    }
+    const onlySlime = viewer!.slimes.length === 1 ? viewer!.slimes[0] : undefined
+    if (onlySlime && !next.slimeChoiceConfirmed && next.slimeChoice?.minimum === 1 &&
+      next.slimeChoice.amount === 1 && (def.cost !== 'X' || next.energySpent !== null) &&
+      (!def.modes || next.mode !== null) &&
+      (!next.cardInHand && !next.chamberPlay || forcedCardUid === next.card.uid ||
+        slimeChoiceIsAvailable(def, state, viewer!, onlySlime.card.uid, next.effectEnergy ?? 0))) {
+      next = { ...next, slimeUids: [onlySlime.card.uid], slimeChoiceConfirmed: true }
+    }
+    const enemies = livingEnemies(state)
+    if (enemies.length === 1 && (!next.slimeChoice || next.slimeChoiceConfirmed)) {
+      next = { ...next, slimeEnemyUids: Array<string>(slimeEnemyChoicesRequired(next)).fill(enemies[0]!.uid) }
+    }
     const evokeProgress = evokeTargetProgress(
       def, state, viewer!, next.evokeSlots, next.evokeEnemyUids,
       next.mode ?? undefined, next.effectEnergy ?? 0,
@@ -4461,9 +4531,9 @@ function CombatScreenView({
     setArmedEndTurnAbilityId((current) => current === ability.id ? null : ability.id)
   }
 
-  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, chamber = false) {
+  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, playable: boolean, chamber = false) {
     if (event.button !== 0) return
-    const canDrag = chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card)
+    const canDrag = playable && (chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card))
     const staged = chamber ? stageHermitChamberViewer(viewer!, card,
       state.pendingHermitChamberPlays?.[0]?.playerId === viewerId &&
       state.pendingHermitChamberPlays[0].cardUids[0] === card.uid &&
@@ -4973,15 +5043,7 @@ function CombatScreenView({
     if (!pending || !pendingEvokeChoice || pendingEvokeTarget >= 0 || !choiceSatisfied) return
     const option = pendingEvokeChoice.options.find((candidate) => candidate.slot === slot)
     if (!option) return
-    const evokeSlots = [...pending.evokeSlots, slot]
-    const orbs = chosenEvokeOrbs(pendingDef!, viewer!, evokeSlots, state.die,
-      pending.mode ?? undefined, pending.effectEnergy ?? 0)
-    stageOrCommit({
-      ...pending,
-      evokeSlots,
-      evokeEnemyUids: [...pending.evokeEnemyUids, ...orbs.slice(pending.evokeEnemyUids.length)
-        .map((orb) => orb === 'frost' ? null : undefined)],
-    })
+    stageOrCommit(withEvokeSlot(pending, slot))
   }
 
   function onModeClick(mode: number) {
@@ -5360,7 +5422,7 @@ function CombatScreenView({
         ? `${state.combatId}:${state.turn}` : undefined}
       onClick={(event) => {
         if (!(event.target instanceof Element) || event.target.closest(
-          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips',
+          'button, a, input, select, textarea, [role="button"], dialog, .card-keyword-tips, .die-relic__head, .potion-tip',
         )) return
         if (!pending || usingCard || pending.choiceCards || pending.card.uid === forcedCardUid ||
           (!pending.cardInHand && !pending.chamberPlay)) return
@@ -5388,7 +5450,7 @@ function CombatScreenView({
       } as React.CSSProperties}
     >
       {groundedVfx}
-      <header className="combat__bar">
+      <header ref={combatBarRef} className="combat__bar">
         <span className="combat__turn">Turn {state.turn}</span>
         <span className="combat__die" title="The round's shared die">
           <Icon name={dieIcon(state.die)} size={26} decorative={false} />
@@ -6306,9 +6368,10 @@ function CombatScreenView({
           <section aria-label="Relic abilities">
           {viewer.relics.flatMap((held, relicIndex) => {
             const def = relicDef(held.defId)
+            const description = relicTooltipText(held.defId, state.die)
             const simpleAction = <PotionTooltipAnchor id={held.defId} key={`${held.defId}-${relicIndex}`}
-              name={def.name} text={def.text} kindLabel="Relic" confirmLabel="use">
-              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${def.text}`}
+              name={def.name} text={description} kindLabel="Relic" confirmLabel="use">
+              <button type="button" aria-label={`Use ${def.name}${held.cubes !== undefined ? ` (${held.cubes})` : ''}: ${description}`}
                 onClick={() => useRelic(relicIndex)}>
                 <img className="item-icon-image" src={relicIconPath(held.defId)} alt="" />
               </button>
@@ -6341,6 +6404,15 @@ function CombatScreenView({
               <button type="button" onClick={() => useRelic(relicIndex, { cardUids: relicCardUids })}>
                 Activate
               </button>
+              <button type="button" onClick={(event) => {
+                if (relicActionPending.current) return
+                setRelicCardUids([])
+                const details = event.currentTarget.closest('details')
+                if (details) {
+                  details.open = false
+                  details.querySelector('summary')?.focus()
+                }
+              }}>Cancel</button>
             </details>]
             if (held.defId === 'charons_ashes') return [<details key={relicIndex}><summary>{def.name}</summary><p className="room-item-text">{def.text}</p>
               <div className="campfire__deck">{viewer.hand.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
@@ -7739,7 +7811,7 @@ function CombatScreenView({
                 : activateCard}
               onPointerDown={handPicksOnly && !chamberCard
                 ? undefined
-                : (event) => onCardPointerDown(card, event, chamberCard)}
+                : (event, playable) => onCardPointerDown(card, event, playable, chamberCard)}
               onPointerMove={handPicksOnly && !chamberCard ? undefined : onCardPointerMove}
               onPointerUp={handPicksOnly && !chamberCard ? undefined : finishCardDrag}
               onPointerCancel={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}

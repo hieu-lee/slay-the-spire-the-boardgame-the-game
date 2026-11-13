@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createServer } from 'vite'
-import { chromium } from 'playwright'
+import { chromium } from './lib/silent-browser.mjs'
 import { createRoomServer } from './room-server.mjs'
 
 const expectedVfx = [

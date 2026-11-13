@@ -1279,7 +1279,7 @@ try {
   const onlineDrawPileDialog = b.getByRole('dialog', { name: 'Draw pile' })
   await onlineDrawPileDialog.waitFor()
   const onlineDrawPileTitles = await onlineDrawPileDialog.locator('.card').evaluateAll((cards) =>
-    cards.map((card) => card.getAttribute('title')))
+    cards.map((card) => card.getAttribute('data-card-name')))
   const onlineDrawPileSortLabels = await onlineDrawPileDialog.locator('.card-collection__sort button').allTextContents()
   await onlineDrawPileDialog.getByRole('button', { name: 'Back', exact: true }).click()
   boLive = liveRoom.run.combat.players.find((player) => player.name === 'Bo')
@@ -1730,7 +1730,7 @@ try {
   const ownerComboCards = comboOwnerSnapshot.run.combat.pendingTriggerAbility.hermitChoices.loadCards
     .map((card) => card.uid)
   const peerComboText = JSON.stringify(comboPeerSnapshot)
-  await comboDialog.locator('section[aria-labelledby="hermit-trigger-choice-load"] .card[title="Grudge"]').click()
+  await comboDialog.locator('section[aria-labelledby="hermit-trigger-choice-load"] .card[data-card-name="Grudge"]').click()
   await comboDialog.getByRole('button', { name: 'Load Grudge, then choose its target' }).click()
   const comboEnemyPrompt = a.getByText("Ann's Combo — choose an enemy for Grudge")
   await comboEnemyPrompt.waitFor()
@@ -5611,6 +5611,7 @@ try {
       upgraded: false, potion: false, relic: false, bossRelics: ['black_blood', 'orrery'] })),
   })
   rooms.publishRoom(code)
+  await Promise.all([a, b].map((page) => page.getByRole('button', { name: 'Choose 1 of 2 relics', exact: true }).click()))
   await Promise.all([a, b].map((page) => page.getByRole('button', { name: 'Black Blood' }).waitFor()))
   await b.getByRole('button', { name: 'Orrery' }).click()
   await b.getByRole('heading', { name: 'Loot!' }).waitFor()
@@ -6256,7 +6257,8 @@ try {
   const lastStandNotice = await fourPages[0].getByRole('status').filter({ hasText: 'cannot continue to the next Act' }).count()
   const forbiddenNextAct = await fourPages[0].getByRole('button', { name: 'Climb to Act 2' }).count()
   const recordLastStand = await fourPages[0].getByRole('button', { name: 'Stop and record result' }).count()
-  const terminalPotions = await fourPages[0].locator('.outside-potions').count()
+  const terminalInventory = await fourPages[0].locator('.outside-potions').count()
+  const terminalPotionActions = await fourPages[0].locator('.outside-potions__give, .outside-potions button[aria-label^="Use "]').count()
   const compactTitle = await fourPages[0].locator('.player-title').evaluate((heading) => {
     const box = heading.getBoundingClientRect()
     const range = document.createRange()
@@ -6267,7 +6269,8 @@ try {
     assertEqual(lastStandNotice, 1)
     assertEqual(forbiddenNextAct, 0)
     assertEqual(recordLastStand, 1)
-    assertEqual(terminalPotions, 0)
+    assertEqual(terminalInventory, 1)
+    assertEqual(terminalPotionActions, 0)
     assert(compactTitle.width >= 100 && compactTitle.width + 1 >= compactTitle.textWidth,
       'the online header crushed the game title')
   })
