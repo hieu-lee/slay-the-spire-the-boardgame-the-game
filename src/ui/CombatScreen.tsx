@@ -3964,6 +3964,18 @@ function CombatScreenView({
     const def = effectiveCombatCardDef(
       faceOf(cardDef(next.card.defId), next.card.upgraded), next.corruptedShardMode ?? viewer!.guardianMode,
     )
+    const onlySlime = viewer!.slimes.length === 1 ? viewer!.slimes[0] : undefined
+    if (onlySlime && !next.slimeChoiceConfirmed && next.slimeChoice?.minimum === 1 &&
+      next.slimeChoice.amount === 1 && (def.cost !== 'X' || next.energySpent !== null) &&
+      (!def.modes || next.mode !== null) &&
+      (!next.cardInHand && !next.chamberPlay || forcedCardUid === next.card.uid ||
+        slimeChoiceIsAvailable(def, state, viewer!, onlySlime.card.uid, next.effectEnergy ?? 0))) {
+      next = { ...next, slimeUids: [onlySlime.card.uid], slimeChoiceConfirmed: true }
+    }
+    const enemies = livingEnemies(state)
+    if (enemies.length === 1 && (!next.slimeChoice || next.slimeChoiceConfirmed)) {
+      next = { ...next, slimeEnemyUids: Array<string>(slimeEnemyChoicesRequired(next)).fill(enemies[0]!.uid) }
+    }
     const evokeProgress = evokeTargetProgress(
       def, state, viewer!, next.evokeSlots, next.evokeEnemyUids,
       next.mode ?? undefined, next.effectEnergy ?? 0,
