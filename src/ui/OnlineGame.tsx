@@ -21,6 +21,7 @@ import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
 import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
 import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
+import { PotionSlots } from './PotionSlots.tsx'
 import { RelicBar } from './RelicChip.tsx'
 import { RunSummary } from './RunSummary.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
@@ -765,6 +766,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const discardOwner = snapshot.seats.find((seat) => seat.playerId === snapshot.startTurnDiscard?.playerId)
   const foreignStartTurnDiscard = discardOwner !== undefined && discardOwner.playerId !== snapshot.you.playerId
   const foreignInteractionLock = blockingForeignCardChoice || foreignTrigger || foreignStartTurnDiscard
+  const mutationsLocked = giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock
   const combatViewer = run.combat?.players.find((player) => player.id === snapshot.you.playerId)
   const headerViewer = run.phase === 'combat' ? combatViewer ?? viewer : viewer
   const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
@@ -786,10 +788,6 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {/* See App.tsx: HP belongs in the header on every screen, not only in combat. */}
           {headerViewer ? <span className="pip pip--hp" role="img" aria-label={`Health ${headerViewer.hp} of ${headerViewer.maxHp}`}>{headerViewer.hp}/{headerViewer.maxHp}</span> : null}
           {headerViewer ? <span className="pip"><IconValue name="gold" value={headerViewer.gold} size={20} /></span> : null}
-          {run.phase === 'combat' && combat ? <CourierPeek placement="header" players={combat.players} viewerId={snapshot.you.playerId} usedBy={run.courier.usedBy}
-            active={!run.courier.offer && courierPeekPhase(combat) && room.connection === 'connected' && !foreignInteractionLock && !giveUpStartPending}
-            onReveal={revealCourierOnline} /> : null}
-          {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`} /> : null}
           {viewer && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
           !victoryIsTerminal(run, snapshot.campaignProgress) && !pendingAcquisition ? (
             <OutsidePotionBar players={run.players.map(playerForUi)} viewerId={snapshot.you.playerId}
@@ -798,12 +796,18 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
               disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock}
               onTrade={(potionId, playerId) => room.act({ kind: 'tradePotion', potionId, playerId })}
               onUse={(potionId, replacePotionId) => room.act({ kind: 'usePotionOutsideCombat', potionId, replacePotionId })} />
-          ) : null}
+          ) : headerViewer ? <PotionSlots player={headerViewer} ascension={run.ascension} /> : null}
+          {run.phase === 'combat' && combat ? <CourierPeek placement="header" players={combat.players} viewerId={snapshot.you.playerId} usedBy={run.courier.usedBy}
+            active={!run.courier.offer && courierPeekPhase(combat) && room.connection === 'connected' && !foreignInteractionLock && !giveUpStartPending}
+            onReveal={revealCourierOnline} /> : null}
+          {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`}
+            die={run.phase === 'combat' ? run.combat?.die : undefined} /> : null}
         </div>
         <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
           volume={settings.voiceVolume} compact />
         {viewer?.deck ? (
-          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open">
+          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
+            stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.viewerStanceChangedThisTurn : undefined}>
             <img src={assetPath('menu/current-deck.webp')} alt="" />
             <span aria-hidden="true">{viewer.deck.length}</span>
           </CardCollectionOverlay>
@@ -911,8 +915,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       </p> : null}
       {room.error ? <p className="online-error" role="alert">{room.error}</p> : null}
 
-      <div className="online-mutations" inert={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock || undefined}
-        aria-disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock || undefined}>
+      <div className="online-mutations" inert={mutationsLocked || undefined}
+        aria-disabled={mutationsLocked || undefined}>
       {run.phase === 'combat' && combat ? (
         <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
           key={combatResyncs}
@@ -922,6 +926,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           courierUsedBy={run.courier.usedBy}
           onCourierReveal={run.courier.offer ? undefined : revealCourierOnline}
           drawCount={combatViewer?.drawCount}
+          viewerStanceChangedThisTurn={run.combat?.viewerStanceChangedThisTurn}
           decidedPlayerIds={snapshot.endTurnDecided}
           requiredEndTurnPlayerIds={snapshot.endTurnRequired}
           endTurnTopPlayerIds={snapshot.endTurnTopPlayerIds}
@@ -993,7 +998,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       ) : pendingSocket && pendingSocketOwner ? <section className="room-screen" role="status">
         Waiting for {pendingSocketOwner.name} to socket a Guardian Gem.
       </section> : null}
-      {run.phase !== 'neow' && !viewerRewardPending &&
+      {run.phase !== 'neow' && run.phase !== 'combat' && !viewerRewardPending &&
       !snapshot.pendingRelic && snapshot.pendingRelicStatus ? <section className="room-screen" role="status">
         Waiting for {snapshot.pendingRelicStatus.playerName} to resolve{' '}
         {relicDef(snapshot.pendingRelicStatus.relicId).name}.
@@ -1045,6 +1050,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           run={run}
           viewerId={snapshot.you.playerId}
           waitingForTeammate={Boolean(snapshot.pendingTeammateAcquisitionPlayerId)}
+          locked={mutationsLocked}
           onAction={room.act}
         />
       ) : null}
