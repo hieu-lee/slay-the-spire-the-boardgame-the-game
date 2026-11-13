@@ -60,6 +60,7 @@ const focusedEngineOwners = ownerMap([
   ['src/game/run/rewards.ts', ['verify-loot-browser.mjs', 'verify-tiny-house-browser.mjs']],
 ])
 const focusedUiOwners = ownerMap([
+  ['src/ui/CardCollectionOverlay.tsx', ['verify-deck-inspection-browser.mjs', 'verify-card-picker-browser.mjs']],
   ['src/ui/chrome/rewards.css', ['verify-loot-browser.mjs', 'verify-boss-relic-picker-browser.mjs']],
   ['src/ui/RelicRewardPicker.tsx', ['verify-boss-relic-picker-browser.mjs']],
   ['src/ui/styles/relic-reward-picker.css', ['verify-boss-relic-picker-browser.mjs']],
@@ -82,6 +83,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/shop.css', ['verify-shop-browser.mjs']],
   ['src/ui/LeaderboardScreen.tsx', ['verify-leaderboard-browser.mjs']],
   ['src/ui/CombatScreen.tsx', [
+    'verify-flurry-stance-browser.mjs',
     'verify-runic-pyramid-browser.mjs',
     'verify-empty-scry-browser.mjs',
     'verify-singleton-slime-command-browser.mjs',
@@ -151,6 +153,9 @@ const focusedUiOwners = ownerMap([
   ['src/ui/styles/title-menu.css', ['verify-run-replay-browser.mjs', 'verify-replay-controls-browser.mjs', 'verify-title-menu-browser.mjs']],
 ])
 const focusedOnlyUiOwners = ownerMap([
+  ['src/ui/OutsidePotionBar.tsx', ['verify-solo-potion-give-browser.mjs']],
+  ['src/ui/CardInspectionDialog.tsx', ['verify-deck-inspection-browser.mjs']],
+  ['src/ui/styles/card-inspection.css', ['verify-deck-inspection-browser.mjs']],
   ...['src/ui/PotionSlots.tsx', 'src/ui/chrome/potion-belt.css']
     .map(file => [file, ['verify-potion-header-browser.mjs']]),
   ['.github/workflows/ci.yml', ['verify-assets.mjs', 'verify-pipeline.mjs']],

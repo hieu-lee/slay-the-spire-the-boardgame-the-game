@@ -1534,6 +1534,11 @@ function EventScreen({
               : option;
             const cardSlots = eventCardSlots(choice.effects, pendingDie, player, players);
             const choiceEffects = activeEffects(choice.effects);
+            const curses = player.deck.filter((card) => cardIsCurse(card.defId));
+            const curseCountNote = choiceEffects.some((effect) => effect.tag === "remove-curses")
+              ? ` (Currently ${curses.length} ${curses.length === 1 ? "curse" : "curses"}.${
+                curses.some((card) => card.defId === "ascenders_bane") ? " Ascender's Bane cannot be removed." : ""})`
+              : "";
             const choiceTradeCard = choiceEffects.some((effect) => effect.tag === "trade-card");
             const choiceTradeRelic = choiceEffects.some((effect) => effect.tag === "trade-relic");
             const choiceTradePossible = choiceTradeCard ? cardSlots.length > 0 : !choiceTradeRelic ||
@@ -1612,7 +1617,7 @@ function EventScreen({
               >
                 {repeatScrap ? <strong>{choice.id === "reach_inside" ? "Reach again" : choice.label}</strong> : <>
                   <strong>[{choice.label}]</strong>
-                  <span>{choice.description}</span>
+                  <span>{choice.description}{curseCountNote}</span>
                 </>}
               </button>
             );

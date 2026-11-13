@@ -34,6 +34,7 @@ type CardProps = {
   fan?: number
   /** Damage the card would deal now, against the same play with no Strength, Weak or Vulnerable. */
   liveDamage?: { damage: number, baseline: number }
+  stanceChangedThisTurn?: boolean
   /** Removes an otherwise-real card button from sequential keyboard navigation. */
   tabIndex?: number
   /** Appended to the accessible name, e.g. to tell a just-drawn duplicate apart. */
@@ -654,6 +655,41 @@ export function cardKeywordTips(def: CardDef): readonly CardKeywordTip[] {
 }
 
 const EMPTY_KEYWORD_TIPS: readonly CardKeywordTip[] = []
+const STANCE_EARNED_TIPS: readonly CardKeywordTip[] = [{
+  name: 'Stance bonus',
+  text: 'You changed stance this turn. Flurry of Blows gains its extra hits, even if you return to your original stance.',
+}]
+const STANCE_PENDING_TIPS: readonly CardKeywordTip[] = [{
+  name: 'Stance bonus',
+  text: 'You have not changed stance this turn. Change stance to activate Flurry of Blows\' extra hits. Entering your current stance does not count.',
+}]
+
+/** The stance-bonus explanation shown with Flurry of Blows while a combat reports the viewer's stance state. */
+export function stanceBonusTips(defId: string, stanceChangedThisTurn: boolean | undefined): readonly CardKeywordTip[] {
+  if (defId !== 'flurry_of_blows' || stanceChangedThisTurn === undefined) return EMPTY_KEYWORD_TIPS
+  return stanceChangedThisTurn ? STANCE_EARNED_TIPS : STANCE_PENDING_TIPS
+}
+
+/** The keyword rules for a card plus anything its attached Gem adds; the hover help and the deck inspector share it. */
+export function composeCardKeywordTips(
+  def: CardDef | undefined, additionalDef: CardDef | null | undefined, gemPowerDamage: boolean | undefined,
+  extraTips: readonly CardKeywordTip[] = EMPTY_KEYWORD_TIPS,
+) {
+  const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
+  const attachedGemPowerDamage = (gemPowerDamage ?? def?.guardian?.printedType === 'Gem Power') &&
+    attachedTips.some((tip) => tip.name === 'Hit')
+  const additionalTips = additionalDef ? [
+    { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
+    ...attachedTips.filter((tip) => tip.name !== 'Unplayable' && !(tip.name === 'Hit' && attachedGemPowerDamage)),
+    ...(attachedGemPowerDamage ? [{
+      name: 'Gem Power damage',
+      text: 'Damage printed by a Gem on a Gem Power ignores Strength, Weak, Vulnerable, and Vigor.',
+      icon: 'attack' as IconName,
+    }] : []),
+  ] : []
+  return [...(def ? cardKeywordTips(def) : []), ...additionalTips, ...extraTips]
+    .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
+}
 
 export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = EMPTY_KEYWORD_TIPS, hover = false, children }: {
   def?: CardDef
@@ -669,20 +705,7 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
   }) => React.ReactNode
 }) {
   const { tips, tipsKey, description } = useMemo(() => {
-    const attachedTips = additionalDef ? cardKeywordTips(additionalDef) : []
-    const attachedGemPowerDamage = (gemPowerDamage ?? def?.guardian?.printedType === 'Gem Power') &&
-      attachedTips.some((tip) => tip.name === 'Hit')
-    const additionalTips = additionalDef ? [
-      { name: additionalDef.name, text: cardRuleDescription(additionalDef) },
-      ...attachedTips.filter((tip) => tip.name !== 'Unplayable' && !(tip.name === 'Hit' && attachedGemPowerDamage)),
-      ...(attachedGemPowerDamage ? [{
-        name: 'Gem Power damage',
-        text: 'Damage printed by a Gem on a Gem Power ignores Strength, Weak, Vulnerable, and Vigor.',
-        icon: 'attack' as IconName,
-      }] : []),
-    ] : []
-    const tips = [...(def ? cardKeywordTips(def) : []), ...additionalTips, ...extraTips]
-      .filter((tip, index, all) => all.findIndex((candidate) => candidate.name === tip.name) === index)
+    const tips = composeCardKeywordTips(def, additionalDef, gemPowerDamage, extraTips)
     return { tips, tipsKey: JSON.stringify(tips), description: tips.map((tip) => `${tip.name}: ${tip.text}`).join(' ') }
   }, [def, additionalDef, gemPowerDamage, extraTips])
   const tooltipId = `card-keyword-help-${useId()}`
@@ -743,6 +766,7 @@ export function Card({
   gemPowerDamage,
   fan = 0,
   liveDamage,
+  stanceChangedThisTurn,
   tabIndex,
   accessibleNote,
   onClick,
@@ -756,6 +780,7 @@ export function Card({
   const blockedMousePress = useRef(false)
   const def = faceOf(cardDef(card.defId), card.upgraded)
   const attachedGem = card.attachedGemId ? faceOf(cardDef(card.attachedGemId), false) : null
+  const showStanceBonus = def.id === 'flurry_of_blows' && stanceChangedThisTurn !== undefined
   const skin = useCardSkin(def)
   const scan = cardThumbPath(def, card.upgraded, attachedGem ?? undefined, skin)
   const hasPublisherScan = def.publisherScan !== false
@@ -772,6 +797,7 @@ export function Card({
     .join(' ')
 
   return <CardKeywordHelp def={def} additionalDef={attachedGem}
+    extraTips={stanceBonusTips(def.id, stanceChangedThisTurn)}
     gemPowerDamage={gemPowerDamage}>{(keywordHelpProps) => (
     <button
       {...keywordHelpProps}
@@ -844,6 +870,9 @@ export function Card({
         }}
       /> : null}
       <CardFace def={def} cost={cost} rules={cardRulesText(def)} illustration={scanUnavailable} />
+      {showStanceBonus ? <span className="card__stance-bonus" data-active={stanceChangedThisTurn} aria-hidden="true">
+        {stanceChangedThisTurn ? 'Stance ✓' : 'Stance ✕'}
+      </span> : null}
       {attachedGem && scanUnavailable ? <img className="card__gem" src={cardThumbPath(attachedGem, false)} alt=""
         draggable={false} title={`${attachedGem.name}: ${cardRuleDescription(attachedGem)}`} /> : null}
       {liveDamage ? (
