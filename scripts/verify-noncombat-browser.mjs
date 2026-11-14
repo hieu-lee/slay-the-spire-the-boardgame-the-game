@@ -4495,7 +4495,7 @@ const damageChart = await page.evaluate(() => {
     dealtWidth: filledWidth(dealt),
     peerDealtWidth: filledWidth(peerDealt),
     tip: tip ? getComputedStyle(tip).visibility : null,
-    tipBackground: tip ? getComputedStyle(tip.closest('.potion-tip')).backgroundImage : null,
+    tipBackground: tip ? getComputedStyle(tip.closest('.potion-tip'), '::before').backgroundImage : null,
     tipOpacity: tip ? getComputedStyle(tip).opacity : null,
     detail: tip?.textContent,
   }
