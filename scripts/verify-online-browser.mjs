@@ -249,7 +249,11 @@ try {
     localStorage.setItem('sts-room-recoveries', JSON.stringify([saved]))
   }, guardedCredentials)
   const preservePage = await preserveContext.newPage()
-  await preservePage.route(`**/api/rooms/${guardedCredentials.code}`, (route) => route.abort())
+  // The app only opens the reconnect screen for a room the server confirmed at load (StrictMode
+  // starts that check twice), so let the startup checks through and drop the link afterwards.
+  let startupChecks = 0
+  await preservePage.route(`**/api/rooms/${guardedCredentials.code}`, (route) =>
+    startupChecks++ < 2 ? route.continue() : route.abort())
   await preservePage.routeWebSocket('**/ws', () => {})
   await preservePage.goto(origin, { waitUntil: 'networkidle' })
   await preservePage.getByRole('heading', { name: 'Reconnecting' }).waitFor()
@@ -2176,8 +2180,12 @@ try {
   rooms.publishRoom(code)
   await a.waitForFunction(() => document.querySelector('.hand [aria-label^="Defend,"]'))
   await a.waitForTimeout(750)
-  const refusedForcedConflict = failures.findIndex((failure, index) =>
+  const forcedConflictIndex = () => failures.findIndex((failure, index) =>
     index >= refusedForcedFailureStart && failure.includes('409 (Conflict)'))
+  for (let attempt = 0; attempt < 50 && forcedConflictIndex() < 0; attempt += 1) {
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
+  const refusedForcedConflict = forcedConflictIndex()
   await a.unroute(`**/api/rooms/${code}/action`, refusedForcedRoute)
   await a.getByRole('button', { name: /^Defend, cost 0,/ }).click()
   for (let attempt = 0; attempt < 50 && liveRoom.run.combat.startTurnProgress?.forcedCard; attempt += 1) {
@@ -3656,8 +3664,6 @@ try {
     await b.getByRole('button', { name: 'Use Shiv' }).click()
     await b.locator('.enemy:not([disabled])').first().dispatchEvent('click')
   }
-  await a.getByRole('button', { name: 'Discard 2' }).waitFor()
-  await a.getByRole('button', { name: 'Discard 2' }).click()
   await a.waitForFunction(() => ![...document.querySelectorAll('button')]
     .some((button) => button.getAttribute('aria-label')?.startsWith('Storm of Steel+,')))
   const completedStormRace = await snapshot(a)
@@ -3701,16 +3707,14 @@ try {
   await a.locator('.enemy:not([disabled])').first().dispatchEvent('click')
   await a.locator('.enemy:not([disabled])').first().dispatchEvent('click')
   await a.locator('.enemy:not([disabled])').first().dispatchEvent('click')
-  await a.getByRole('button', { name: 'Discard 2' }).waitFor()
+  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
+    .some((button) => button.getAttribute('aria-label')?.startsWith('Storm of Steel+,')))
   const expectedStormConflict = failures.findIndex((failure) => failure.includes('409 (Conflict)'))
   assert(expectedStormConflict >= 0, 'the refused Storm did not surface as an HTTP conflict')
   failures.splice(expectedStormConflict, 1)
   assertEqual(stormRefusalStatus, 409)
-  await a.getByRole('button', { name: 'Discard 2' }).click()
-  await a.waitForFunction(() => ![...document.querySelectorAll('button')]
-    .some((button) => button.getAttribute('aria-label')?.startsWith('Storm of Steel+,')))
   const completedStormRefusal = await snapshot(a)
-  check('a refused Storm reopens confirmation when authoritative overflow becomes zero', () => {
+  check('a refused Storm resolves on its own when authoritative overflow becomes zero', () => {
     const ann = completedStormRefusal.run.combat.players.find((player) => player.name === 'Ann')
     assertEqual(ann.shivs, 3)
     assert(!ann.hand.some((card) => card.uid === 'online-storm-refusal'))
@@ -4170,6 +4174,17 @@ try {
     b.locator('.combat[data-phase="player"]').waitFor(),
   ])
 
+  const deterministicStartFailureStart = failures.length
+  let racedStartTurnRefusals = 0
+  const racedStartTurnReads = []
+  const countRacedStartTurn = (response) => {
+    if (response.status() !== 409 || response.request().method() !== 'POST' ||
+      JSON.parse(response.request().postData() ?? '{}').action?.kind !== 'startTurn') return
+    racedStartTurnReads.push(response.json().then((body) => {
+      if (body.error === 'Finish the Start-of-Turn abilities') racedStartTurnRefusals += 1
+    }))
+  }
+  a.on('response', countRacedStartTurn)
   const deterministicStartRestore = structuredClone(liveRoom.run.combat)
   const deterministicStartRoomRestore = {
     startTurnCombatId: liveRoom.startTurnCombatId,
@@ -4244,6 +4259,18 @@ try {
     annMixedButton.isDisabled(), a.getByRole('button', { name: 'Evoke frost Orb 1', exact: true }).count(),
     boFrostChoice.isEnabled(), snapshot(a),
   ])
+  // Ann's client submits its own startTurn while the fixture submits one too; the server refuses
+  // the second with 409 'Finish the Start-of-Turn abilities'. Exempt exactly those refusals.
+  await a.waitForLoadState('networkidle')
+  a.off('response', countRacedStartTurn)
+  await Promise.all(racedStartTurnReads)
+  assert(racedStartTurnRefusals <= 2, `${racedStartTurnRefusals} startTurn refusals, expected at most one per fixture`)
+  for (let refused = 0; refused < racedStartTurnRefusals; refused += 1) {
+    const conflict = failures.findIndex((failure, index) =>
+      index >= deterministicStartFailureStart && failure.includes('409 (Conflict)'))
+    assert(conflict >= 0, 'the refused startTurn did not reach the browser console')
+    failures.splice(conflict, 1)
+  }
   for (const [screen, width, height] of [['desktop', 1280, 800], ['phone', 844, 390]]) {
     await b.setViewportSize({ width, height })
     const chooserLayout = await b.evaluate(() => {
@@ -5188,7 +5215,7 @@ try {
   let createWhileReconnecting
   try {
     await withTimeout(reconnectStarted, 30_000, 'reconnect room refresh')
-    await b.locator('.online-reconnecting').waitFor()
+    await b.locator('.app-loading').waitFor()
     createWhileReconnecting = await b.getByRole('button', { name: 'Create room' }).count()
   } finally {
     releaseReconnect()

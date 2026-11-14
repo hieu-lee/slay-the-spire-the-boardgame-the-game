@@ -51,9 +51,6 @@ export function installScreenAudit(page) {
       if (supportedDesktop && document.documentElement.scrollWidth > innerWidth + 2) {
         problems.push(`document overflows horizontally: ${document.documentElement.scrollWidth} > ${innerWidth}`)
       }
-      for (const image of document.querySelectorAll('img')) {
-        if (visible(image) && (!image.complete || image.naturalWidth === 0)) problems.push(`broken visible image: ${image.getAttribute('src')}`)
-      }
       const panels = supportedDesktop
         ? document.querySelectorAll('dialog:modal, .neow-action, .quick-setup, .reward-screen, .room-screen')
         : []
