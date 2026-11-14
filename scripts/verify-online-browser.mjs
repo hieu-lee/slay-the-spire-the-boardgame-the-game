@@ -59,8 +59,9 @@ for (const context of [aContext, bContext]) {
       })
       return Promise.resolve()
     }
+    // A combat video can be released twice, so pause() also runs after its src is cleared; the real pause() allows that.
     HTMLMediaElement.prototype.pause = function pause() {
-      window.__BGM_PAUSES__.push(new URL(this.src).pathname)
+      if (this.src) window.__BGM_PAUSES__.push(new URL(this.src).pathname)
     }
     window.WebSocket = new Proxy(window.WebSocket, {
       construct(Target, args) {
@@ -2667,9 +2668,13 @@ try {
   assertEqual(expectedEmptyExhumeConflicts.length, 1,
     'empty-pile Exhume surfaced an unexpected number of conflicts')
   failures.splice(expectedEmptyExhumeConflicts[0], 1)
-  const stagedEmptyExhume = await emptyExhumeCard.getAttribute('class')
+  let stagedEmptyExhume = true
+  for (let attempt = 0; attempt < 50 && stagedEmptyExhume; attempt += 1) {
+    stagedEmptyExhume = (await emptyExhumeCard.getAttribute('class')).includes('card--selected')
+    if (stagedEmptyExhume) await new Promise((resolveDelay) => setTimeout(resolveDelay, 100))
+  }
   check('an online Exhume refusal clears staging when its Exhaust pile becomes empty', () => {
-    assertEqual(stagedEmptyExhume.includes('card--selected'), false)
+    assertEqual(stagedEmptyExhume, false)
     const ann = liveRoom.run.combat.players.find((player) => player.name === 'Ann')
     assertDeepEqual(ann.hand.map((card) => card.uid), ['online-empty-exhume'])
     assertDeepEqual(ann.exhaust, [])

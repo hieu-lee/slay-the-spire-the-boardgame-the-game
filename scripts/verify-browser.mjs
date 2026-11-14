@@ -117,8 +117,9 @@ await page.addInitScript(() => {
     })
     return Promise.resolve()
   }
+  // A combat video can be released twice, so pause() also runs after its src is cleared; the real pause() allows that.
   HTMLMediaElement.prototype.pause = function pause() {
-    window.__BGM_PAUSES__.push(new URL(this.src).pathname)
+    if (this.src) window.__BGM_PAUSES__.push(new URL(this.src).pathname)
   }
 })
 

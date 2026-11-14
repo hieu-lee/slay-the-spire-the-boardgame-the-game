@@ -7,28 +7,28 @@ export function installScreenAudit(page) {
     if (options.fullPage) await page.locator('img[loading="lazy"]').evaluateAll((images) => {
       for (const image of images) image.loading = 'eager'
     })
-    await page.locator('img').evaluateAll((images) => {
-      for (const image of images) {
-        const style = getComputedStyle(image)
-        const box = image.getBoundingClientRect()
-        const visible = style.display !== 'none' && style.visibility !== 'hidden' &&
-          Number(style.opacity) > 0 && box.width > 0 && box.height > 0
-        if (!visible || !image.complete || image.naturalWidth > 0) continue
-        const source = image.currentSrc || image.src
-        const retry = new URL(source, location.href)
-        if (retry.protocol === 'blob:') continue
-        retry.searchParams.set('screen-audit-retry', String(Date.now()))
-        image.src = retry.href
-      }
-    })
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     try {
-      await page.waitForFunction(() => [...document.images].every((image) => {
-        const style = getComputedStyle(image)
-        const box = image.getBoundingClientRect()
-        const visible = style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 && box.width > 0 && box.height > 0
-        return !visible || image.complete && image.naturalWidth > 0
-      }), undefined, { timeout: 15_000 })
+      // Copies of one URL share a fetch, so a single failed fetch on a screen that is still rendering breaks
+      // every copy after any up-front retry; reload broken visible images while waiting, up to three times each.
+      await page.waitForFunction(() => {
+        let ready = true
+        for (const image of document.images) {
+          const style = getComputedStyle(image)
+          const box = image.getBoundingClientRect()
+          const visible = style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0 && box.width > 0 && box.height > 0
+          if (!visible || image.complete && image.naturalWidth > 0) continue
+          ready = false
+          const retries = Number(image.dataset.screenAuditRetries ?? 0)
+          if (!image.complete || retries >= 3) continue
+          const retry = new URL(image.currentSrc || image.src, location.href)
+          if (retry.protocol === 'blob:') continue
+          image.dataset.screenAuditRetries = String(retries + 1)
+          retry.searchParams.set('screen-audit-retry', String(Date.now()))
+          image.src = retry.href
+        }
+        return ready
+      }, undefined, { timeout: 15_000 })
     } catch (error) {
       const pending = await page.locator('img').evaluateAll((images) => images
         .filter((image) => {
