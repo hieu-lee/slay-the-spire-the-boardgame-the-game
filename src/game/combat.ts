@@ -156,8 +156,6 @@ export { enemyActingOrder, enemyTurn } from './combat/enemy-turn.ts'
 export {
   activatePotion,
   activateRelic,
-  canActivatePotion,
-  canActivateRelic,
   chooseDistilledCard,
   spendMiracle,
   spendSoulburn,
@@ -165,6 +163,7 @@ export {
   spendShiv,
   resolvePlunderRowSwitch,
 } from './combat/items.ts'
+export { canActivatePotion, canActivateRelic } from './combat/item-windows.ts'
 export { createCombat } from './combat/create.ts'
 export { scryPlayCardPlayable } from './combat/effects.ts'
 export { activeCardPlayWindow, cardPlayWindowCardPlayable } from './combat/queries.ts'

@@ -60,6 +60,7 @@ try {
             import('/src/game/run.ts'), import('/src/game/combat.ts'), import('/src/game/rng.ts'),
             import('/src/ui/styles.css'), import('/src/ui/chrome.css'),
           ])
+          const { buildEncounter, createEnemyDecks } = await import('/src/game/run/encounters.ts')
           const player = createPlayer(createRng(47), 'p1', 'Defect', 'defect', 0)
           Object.assign(player, { hp: 8, maxHp: 8, relics: [], draw: [], discard: [],
             hand: [], powers: [{ uid: 'combust', defId: 'combust', upgraded: true }] })
@@ -71,7 +72,7 @@ try {
             { ...enemy, uid: 'living', row: 1, hp: 10, dead: false },
             { ...enemy, uid: 'boss', defId: 'the_champ', row: 0, hp: 20, maxHp: 20, isBoss: true, dead: false }])
           Object.assign(state, { phase: 'player', die: 1, presentationEvents: [] })
-          const fixture = window.fixture = { state }
+          const fixture = window.fixture = { state, original: structuredClone(state) }
           const root = (ReactDom.createRoot ?? ReactDom.default.createRoot)(node)
           fixture.render = () => root.render((React.createElement ?? React.default.createElement)(CombatScreen, {
             state: structuredClone(fixture.state), viewerId: 'p1', act: 2, autoAdvance: false,
@@ -99,8 +100,11 @@ try {
           }
           fixture.bossPair = () => {
             fixture.state = structuredClone(state)
-            fixture.state.enemies = ['donu', 'deca'].map(uid => ({
-              ...enemy, uid, defId: uid, row: 0, isBoss: true, hp: 20, maxHp: 20, dead: false,
+            const rng = createRng(50)
+            const encounter = buildEncounter(rng, createEnemyDecks(rng, 3, 0), 3, fixture.state.players,
+              'boss', false, 0, 'donu')
+            fixture.state.enemies = encounter.enemies.map(enemy => ({
+              ...enemy, uid: enemy.defId, hp: 20, maxHp: 20,
             }))
             Object.assign(fixture.state.players[0], {
               hand: [], orbs: ['lightning', null, null],
@@ -123,6 +127,26 @@ try {
           }
           fixture.render()
         })
+        await page.evaluate(() => {
+          const f = window.fixture
+          f.state = { ...f.state, enemies: ['jaw_worm', 'jaw_worm_first', 'jaw_worm_act3', 'cultist']
+            .map((defId, index) => ({ ...f.state.enemies[1], defId, uid: `named-${index}`, row: index % 2 })) }
+          f.render()
+        })
+        for (const [index, label] of ['Jaw Worm #1', 'Jaw Worm #2', 'Jaw Worm #3', 'Cultist'].entries()) {
+          const enemy = page.locator(`[data-enemy-id="named-${index}"]`)
+          await enemy.waitFor()
+          assert.equal(await enemy.locator('.enemy__name').innerText(), label)
+          assert((await enemy.getAttribute('aria-label')).includes(label))
+        }
+        await page.evaluate(() => {
+          const f = window.fixture
+          f.state = { ...f.state, enemies: f.state.enemies.map((enemy, index) => index ? enemy : { ...enemy, hp: 0, dead: true }) }
+          f.render()
+        })
+        assert.equal(await page.locator('[data-enemy-id="named-1"] .enemy__name').innerText(), 'Jaw Worm #2',
+          'a survivor must keep its number after another copy dies')
+        await page.evaluate(() => { const f = window.fixture; f.state = structuredClone(f.original); f.render() })
         await page.getByRole('button', { name: 'Use Combust+' }).click()
         await page.locator('[data-enemy-id="living"].enemy--targeted').waitFor()
         assert.equal(await page.locator('.row__lane-target').count(), 0,
@@ -162,6 +186,16 @@ try {
           `${screen}: boss click also hit another row`)
 
         await page.evaluate(() => window.fixture.bossPair())
+        await page.locator('[data-enemy-id="deca"]').waitFor()
+        assert.deepEqual(await page.evaluate(() => window.fixture.state.enemies.map(enemy => enemy.defId)),
+          ['deca', 'donu'], 'the encounter must preserve the printed acting order')
+        const bossPositions = await page.evaluate(() => {
+          const deca = document.querySelector('[data-enemy-id="deca"] .bar').getBoundingClientRect()
+          const donu = document.querySelector('[data-enemy-id="donu"] .bar').getBoundingClientRect()
+          return { decaRight: deca.right, donuLeft: donu.left }
+        })
+        assert(bossPositions.decaRight <= bossPositions.donuLeft,
+          `${screen}: Deca must stand to the left of Donu: ${JSON.stringify(bossPositions)}`)
         await page.getByRole('button', { name: 'End turn', exact: true }).click()
         await page.locator('.end-turn-effects button.end-turn-effect--orb').click()
         await page.locator('[data-enemy-id="deca"].enemy--targeted').waitFor()

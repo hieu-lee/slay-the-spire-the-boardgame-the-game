@@ -15,13 +15,7 @@
   max-width: calc(100vw - 2rem);
   padding: 0.7rem 22px 0.8rem;
   border: 0;
-  background:
-    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
-    linear-gradient(180deg, #2b1f1a, #15100c 72%);
-  box-shadow:
-    inset 0 0 0 2px var(--trim-dim),
-    inset 0 0 0 3px rgb(0 0 0 / 0.7),
-    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  background: var(--trim-dim);
   filter: drop-shadow(var(--hard-shadow-lg));
   color: var(--tip-body);
   font-family: 'Kreon', Georgia, serif;
@@ -52,6 +46,22 @@
     opacity var(--motion-lerp) var(--ease-lerp),
     transform var(--motion-lerp) var(--ease-lerp),
     visibility var(--motion-lerp);
+}
+
+/* Inset the fill, not a rectangular shadow, so the trim follows the cut corners. */
+.relic-tip::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: 2px;
+  clip-path: inherit;
+  background:
+    linear-gradient(180deg, rgb(217 180 91 / 0.14), transparent 22%),
+    linear-gradient(180deg, #2b1f1a, #15100c 72%);
+  box-shadow:
+    inset 0 0 0 1px rgb(0 0 0 / 0.7),
+    inset 0 2px 0 rgb(217 180 91 / 0.3);
+  pointer-events: none;
 }
 
 .relic-chip:hover > .relic-tip,
@@ -148,7 +158,8 @@
 .relic-bar { position: relative; }
 .relic-bar .relic-tip { left: 0; }
 
-/* Below roughly 768px the 320px box no longer fits to the right of the bar's
+/* Below roughly 1024px, inventory slots and connection status leave too little
+   room for the 320px box to the right of the bar's
    left edge, which sits ~215px into the HUD, so it ran past the window: at
    380px, 155px of it. Nothing scrolled — the `html { overflow-x: clip }` in
    chrome/tokens-and-base.css sees
@@ -166,7 +177,7 @@
    `position: fixed` was tried first and rejected: `fixed` cannot see the bar,
    so the box fell to its static position over the header — at 600px it covered
    the title and gold outright. */
-@media (max-width: 50rem) {
+@media (max-width: 64rem) {
   .run-status { position: relative; }
   .relic-bar { position: static; }
 

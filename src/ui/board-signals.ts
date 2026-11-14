@@ -9,6 +9,14 @@ export function displayedEnemies(enemies: readonly Enemy[], falling: ReadonlySet
   return enemies.filter((enemy) => !enemy.dead || falling.has(enemy.uid))
 }
 
+/** Stage slots count from the right; bosses keep their printed order at the left. */
+export function livingEnemiesInStageOrder(enemies: readonly Enemy[]): Enemy[] {
+  return [
+    ...enemies.filter((enemy) => !enemy.dead && enemy.isBoss),
+    ...enemies.filter((enemy) => !enemy.dead && !enemy.isBoss).reverse(),
+  ]
+}
+
 /**
  * Which band a health bar is in.
  *

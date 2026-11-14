@@ -103,7 +103,7 @@ assert((await socketPanel.getAttribute('aria-describedby'))?.endsWith('-descript
   'Gem picker does not expose its host and unchosen-Gem rule to assistive technology')
 assert((await socketPanel.getByText(/Socket into Crystal Edge/).textContent())?.includes('Unchosen Gems'),
   'Gem picker does not identify its Socket host or unchosen-Gem rule')
-await socketPanel.locator('button[title="Ruby"]').click()
+await socketPanel.locator('.card[data-card-name="Ruby"]').click()
 await page.waitForFunction(() => window.__STS_DEBUG__.getRun().pendingGuardianSockets.length === 0)
 const localGuardianSocket = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].deck
   .find((card) => card.uid === 'browser-guardian-socket')?.attachedGemId)
@@ -1351,8 +1351,7 @@ const stackedRoomScreens = await page.evaluate(() => {
     return counts
   })()
 })
-// Boss Relics are ordinary claimable Loot rows, matching the other post-combat
-// rewards while remaining shared across the party.
+// Boss relics have one entry in Loot; the separate picker owns the actual choices.
 const bossRelicShape = await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const before = structuredClone(debug.getRun())
@@ -1389,14 +1388,14 @@ const bossRelicShape = await page.evaluate(() => {
       // the app's global icon size is 1.8rem — which left a 28px relic adrift in
       // a 218px pick until the picker sized it itself.
       art: Math.round(Math.min(...picks.map((pick) =>
-        pick.querySelector('.item-icon-image')?.getBoundingClientRect().width ?? 0), Infinity)),
+        pick.querySelector('.loot-choice__icon img')?.getBoundingClientRect().width ?? 0), Infinity)),
     }
     debug.setRun(before)
     done(result)
   })))
 })
-check('boss Relics render as three readable, hittable Loot choices', () => {
-  assertEqual(bossRelicShape.picks, 3, 'boss Relics did not render three Loot choices')
+check('boss Relics render as one readable, hittable Loot entry', () => {
+  assertEqual(bossRelicShape.picks, 1, 'boss Relics did not collapse to one Loot entry')
   assert(bossRelicShape.spread <= 2, `boss relic picks differ in width by ${bossRelicShape.spread}px`)
   assert(bossRelicShape.named, 'a boss Relic Loot choice omitted its name')
   assert(bossRelicShape.inside, 'a boss relic pick escaped the reward screen')
@@ -1868,15 +1867,12 @@ await page.evaluate(() => {
   run.players = run.players.map((player) => ({ ...player, gold: 0 }))
   debug.setRun(run)
 })
-await page.getByRole('button', { name: /Card Removal Service/ }).click()
-await page.getByRole('group', { name: 'Card to remove' }).getByRole('button').first().click()
 const brokePartyControlsDisabled = await page.waitForFunction(() => {
   const buttons = [...document.querySelectorAll('button')]
   return buttons.some((button) => button.textContent?.includes('Anchor') && button.disabled) &&
-    buttons.some((button) => button.textContent?.includes('Remove') && button.disabled)
+    buttons.some((button) => button.textContent?.includes('Card Removal Service') && button.disabled)
 }).then((handle) => handle.jsonValue())
 check('Merchant disables purchases and removal when the whole party is broke', () => assert(brokePartyControlsDisabled))
-await page.getByRole('button', { name: 'Cancel' }).click()
 
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
@@ -2603,6 +2599,8 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.getByRole('button', { name: /\[Bet\]/ }).click()
+await page.getByRole('button', { name: 'Pay 2 Gold', exact: true }).click()
+await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction(() => Boolean(window.__STS_DEBUG__.getRun().roomState?.pendingRolls?.[window.__STS_DEBUG__.getRun().players[0].id]))
 const exactJoustPayment = {
   gold: await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].gold),
@@ -2820,7 +2818,7 @@ await page.evaluate(() => {
   const run = structuredClone(debug.getRun())
   run.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
   run.roomState = { kind: 'event', card: { id: 'cursed_tome', instanceId: 'browser-prismatic-event', act: 1, minAscension: 0, requiresColorlessUnlock: false, name: 'Cursed Tome', scope: 'player', options: [
-    { id: 'take', label: 'Take', description: 'Gain a Rare Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
+    { id: 'take', label: 'Take', description: 'Gain a Rare Card Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
     { id: 'skim', label: 'Skim', description: 'Gain a Card Reward. Lose 1 HP.', effects: [{ tag: 'card-reward' }, { tag: 'lose-hp', amount: 1 }] },
   ] }, decisions: {}, dieRolls: {}, availableRewardSources: {
     card: ['silent', 'defect', 'watcher', 'colorless'],
@@ -3947,7 +3945,7 @@ liveRoom.run.players[0].relics.push({ defId: 'prismatic_shard', spent: false })
 liveRoom.run.phase = 'room'
 liveRoom.run.roomState = {
   kind: 'event', card: { id: 'cursed_tome', instanceId: 'browser-online-prismatic-event', act: 2, minAscension: 0, requiresColorlessUnlock: false, name: 'Cursed Tome', scope: 'player', options: [
-    { id: 'take', label: 'Take', description: 'Gain a Rare Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
+    { id: 'take', label: 'Take', description: 'Gain a Rare Card Reward and a Curse.', effects: [{ tag: 'rare-reward' }, { tag: 'gain-curse' }] },
     { id: 'skim', label: 'Skim', description: 'Gain a Card Reward. Lose 1 HP.', effects: [{ tag: 'card-reward' }, { tag: 'lose-hp', amount: 1 }] },
   ] }, decisions: {}, dieRolls: {}, availableRewardSources: {
     card: ['ironclad', 'silent', 'defect', 'watcher', 'colorless'],
@@ -4700,6 +4698,24 @@ const openingPreviewStyle = await openingPreview.locator('.card').evaluate((card
 check('Mysterious Sphere opening-hand cards stay readable but read-only', () => {
   assertEqual(openingPreviewStyle.filter, 'none')
   assertEqual(openingPreviewStyle.disabled, 'true')
+})
+
+const courierPendingRun = enterRoom(postNeowRun(8804, [{ id: 'p1', name: 'Ann', character: 'ironclad' }]),
+  roomChoices(postNeowRun(8804, [{ id: 'p1', name: 'Ann', character: 'ironclad' }]))[0].id)
+for (const group of [courierPendingRun.players, courierPendingRun.combat.players]) {
+  group[0].relics.push({ defId: 'war_paint', spent: false, pending: true, pendingId: 0 })
+}
+await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), courierPendingRun)
+await page.getByRole('button', { name: /End Turn|Roll|Start/i }).first().waitFor()
+const courierPendingCombat = await page.evaluate(() => ({
+  phase: window.__STS_DEBUG__.getRun().phase,
+  resolver: document.body.textContent?.includes('Resolve War Paint') ?? false,
+  waiting: document.body.textContent?.includes('to resolve War Paint') ?? false,
+}))
+check('War Paint bought from The Courier does not lock combat behind its resolver', () => {
+  assertEqual(courierPendingCombat.phase, 'combat')
+  assertEqual(courierPendingCombat.resolver, false, 'the unresolvable War Paint resolver covered combat')
+  assertEqual(courierPendingCombat.waiting, false, 'combat showed a waiting banner for an unresolvable Relic')
 })
 
 writeFileSync(join(outDir, 'summary.json'), JSON.stringify({ failures }, null, 2))
