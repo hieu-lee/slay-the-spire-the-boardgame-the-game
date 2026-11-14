@@ -1232,7 +1232,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
     hpByPlayers: perPlayer(40),
     pattern: { kind: 'cube', slots: [
       { actions: [{ kind: 'attack', amount: 4 }] },
-      { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'actsLast' }] },
+      { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
       { actions: [{ kind: 'attack', amount: 5 }, { kind: 'block', amount: 3 }] },
     ] },
     ability: { kind: 'rebirth', hpPerPlayer: 40, defId: 'the_champ_fury' },
@@ -1241,7 +1241,7 @@ export const ENEMIES: Record<string, EnemyDef> = {
       hpByPlayers: perPlayer(45),
       pattern: { kind: 'cube', slots: [
         { actions: [{ kind: 'attack', amount: 4 }] },
-        { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'actsLast' }] },
+        { actions: [{ kind: 'applyWeak', amount: 1, aoe: true }, { kind: 'gainStrength', amount: 1 }] },
         { actions: [{ kind: 'attack', amount: 6 }, { kind: 'block', amount: 3 }] },
       ] },
       ability: { kind: 'rebirth', hpPerPlayer: 45, defId: 'the_champ_fury' },
