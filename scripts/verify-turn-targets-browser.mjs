@@ -86,7 +86,7 @@ try {
       const orbs = [null, null, null]
       orbs[slot] = orb
       await load({ player: { hand: [c('single-orb-dual', 'dual_cast', upgraded)], orbs } })
-      await page.locator('.hand .card[title^="Dual Cast"]').click()
+      await page.locator('.hand .card[data-card-name^="Dual Cast"]').click()
       const autoAim = page.locator('.evoke-target-effect')
       await autoAim.waitFor()
       assert.equal(await page.locator('.orbs__target').count(), 0,
@@ -102,7 +102,7 @@ try {
     }
     // A second playable card keeps auto end turn from clearing the Frost Block mid-assertion.
     await load({ player: { hand: [c('single-frost-dual', 'dual_cast'), c('spare-strike', 'strike_defect')], orbs: [null, 'frost', null] } })
-    await page.locator('.hand .card[title="Dual Cast"]').click()
+    await page.locator('.hand .card[data-card-name="Dual Cast"]').click()
     await page.waitForFunction(() => window.__STS_DEBUG__.getRun().combat.players[0].hand.length === 1)
     assert.equal((await combat()).players[0].block, 2, 'one Frost Orb must resolve both Evokes without an Orb-picker click')
     assert.deepEqual((await combat()).players[0].orbs, [null, null, null])
