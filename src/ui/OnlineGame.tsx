@@ -803,22 +803,24 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           {headerViewer ? <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`}
             die={run.phase === 'combat' ? run.combat?.die : undefined} /> : null}
         </div>
-        <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
-          volume={settings.voiceVolume} compact />
-        {viewer?.deck ? (
-          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
-            stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.viewerStanceChangedThisTurn : undefined}>
-            <img src={assetPath('menu/current-deck.webp')} alt="" />
-            <span aria-hidden="true">{viewer.deck.length}</span>
-          </CardCollectionOverlay>
-        ) : null}
-        {run.phase !== 'map' && run.phase !== 'setup' ? (
-          <MapOverlay map={run.map} act={run.act} bossDefId={run.actBossDefId} />
-        ) : null}
-        <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
-          onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
-          <img src={assetPath('menu/settings-cog.png')} alt="" />
-        </button>
+        <div className="app-shell__header-actions">
+          <VoiceControls voice={voice} seats={snapshot.seats} connected={room.connection === 'connected'}
+            volume={settings.voiceVolume} compact />
+          {viewer?.deck ? (
+            <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
+              stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.viewerStanceChangedThisTurn : undefined}>
+              <img src={assetPath('menu/current-deck.webp')} alt="" />
+              <span aria-hidden="true">{viewer.deck.length}</span>
+            </CardCollectionOverlay>
+          ) : null}
+          {run.phase !== 'map' && run.phase !== 'setup' ? (
+            <MapOverlay map={run.map} act={run.act} bossDefId={run.actBossDefId} />
+          ) : null}
+          <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
+            onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
+            <img src={assetPath('menu/settings-cog.png')} alt="" />
+          </button>
+        </div>
       </header>
 
       <SettingsDialog open={settingsOpen} settings={settings} onChange={onSettings}

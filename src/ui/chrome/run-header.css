@@ -81,6 +81,22 @@
 
 .run-status { gap: 0.7rem; font-size: 0.9rem; color: var(--cream); }
 
+/* A late run's relic strip made the status row's max-content wider than the
+   line, so the header wrapped whichever trailing control no longer fit and
+   left the Settings gear alone on a second line. The status row now takes the
+   space that is left (its relics wrap inside it), and the trailing controls
+   form one block that can only wrap together. The block may still shrink, so
+   a long voice error wraps inside it instead of pushing Settings offscreen. */
+.app-shell__header > .run-status { flex: 1 1 0; min-width: min(100%, 20rem); }
+
+.app-shell__header-actions {
+  display: flex;
+  min-width: 0;
+  gap: inherit;
+  align-items: center;
+  margin-left: auto;
+}
+
 /* Act and Ascension read as struck plates rather than as loose grey words. */
 .run-status > .pip:not(.pip--energy) {
   display: inline-flex;
@@ -134,6 +150,7 @@
   }
 
   .app-shell--combat .run-status {
+    min-width: 0;
     font-size: 0.72rem;
   }
 

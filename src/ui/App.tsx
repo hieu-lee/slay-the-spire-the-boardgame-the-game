@@ -1275,20 +1275,22 @@ function LocalGame({ onOnline, settings, onSettings, active }: {
             </>
           ) : null}
         </div>
-        {viewer ? (
-          <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
-            stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.stanceChangedThisTurn.includes(viewerId) : undefined}>
-            <img src={assetPath('menu/current-deck.webp')} alt="" />
-            <span aria-hidden="true">{viewer.deck.length}</span>
-          </CardCollectionOverlay>
-        ) : null}
-        {run.phase !== 'map' && run.phase !== 'setup' ? (
-          <MapOverlay map={seenMap} act={run.act} bossDefId={run.actBossDefId} />
-        ) : null}
-        <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
-          onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
-          <img src={assetPath('menu/settings-cog.png')} alt="" />
-        </button>
+        <div className="app-shell__header-actions">
+          {viewer ? (
+            <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
+              stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.stanceChangedThisTurn.includes(viewerId) : undefined}>
+              <img src={assetPath('menu/current-deck.webp')} alt="" />
+              <span aria-hidden="true">{viewer.deck.length}</span>
+            </CardCollectionOverlay>
+          ) : null}
+          {run.phase !== 'map' && run.phase !== 'setup' ? (
+            <MapOverlay map={seenMap} act={run.act} bossDefId={run.actBossDefId} />
+          ) : null}
+          <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
+            onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
+            <img src={assetPath('menu/settings-cog.png')} alt="" />
+          </button>
+        </div>
       </header>
 
       <SettingsDialog open={settingsOpen} settings={settings} onChange={onSettings}
