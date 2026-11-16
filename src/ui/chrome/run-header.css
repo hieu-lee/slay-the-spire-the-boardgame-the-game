@@ -150,8 +150,27 @@
   }
 
   .app-shell--combat .run-status {
+    position: relative;
     min-width: 0;
     font-size: 0.72rem;
+  }
+
+  /* One row has room for a handful of relics, and a late run's strip used to
+     paint on under the deck and map keys. The strip scrolls sideways instead.
+     It stays `position: static`, so each tooltip's containing block is the
+     status row outside the scroller: the scroller does not clip it, and it
+     opens across the status row as it does below 50rem. */
+  .app-shell--combat .run-status > .relic-bar {
+    position: static;
+    overflow: auto hidden;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+  }
+
+  .app-shell--combat .run-status > .relic-bar .relic-tip {
+    right: 0;
+    width: auto;
+    max-width: none;
   }
 
   .app-shell--combat .run-status > .pip:not(.pip--energy) {
