@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
+import { onPackPreferenceChange, playWithPacks } from '../pack-preference.ts'
 import { onProfileChange, PROFILE_KEY } from '../profile.ts'
 import { currentWalletKey, savedWallet, WALLET_EVENT } from '../wallet-storage.ts'
 import type { Wallet } from '../wallet.ts'
@@ -25,3 +26,6 @@ export function useWallet(): Wallet {
   }, [])
   return wallet
 }
+
+/** Whether the account's bought packs join new runs (the Shop's switch); re-renders when it changes. */
+export const usePlayWithPacks = (): boolean => useSyncExternalStore(onPackPreferenceChange, playWithPacks)

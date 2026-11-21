@@ -74,7 +74,7 @@ async function openContext(viewport, username, skin, owned = true) {
     // Only an owned skin can be worn: the account bought it (the Shop's Skins tab).
     const wallet = `sts-wallet:${username.toLowerCase()}`
     if (skin && owned && !localStorage.getItem(wallet)) {
-      localStorage.setItem(wallet, JSON.stringify({ version: 1, coins: 0, packs: [], skins: [skin], addPacksToRuns: true, credited: {} }))
+      localStorage.setItem(wallet, JSON.stringify({ version: 1, coins: 0, packs: [], skins: [skin], credited: {} }))
     }
   }, { username, skin, hero, owned })
   return context

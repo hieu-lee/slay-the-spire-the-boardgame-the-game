@@ -38,7 +38,7 @@ const offeredSkins = [...SKIN_IDS]
 const lockedHeroes = BASE_CHARACTER_IDS.filter((hero) => skinsOf(hero).length === 0)
 const price = CARD_PACK_PRICE.toLocaleString('en-US')
 
-const wallet = (coins, packs = [], extra = {}) => ({ version: 1, coins, packs, skins: [], addPacksToRuns: true, credited: {}, ...extra })
+const wallet = (coins, packs = [], extra = {}) => ({ version: 1, coins, packs, skins: [], credited: {}, ...extra })
 const storedSkins = (page) => page.evaluate(() => JSON.parse(localStorage.getItem('sts-skins:testplayer') ?? 'null'))
 // The test profile is signed in, so its wallet lives under its account's key (seeded
 // anonymously below, then adopted by the account on first read).
@@ -271,7 +271,7 @@ try {
     const shelf = await page.locator('.shop__packs').evaluate((list) => ({ height: list.scrollHeight - list.clientHeight, width: list.scrollWidth - list.clientWidth }))
     assert(shelf.height <= 1 && shelf.width <= 1, `${screen}: the pack shelf scrolls: ${JSON.stringify(shelf)}`)
     if (phone) {
-      const short = await page.locator('.shop-button, .shop__tab, .shop__back').evaluateAll((controls, factor) =>
+      const short = await page.locator('.shop-button, .shop__tab, .shop__back, .shop__use-packs').evaluateAll((controls, factor) =>
         controls.filter((control) => control.getClientRects().length && control.getBoundingClientRect().height * factor < 22).map((control) => control.textContent), scale)
       assert.deepEqual(short, [], `${screen}: Shop controls too short to tap`)
     }
@@ -506,6 +506,66 @@ try {
     await rack.and(owned.page.locator(':not([data-worn])')).waitFor()
     await owned.context.close()
     console.log('skin refusals, owned-not-worn and cross-tab wear verified')
+  }
+
+  {
+    // The "Play with my packs" switch: shown only to an owner, on by default, off keeps the packs but deals none, per account, survives a reload.
+    const none = await open({ width: 1440, height: 900 }, false, wallet(0))
+    await none.page.getByRole('button', { name: 'Shop', exact: true }).click()
+    await none.page.locator('.shop-pack').first().waitFor()
+    assert.equal(await none.page.getByRole('checkbox', { name: /Play with my packs/ }).count(), 0, 'a player with no pack is offered the switch')
+    await none.context.close()
+
+    const { context, page, errors } = await open({ width: 1440, height: 900 }, false, wallet(0, ['slayer_silent', 'slayer_colorless']))
+    const dealt = () => page.evaluate(async () => (await import('/src/pack-preference.ts')).selectedCardPacks())
+    const stored = () => page.evaluate(() => localStorage.getItem('sts-use-packs:testplayer'))
+    await page.getByRole('button', { name: 'Shop', exact: true }).click()
+    const packSwitch = page.getByRole('checkbox', { name: /Play with my packs/ })
+    await packSwitch.waitFor()
+    assert.equal(await packSwitch.isChecked(), true, 'the packs are not on by default')
+    assert.deepEqual(await dealt(), ['slayer_silent', 'slayer_colorless'])
+    await packSwitch.click()
+    assert.equal(await packSwitch.isChecked(), false)
+    assert.equal(await stored(), 'false')
+    assert.deepEqual(await dealt(), [], 'switched-off packs are still dealt')
+    assert.match(await page.locator('.shop__use-packs').innerText(), /base cards only/)
+    assert.deepEqual((await storedWallet(page)).packs, ['slayer_silent', 'slayer_colorless'], 'switching off lost ownership')
+    assert.equal(await page.locator('.shop-pack[data-owned="true"]').count(), 2, 'the Shop stopped showing owned packs')
+    // Another tab hears it, and a reload keeps it.
+    const second = await context.newPage()
+    await second.goto(url)
+    await second.locator('.start-menu__nav').waitFor()
+    await second.getByRole('button', { name: 'Shop', exact: true }).click()
+    assert.equal(await second.getByRole('checkbox', { name: /Play with my packs/ }).isChecked(), false)
+    await second.getByRole('checkbox', { name: /Play with my packs/ }).click()
+    await page.waitForFunction(() => document.querySelector('.shop__use-packs input').checked)
+    assert.equal(await stored(), null, 'turning it back on keeps a stored choice')
+    await second.close()
+    await packSwitch.click()
+    await page.reload()
+    await page.locator('.start-menu__nav').waitFor()
+    await page.getByRole('button', { name: 'Shop', exact: true }).click()
+    assert.equal(await page.getByRole('checkbox', { name: /Play with my packs/ }).isChecked(), false, 'the choice was lost on reload')
+    assert.deepEqual(await dealt(), [])
+    // A run started now plays without them; switching them back on deals them again.
+    const startRun = async () => {
+      await page.getByRole('button', { name: 'Single Player', exact: true }).click()
+      await page.getByRole('button', { name: 'Standard', exact: true }).click()
+      await page.getByRole('button', { name: 'Embark' }).click()
+      await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
+      await page.waitForFunction(() => window.__STS_DEBUG__?.getRun().phase === 'neow')
+      return page.evaluate(() => window.__STS_DEBUG__.getRun().meta.cardPacks)
+    }
+    await page.reload()
+    await page.locator('.start-menu__nav').waitFor()
+    assert.equal(await startRun(), undefined, 'a run started with the packs switched off still plays them')
+    await page.reload()
+    await page.evaluate(async () => (await import('/src/pack-preference.ts')).setPlayWithPacks(true))
+    await page.locator('.start-menu__nav').waitFor()
+    assert.deepEqual(await startRun(), ['slayer_silent', 'slayer_colorless'], 'switching the packs back on dealt none')
+    assert.deepEqual(errors, [], 'switch: page errors')
+    await context.close()
+    console.log('the play-with-my-packs switch is owner-only, per account, and keeps ownership')
   }
 
   {

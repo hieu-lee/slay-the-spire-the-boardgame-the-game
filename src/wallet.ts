@@ -25,11 +25,6 @@ export type Wallet = {
   packs: CardPackId[]
   /** Bought skins, in catalogue order. Wearing one is a separate choice (`skin-preference.ts`). */
   skins: SkinId[]
-  /**
-   * Whether bought packs join new runs. Always true for now: there is no
-   * control for it yet, only `setAddPacksToRuns` for a future setting.
-   */
-  addPacksToRuns: boolean
   /** Run key → how many of that run's boss awards were already paid out. */
   credited: Record<string, number>
 }
@@ -42,7 +37,7 @@ export const MAX_RUN_KEY_LENGTH = 160
 export const MAX_WALLET_COINS = 100_000_000
 
 export function createWallet(): Wallet {
-  return { version: 1, coins: 0, packs: [], skins: [], addPacksToRuns: true, credited: {} }
+  return { version: 1, coins: 0, packs: [], skins: [], credited: {} }
 }
 
 const count = (value: unknown, max: number): value is number =>
@@ -70,7 +65,6 @@ export function parseWallet(value: unknown): Wallet {
       ? { dailyCoinsEarned: saved.dailyCoinsEarned } : {}),
     packs: normalizeCardPacks(saved.packs),
     skins: normalizeSkins(saved.skins),
-    addPacksToRuns: typeof saved.addPacksToRuns === 'boolean' ? saved.addPacksToRuns : true,
     credited: Object.fromEntries(ledger),
   }
 }
@@ -165,14 +159,6 @@ export function creditBossCoins(wallet: Wallet, runKey: string, awards: readonly
     coins,
   }
 }
-
-/** The packs a new run should shuffle in: everything owned, unless the switch is off. */
-export const enabledCardPacks = (wallet: Wallet): CardPackId[] =>
-  wallet.addPacksToRuns ? normalizeCardPacks(wallet.packs) : []
-
-/** The future "add my packs to runs" setting. Deliberately not exposed in any UI yet. */
-export const setAddPacksToRuns = (wallet: Wallet, enabled: boolean): Wallet =>
-  wallet.addPacksToRuns === enabled ? wallet : { ...wallet, addPacksToRuns: enabled }
 
 /**
  * The ledger key of a solo run. `start` is a nonce App draws whenever a run is

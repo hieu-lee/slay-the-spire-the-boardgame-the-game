@@ -150,7 +150,7 @@ try {
     await walletContext.addInitScript(() => {
       if (sessionStorage.getItem('wallet-seeded')) return
       sessionStorage.setItem('wallet-seeded', '1')
-      localStorage.setItem('sts-wallet', JSON.stringify({ version: 1, coins: 33, packs: ['slayer_silent'], addPacksToRuns: true, credited: {} }))
+      localStorage.setItem('sts-wallet', JSON.stringify({ version: 1, coins: 33, packs: ['slayer_silent'], credited: {} }))
     })
     const walletPage = await walletContext.newPage()
     walletPage.on('pageerror', (error) => errors.push(`${screen} wallet: ${error.message}`))

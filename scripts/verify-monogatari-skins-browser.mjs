@@ -53,7 +53,7 @@ try {
       deviceScaleFactor: 1, recordVideo: { dir: output, size: viewport } })
     await context.addInitScript(() => {
       if (!localStorage.getItem('monogatari-seeded')) {
-        localStorage.setItem('sts-wallet', JSON.stringify({ version: 1, coins: 5000, packs: [], skins: [], addPacksToRuns: true, credited: {} }))
+        localStorage.setItem('sts-wallet', JSON.stringify({ version: 1, coins: 5000, packs: [], skins: [], credited: {} }))
         localStorage.setItem('monogatari-seeded', '1')
       }
     })

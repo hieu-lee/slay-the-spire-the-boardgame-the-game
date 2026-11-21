@@ -34,7 +34,7 @@ async function context(viewport, username, character, skin) {
     if (skin) {
       localStorage.setItem(`sts-skins:${username.toLowerCase()}`, JSON.stringify({ [character]: skin }))
       localStorage.setItem(`sts-wallet:${username.toLowerCase()}`, JSON.stringify({ version: 1, coins: 0,
-        packs: [], skins: [skin], addPacksToRuns: true, credited: {} }))
+        packs: [], skins: [skin], credited: {} }))
     }
   }, { username, character, skin })
   const page = await context.newPage()

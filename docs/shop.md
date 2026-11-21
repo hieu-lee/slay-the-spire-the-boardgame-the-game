@@ -10,6 +10,7 @@ It has two sections: **Card Packs** and **Skins**.
 | Coin ranges, rolls, pack price | `src/game/coins.ts` (`verify-coins.mjs`) |
 | Pack catalogue | `src/game/packs.ts` |
 | Skin catalogue and prices | `src/game/skins.ts`, `SKIN_PRICES` in `src/game/coins.ts` |
+| Whether packs join runs | `src/pack-preference.ts` (`verify-wallet.mjs`, `verify-shop-browser.mjs`) |
 | Which skin is worn | `src/skin-preference.ts` (`verify-wallet.mjs`, `verify-skin-profile-browser.mjs`) |
 | Wallet rules (pure) | `src/wallet.ts` (`verify-wallet.mjs`) |
 | Wallet storage | `src/wallet-storage.ts`, hook `src/ui/useWallet.ts` |
@@ -157,18 +158,24 @@ is unchanged. The run records its packs in `run.meta.cardPacks`
 Shop).
 
 * Solo: every Standard and Custom start (including Quick Start) passes
-  `cardPacks: enabledCardPacks(wallet)`; a saved run resumes with the packs it started with;
+  `cardPacks: selectedCardPacks()`; a saved run resumes with the packs it started with;
   run logs record and validate them, and replays rebuild from the log. The **tutorial** and
   the **Daily Climb** never use packs (the engine ignores packs on a Daily Climb).
 * Online: the room plays the union of the packs of its seated players, frozen at start. See
   [online-play.md](online-play.md#shop-packs-and-coins-at-the-table).
 
-### The add-packs-to-runs switch
+### The "Play with my packs" switch
 
-`enabledCardPacks(wallet)` is the owned packs when `addPacksToRuns` is on and none when it is
-off; `setAddPacksToRuns(wallet, enabled)` changes it. It defaults to on and is deliberately
-**not exposed** in any menu or setting yet — it exists so a later version can let players
-choose. Turning it off keeps ownership; the Shop still shows the packs as owned.
+The Card Packs tab shows a **Play with my packs** checkbox to a player who owns at least one
+pack. It is on by default. `src/pack-preference.ts` stores an explicit off as
+`sts-use-packs:<username>` (`sts-use-packs` signed out) in this browser, like the worn skin
+(`verify-wallet.mjs`, `verify-shop-browser.mjs`); turning it on again erases the key. Every
+solo start and every online create or join reads `selectedCardPacks()`: the owned packs, or
+none while the switch is off. Turning it off keeps ownership; the Shop still shows the packs
+as owned, and the choice never changes a run already started. Online, a seat reports its
+choice when it creates or joins and when its socket authenticates, so a change made while seated
+reaches the room at the next reconnect; the lobby's packs-in-play strip omits a seat that
+switched off.
 
 ## The screen
 

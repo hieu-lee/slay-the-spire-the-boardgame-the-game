@@ -1,12 +1,12 @@
 // The Shop wallet: buying packs, crediting boss coins exactly once per boss,
-// the add-packs-to-runs switch, and what survives corrupt or blocked storage.
+// the play-with-packs preference, and what survives corrupt or blocked storage.
 import { suite, check, assert, assertEqual, assertDeepEqual, report } from './lib/harness.mjs'
 import { CARD_PACK_PRICE, MAX_BOSS_AWARDS, SKIN_PRICE, SKIN_PRICES, catchUpAwardIndex } from '../src/game/coins.ts'
 import { SKIN_IDS } from '../src/game/skins.ts'
 import { CARD_PACK_IDS } from '../src/game/packs.ts'
 import {
   MAX_CREDITED_RUNS, MAX_PAID_RUNS, parsePaidRuns, MAX_RUN_KEY_LENGTH, MAX_WALLET_COINS, buyPack, buySkin, coinsShort, createWallet, creditBossCoins,
-  enabledCardPacks, onlineRunKey, ownsPack, ownsSkin, parseWallet, spentCoins, setAddPacksToRuns, soloRunKey,
+  onlineRunKey, ownsPack, ownsSkin, parseWallet, spentCoins, soloRunKey,
 } from '../src/wallet.ts'
 
 const rich = (coins = 5000, packs = []) => ({ ...createWallet(), coins, packs })
@@ -15,7 +15,7 @@ const awards = (...coins) => coins.map((value, index) => ({ act: Math.min(4, ind
 suite('wallet purchases')
 
 check('a new wallet is empty and adds bought packs to runs by default', () => {
-  assertDeepEqual(createWallet(), { version: 1, coins: 0, packs: [], skins: [], addPacksToRuns: true, credited: {} })
+  assertDeepEqual(createWallet(), { version: 1, coins: 0, packs: [], skins: [], credited: {} })
 })
 
 check('buying spends exactly the pack price and owns the pack', () => {
@@ -99,7 +99,7 @@ check('a skin one coin short is refused, an owned or unknown one never sells', (
 })
 
 check('a wallet from before skins parses to none, and stored skins are validated and in catalogue order', () => {
-  assertDeepEqual(parseWallet({ version: 1, coins: 12, packs: ['slayer_silent'], addPacksToRuns: true, credited: {} }).skins, [])
+  assertDeepEqual(parseWallet({ version: 1, coins: 12, packs: ['slayer_silent'], credited: {} }).skins, [])
   assertDeepEqual(parseWallet({ version: 1, coins: 12, skins: ['kratos', 'nobody', 'kratos', 3, null] }).skins, ['kratos'])
   assertDeepEqual(parseWallet({ version: 1, coins: 12, skins: 'kratos' }).skins, [])
   assertDeepEqual(parseWallet({ version: 1, coins: 12, skins: { kratos: true } }).skins, [])
@@ -210,22 +210,6 @@ check('solo keys separate attempts on a reused seed; online keys separate rooms'
   assert(soloRunKey('r'.repeat(400), 1).length <= MAX_RUN_KEY_LENGTH)
 })
 
-suite('add-packs-to-runs switch')
-
-check('owned packs join runs while the switch is on, and none while it is off', () => {
-  const wallet = rich(0, ['slayer_ironclad', 'slayer_colorless'])
-  assertDeepEqual(enabledCardPacks(wallet), ['slayer_ironclad', 'slayer_colorless'])
-  const off = setAddPacksToRuns(wallet, false)
-  assertDeepEqual(enabledCardPacks(off), [])
-  assertDeepEqual(off.packs, wallet.packs, 'switching off keeps ownership')
-  assertEqual(setAddPacksToRuns(off, false), off, 'an unchanged switch returns the same wallet')
-  const bought = buyPack({ ...off, coins: CARD_PACK_PRICE }, 'slayer_silent')
-  assert(bought.ok, 'buying works while the switch is off')
-  assertDeepEqual(enabledCardPacks(bought.wallet), [])
-  assertDeepEqual(enabledCardPacks(setAddPacksToRuns(bought.wallet, true)),
-    ['slayer_ironclad', 'slayer_silent', 'slayer_colorless'])
-})
-
 suite('stored wallet validation')
 
 check('anything unreadable becomes the empty wallet', () => {
@@ -239,16 +223,15 @@ check('each field is validated on its own, so one bad field costs nothing else',
     version: 1,
     coins: -4,
     packs: ['slayer_watcher', 'slayer_nobody', 'slayer_watcher', 7, 'slayer_ironclad'],
-    addPacksToRuns: 'yes',
+    addPacksToRuns: false,
     credited: { 'solo:ok': 2, 'solo:negative': -1, 'solo:fraction': 1.5, 'solo:huge': MAX_BOSS_AWARDS + 1, '': 1,
       ['k'.repeat(MAX_RUN_KEY_LENGTH + 1)]: 1 },
   })
   assertEqual(parsed.coins, 0)
   assertDeepEqual(parsed.packs, ['slayer_ironclad', 'slayer_watcher'])
-  assertEqual(parsed.addPacksToRuns, true)
+  assertEqual('addPacksToRuns' in parsed, false, 'the retired switch field is not kept')
   assertDeepEqual(parsed.credited, { 'solo:ok': 2 })
   assertEqual(parseWallet({ version: 1, coins: 1e12 }).coins, 0, 'an impossible balance is corrupt')
-  assertEqual(parseWallet({ version: 1, coins: 1284, addPacksToRuns: false }).addPacksToRuns, false)
   assertEqual(parseWallet({ version: 1, coins: 1284 }).coins, 1284)
 })
 
@@ -630,6 +613,56 @@ check('only a skin the wallet owns is ever worn: an unowned choice reads as Defa
   assertEqual(ownedRead, undefined, 'owning a skin does not wear it')
   assertEqual(worn, JSON.stringify({ ironclad: 'kratos' }), 'a bought skin is worn at once')
   assertEqual(otherAccount, undefined, 'another account wears nothing')
+})
+
+const { playWithPacks, selectedCardPacks, setPlayWithPacks } = await import('../src/pack-preference.ts')
+signIn('Hal')
+store.set('sts-wallet:hal', JSON.stringify({ ...createWallet(), packs: ['slayer_ironclad', 'slayer_colorless'] }))
+const defaultOn = [playWithPacks(), selectedCardPacks()]
+const eventsBefore = changeEvents
+setPlayWithPacks(false)
+const off = [playWithPacks(), selectedCardPacks(), store.get('sts-use-packs:hal'), changeEvents - eventsBefore]
+setPlayWithPacks(false)
+const repeated = changeEvents - eventsBefore
+const walletAfterOff = JSON.parse(store.get('sts-wallet:hal')).packs
+signIn('Ian')
+const packsOtherAccount = playWithPacks()
+signIn('Hal')
+setPlayWithPacks(true)
+const backOn = [playWithPacks(), store.has('sts-use-packs:hal')]
+store.set('sts-use-packs:hal', 'not json')
+const corrupt = playWithPacks()
+store.delete('sts-use-packs:hal')
+storage.failWrites = true
+setPlayWithPacks(false)
+const memoryOnly = [playWithPacks(), store.has('sts-use-packs:hal')]
+storage.failWrites = false
+signIn('Ian')
+setPlayWithPacks(false)
+setPlayWithPacks(true)
+signIn('Hal')
+const memoryKept = playWithPacks()
+setPlayWithPacks(true)
+const memoryCleared = [playWithPacks(), store.has('sts-use-packs:hal')]
+signOut()
+const packsAnonymous = playWithPacks()
+setPlayWithPacks(false)
+const packsAnonymousOff = store.get('sts-use-packs')
+setPlayWithPacks(true)
+
+check('bought packs join new runs unless the account switched them off, and switching off keeps ownership', () => {
+  assertDeepEqual(defaultOn, [true, ['slayer_ironclad', 'slayer_colorless']], 'on by default')
+  assertDeepEqual(off, [false, [], 'false', 1], 'off stores only the explicit choice and tells the page once')
+  assertEqual(repeated, 1, 'repeating the same choice changes nothing')
+  assertDeepEqual(walletAfterOff, ['slayer_ironclad', 'slayer_colorless'], 'the wallet still owns the packs')
+  assertEqual(packsOtherAccount, true, 'the choice belongs to one account')
+  assertDeepEqual(backOn, [true, false], 'switching on again erases the stored choice')
+  assertEqual(corrupt, true, 'an unreadable choice reads as on')
+  assertDeepEqual(memoryOnly, [false, false], 'blocked storage keeps the choice for this tab')
+  assertEqual(memoryKept, false, 'another account changing its choice drops the unsaved one')
+  assertDeepEqual(memoryCleared, [true, false], 'a later write replaces the unsaved choice')
+  assertEqual(packsAnonymous, true, 'signed out reads the packsAnonymous choice, not an account one')
+  assertEqual(packsAnonymousOff, 'false')
 })
 
 report('wallet')

@@ -60,6 +60,7 @@ import { createRng, seedFromString } from '../game/rng.ts'
 import { CHARACTER_IDS } from '../game/types.ts'
 import type { CharacterId } from '../game/types.ts'
 import { visualId } from '../game/skins.ts'
+import { selectedCardPacks } from '../pack-preference.ts'
 import { preferredSkin } from '../skin-preference.ts'
 import { SkinProvider } from './skin-context.tsx'
 import { hasRoomSession, validRoomSessions } from '../multiplayer/useRoomSession.ts'
@@ -116,7 +117,7 @@ import { ReplaySession } from './run-replay.ts'
 import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../leaderboard.ts'
 import { coinsOwed } from '../game/coins.ts'
 import { isCardPackId } from '../game/packs.ts'
-import { enabledCardPacks, MAX_RUN_KEY_LENGTH, soloRunKey } from '../wallet.ts'
+import { MAX_RUN_KEY_LENGTH, soloRunKey } from '../wallet.ts'
 import { ACCOUNT_WALLETS, creditRunCoins, currentWalletKey, savedWallet, syncAccountWallet } from '../wallet-storage.ts'
 import { CoinGainToast, type CoinGain } from './Coins.tsx'
 import { isRestricted, onProfileChange, PROFILE_KEY, savedProfile, SPIRE_REJECTION } from '../profile.ts'
@@ -829,7 +830,7 @@ function LocalGame({ onOnline, settings, onSettings, active }: {
     tutorialReturn.current = null
     terminalRun.current = null
     // Bought Shop packs join every new run except a Daily Climb, whose pools everyone shares.
-    const packs = nextMeta.mode === 'daily' ? [] : enabledCardPacks(savedWallet())
+    const packs = nextMeta.mode === 'daily' ? [] : selectedCardPacks()
     const meta: RunMetaOptions = packs.length > 0 ? { ...nextMeta, cardPacks: packs } : nextMeta
     const next = newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, meta)
     // A Daily Climb's engine overrides the requested Ascension; record what was built.

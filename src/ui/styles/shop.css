@@ -143,6 +143,13 @@ html[data-mobile-performance='true'] .sts-scope .run-summary__coins-note { font-
 .shop__stock[hidden] { display: none; }
 .shop__title { margin: 0; padding: 0 0.3rem; font-size: clamp(1.6rem, 2.8vw, 2.4rem); line-height: 1.05; }
 
+.shop__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem 1.2rem; }
+/* The "play with my packs" checkbox keeps the game's painted checkbox (chrome/keys.css). */
+.shop__use-packs { display: flex; align-items: center; gap: 0.7rem; cursor: pointer; }
+.shop__use-packs-text { display: grid; line-height: 1.15; }
+.shop__use-packs-text strong { font: 700 1.15rem 'Kreon', Georgia, serif; letter-spacing: 0.03em; }
+.shop__use-packs-text small { font-size: 0.9rem; opacity: 0.85; }
+
 .shop__packs {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -519,6 +526,10 @@ html[data-mobile-performance='true'] .shop__tab { min-height: 3.8rem; font-size:
 html[data-mobile-performance='true'] .shop__tab-icon { width: 3rem; height: 3rem; }
 html[data-mobile-performance='true'] .shop__stock { gap: 0.3rem; padding: 0.9rem max(1.8rem, 3.5%) 1.1rem; }
 html[data-mobile-performance='true'] .shop-pack:is(:hover, :focus-within) { transform: none; }
+html[data-mobile-performance='true'] .shop__use-packs { min-height: 3.2rem; gap: 0.9rem; }
+html[data-mobile-performance='true'] .shop__use-packs input { width: 1.8rem; height: 1.8rem; }
+html[data-mobile-performance='true'] .shop__use-packs-text strong { font-size: 1.5rem; }
+html[data-mobile-performance='true'] .shop__use-packs-text small { font-size: 1.1rem; }
 html[data-mobile-performance='true'] .shop-pack__art { aspect-ratio: 1 / 0.84; padding-top: 1.4rem; }
 /* A smaller crest on the flatter art, so it stays clear of the middle card. */
 html[data-mobile-performance='true'] .shop-pack > .shop-crest { top: -1.9rem; width: 3.4rem; height: 3.4rem; }

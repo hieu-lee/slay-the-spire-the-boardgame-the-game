@@ -16,6 +16,7 @@ import { characterOfSkin, SKIN_IDS, SKIN_LABELS, skinsOf } from '../game/skins.t
 import type { SkinId } from '../game/skins.ts'
 import { BASE_CHARACTER_IDS } from '../game/types.ts'
 import type { CharacterId } from '../game/types.ts'
+import { setPlayWithPacks } from '../pack-preference.ts'
 import { setPreferredSkin, wearBoughtSkin } from '../skin-preference.ts'
 import { coinsShort, ownsPack, ownsSkin } from '../wallet.ts'
 import { purchasePack, purchaseSkin } from '../wallet-storage.ts'
@@ -25,7 +26,7 @@ import { ScannedCardFace } from './CompendiumScreen.tsx'
 import { cardSkin, usePreferredSkins, useCardSkins } from './skin-context.tsx'
 import { CHARACTER_LABEL } from './run-summary-data.ts'
 import { playSoundEffect } from './sfx.ts'
-import { useWallet } from './useWallet.ts'
+import { usePlayWithPacks, useWallet } from './useWallet.ts'
 
 export type ShopTab = 'packs' | 'skins'
 type Tab = ShopTab
@@ -320,6 +321,7 @@ function LockedRack({ hero }: { hero: CharacterId }) {
 export function ShopScreen({ onBack, initialTab = 'packs' }: { onBack: () => void; initialTab?: ShopTab }) {
   const wallet = useWallet()
   const wearing = usePreferredSkins()
+  const withPacks = usePlayWithPacks()
   const [tab, setTab] = useState<Tab>(initialTab)
   const [buying, setBuying] = useState<Offer | null>(null)
   const [browsing, setBrowsing] = useState<CardPackId | null>(null)
@@ -372,7 +374,16 @@ export function ShopScreen({ onBack, initialTab = 'packs' }: { onBack: () => voi
       {/* One stable panel per tab, so each tab's aria-controls always names a real element. */}
       <section className="shop__stock menu-board" role="tabpanel" id="shop-panel-packs" aria-labelledby="shop-tab-packs"
         hidden={tab !== 'packs'}>
-        <h2 className="shop__title">The Slayer Pack</h2>
+        <header className="shop__head">
+          <h2 className="shop__title">The Slayer Pack</h2>
+          {wallet.packs.length > 0 ? <label className="shop__use-packs">
+            <input type="checkbox" checked={withPacks} onChange={(event) => setPlayWithPacks(event.target.checked)} />
+            <span className="shop__use-packs-text">
+              <strong>Play with my packs</strong>
+              <small>{withPacks ? 'Bought cards join new runs' : 'New runs use the base cards only'}</small>
+            </span>
+          </label> : null}
+        </header>
         <ul className="shop__packs shop__scene">
           {CARD_PACK_IDS.map((id) => <PackTile key={id} pack={CARD_PACKS[id]} owned={ownsPack(wallet, id)} short={short}
             onBuy={() => setBuying({ pack: CARD_PACKS[id] })} onBrowse={() => setBrowsing(id)} />)}

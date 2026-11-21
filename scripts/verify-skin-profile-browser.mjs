@@ -48,7 +48,7 @@ const SCREENS = [
   ['phone-932x430', { width: 932, height: 430 }, true],
 ]
 
-const wallet = (skins) => ({ version: 1, coins: 3000, packs: [], skins, addPacksToRuns: true, credited: {} })
+const wallet = (skins) => ({ version: 1, coins: 3000, packs: [], skins, credited: {} })
 
 /** A new context starts with a wallet that owns `skins` (seeded anonymously; the account adopts it on first read). */
 async function open(viewport, phone, context, skins = ['kratos'], { engine = browser, base = url } = {}) {

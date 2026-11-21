@@ -85,7 +85,7 @@ try {
   // The account wears the Kratos skin on Ironclad: the run freezes it and Resume must give it back.
   // (The wallet owns it: only a bought skin can be worn.)
   await page.evaluate(() => {
-    localStorage.setItem('sts-wallet:testplayer', JSON.stringify({ version: 1, coins: 0, packs: [], skins: ['kratos'], addPacksToRuns: true, credited: {} }))
+    localStorage.setItem('sts-wallet:testplayer', JSON.stringify({ version: 1, coins: 0, packs: [], skins: ['kratos'], credited: {} }))
     localStorage.setItem('sts-skins:testplayer', JSON.stringify({ ironclad: 'kratos' }))
   })
   await page.getByRole('button', { name: 'Single Player', exact: true }).click()

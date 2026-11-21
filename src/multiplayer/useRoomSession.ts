@@ -11,10 +11,10 @@ import type { NeowCard, NeowRewardOffer } from '../game/neow.ts'
 import type { CardInstance, CharacterId, Enemy, Player } from '../game/types.ts'
 import { CAMPAIGN_EVENT, campaignKey, savedCampaign, saveAscensionUnlock } from '../campaign-storage.ts'
 import type { CardPackId } from '../game/packs.ts'
-import { enabledCardPacks } from '../wallet.ts'
+import { selectedCardPacks } from '../pack-preference.ts'
 import type { SkinId } from '../game/skins.ts'
 import { onSkinPreferenceChange, preferredSkin } from '../skin-preference.ts'
-import { claimSeatOwner, savedWallet } from '../wallet-storage.ts'
+import { claimSeatOwner } from '../wallet-storage.ts'
 import {
   resetRoomEndpoint,
   roomUrl,
@@ -605,7 +605,7 @@ export function useRoomSession() {
         next.addEventListener('open', () => {
           if (!active || socket.current !== next) return next.close()
           next.send(JSON.stringify({ type: 'authenticate', token: credentials.token, campaignProgress: savedCampaign(),
-            cardPacks: enabledCardPacks(savedWallet()) }))
+            cardPacks: selectedCardPacks() }))
         })
         next.addEventListener('message', (event) => {
           if (!active || generation.current !== connectedGeneration || socket.current !== next) return
@@ -719,7 +719,7 @@ export function useRoomSession() {
           body = await json(await fetch(endpoint, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ name, character, skin: character ? preferredSkin(character) : undefined, requestId, campaignProgress: savedCampaign(), cardPacks: enabledCardPacks(savedWallet()) }),
+            body: JSON.stringify({ name, character, skin: character ? preferredSkin(character) : undefined, requestId, campaignProgress: savedCampaign(), cardPacks: selectedCardPacks() }),
             signal: AbortSignal.timeout(ACTION_TIMEOUT_MS),
           })) as { token: string; snapshot: RoomSnapshot }
           break
