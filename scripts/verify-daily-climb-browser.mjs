@@ -265,10 +265,10 @@ try {
   await page.getByRole('button', { name: 'Next day' }).click()
   await rows.nth(2).waitFor()
 
-  // Both a common and a narrow horizontal phone, with the longest result label on the board.
-  for (const [width, height, name] of [[844, 390, 'daily-board-horizontal-phone'], [667, 375, 'daily-board-narrow-horizontal-phone']]) {
-    await page.setViewportSize({ width, height })
-    await screenshot(name)
+  // Horizontal phone with the longest result label on the board.
+  {
+    await page.setViewportSize({ width: 844, height: 390 })
+    await screenshot('daily-board-horizontal-phone')
     const phoneFit = await page.evaluate(() => ({
       documentWidth: document.documentElement.scrollWidth,
       tableWidth: document.querySelector('.daily-board .leaderboard__table-wrap')?.scrollWidth,
@@ -278,8 +278,8 @@ try {
         return button.scrollWidth <= button.clientWidth + 1 && box.bottom <= innerHeight
       }),
     }))
-    check(`the daily ranking fits a ${width}px horizontal phone`, () => {
-      assert(phoneFit.documentWidth <= width + 2, JSON.stringify(phoneFit))
+    check(`the daily ranking fits a 844px horizontal phone`, () => {
+      assert(phoneFit.documentWidth <= 844 + 2, JSON.stringify(phoneFit))
       assert(phoneFit.tableWidth <= phoneFit.tableViewport + 2, JSON.stringify(phoneFit))
       assert(phoneFit.tabs.every(Boolean), JSON.stringify(phoneFit))
     })

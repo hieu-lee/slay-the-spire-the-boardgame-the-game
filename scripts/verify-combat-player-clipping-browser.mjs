@@ -24,7 +24,7 @@ try {
   const combat = enterRoom(run, roomId)
   combat.combat.enemies = []
 
-  for (const viewport of [{ width: 1280, height: 720 }, { width: 667, height: 375 }]) {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
     const context = await browser.newContext({ viewport })
     const page = await context.newPage()
     await page.goto(`http://localhost:${server.httpServer.address().port}`, { waitUntil: 'domcontentloaded' })

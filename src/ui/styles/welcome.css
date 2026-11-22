@@ -36,8 +36,7 @@ html[data-mobile-performance='true'] .welcome[data-editing='true'] .reward-scree
   .welcome { padding: .5rem; }
   .sts-scope .welcome__panel { max-width: 29rem; }
   .sts-scope .welcome__panel .reward-screen__title { font-size: 1.5rem; }
-  .sts-scope .welcome__panel .reward-screen__players { width: 94%; min-height: 0; max-height: none; padding: 1.8rem 2.7rem 1.5rem; gap: .4rem; }
-  .sts-scope form.welcome__panel input { min-height: 2.5rem; }
+  .sts-scope .welcome__panel .reward-screen__players { width: 94%; min-height: 0; max-height: none; }
   .app-shell > .app-shell__header > h1.player-title { flex-direction: column; justify-content: center; align-items: flex-start; gap: 0; max-width: 8rem; flex-shrink: 1; font-size: .9rem; }
 }
 

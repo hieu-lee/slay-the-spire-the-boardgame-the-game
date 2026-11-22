@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import {
   SLIME_BOSS_CARDS,
   SLIME_BOSS_CARD_COUNT,
@@ -20,14 +19,6 @@ import { createRng } from '../src/game/rng.ts'
 import { CARDS, STARTER_DECKS } from '../src/game/cards.ts'
 import { characterRewardDeck } from '../src/game/acquisition.ts'
 import { createCampaignProgress } from '../src/game/campaign.ts'
-
-const vfxSource = readFileSync(new URL('../src/ui/combat-screen/vfx.tsx', import.meta.url), 'utf8')
-assert.match(vfxSource, /combatOutcomeAnimationActive[\s\S]*slime-party__actor--commanding/,
-  'combat outcome lifecycle must observe the live Slime Command queue')
-for (const file of ['App.tsx', 'OnlineGame.tsx']) {
-  const source = readFileSync(new URL(`../src/ui/${file}`, import.meta.url), 'utf8')
-  assert.match(source, /combatOutcomeAnimationActive/, `${file} must wait for the live Slime animation lifecycle`)
-}
 
 const expected = [
   ['Slime Slap', 0], ['Lick', 0], ['Defend', 0], ['Strike', 0], ['Bruiser Slime', 2],

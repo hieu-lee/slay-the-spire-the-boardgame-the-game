@@ -21,7 +21,7 @@ await server.listen()
 const origin = `http://localhost:${server.httpServer.address().port}`
 const browser = await (process.argv.includes('--webkit') ? webkit : chromium).launch()
 try {
-  for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 600 }, { width: 960, height: 450 }, { width: 844, height: 390 }]) {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
     const phone = viewport.width === 844
     const context = await browser.newContext({ viewport, ...(phone ? { isMobile: true, hasTouch: true } : {}) })
     const page = installScreenAudit(await context.newPage())

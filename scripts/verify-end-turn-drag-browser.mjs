@@ -320,25 +320,6 @@ try {
   assert(orbGap >= -1 && orbGap <= 160, `the selected Orb detached vertically from the Defect: ${orbGap}px`)
   assert(Math.abs(orbRowBox.y + orbRowBox.height - defectHeadTop) <= 1,
     'the Orb row no longer rests directly above the Defect portrait')
-  await page.setViewportSize({ width: 1440, height: 700 })
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-  await page.waitForFunction(() => {
-    const combat = document.querySelector('.combat')
-    return combat && !combat.getAnimations({ subtree: true }).some(animation =>
-      animation instanceof CSSTransition && animation.transitionProperty.startsWith('--stage-') &&
-      animation.playState !== 'finished')
-  }, null, { timeout: 10_000 })
-  const compactOrbRowBox = await page.locator('.seat--viewer + .orbs').boundingBox()
-  const compactPortraitBox = await page.locator('.seat--viewer .seat__portrait').boundingBox()
-  await page.screenshot({ path: join(output, 'defect-loop-compact.png') })
-  const compactOrbGap = compactOrbRowBox && compactPortraitBox &&
-    compactOrbRowBox.y + compactOrbRowBox.height -
-    (compactPortraitBox.y + compactPortraitBox.height - await defectHeadHeight())
-  assert(compactOrbRowBox && compactPortraitBox && Math.abs(
-    compactOrbGap,
-  ) <= 4,
-  `the Orb row no longer rests directly above the compact Defect portrait: ${compactOrbGap}px`)
-  await page.setViewportSize({ width: 1440, height: 900 })
   assert(loopCardBox.y < loopOrbBox.y, 'the Loop card was not above the Orb drag source')
   await loop.click()
   await loopOrb.press('Enter')

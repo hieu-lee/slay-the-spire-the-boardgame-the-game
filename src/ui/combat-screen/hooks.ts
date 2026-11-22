@@ -17,7 +17,7 @@ import { ANIMATION_SOUND_VOLUMES, animationSfxRecipe, type AnimationSound, cardS
 import { playCombatSound, playSoundEffect } from '../sfx.ts'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
-export const ACTOR_DEFEAT_MS = 1_800
+const ACTOR_DEFEAT_MS = 1_800
 
 /** The sound a staged attack's cue or hit element names (`data-sound`, from the generated table). */
 const stagedSound = (element: HTMLElement | SVGElement): AnimationSound | undefined => {
@@ -193,19 +193,13 @@ export function useStruck(
       }
     }
     previous.current = now
-    if (motionCollapsed) {
+    if (motionCollapsed || refreshed) {
       for (const timer of timers.current.values()) clearTimeout(timer)
       timers.current.clear()
       nextBeats.current.clear()
       setHits((current) => current.size === 0 ? current : new Map())
     }
-    if (refreshed) {
-      for (const timer of timers.current.values()) clearTimeout(timer)
-      timers.current.clear()
-      nextBeats.current.clear()
-      setHits((current) => current.size === 0 ? current : new Map())
-      return
-    }
+    if (refreshed) return
     if (hurt.size === 0) return
 
     if (state.phase !== 'lost' && state.players.some((player) => hurt.has(player.id))) playSoundEffect('hurt')

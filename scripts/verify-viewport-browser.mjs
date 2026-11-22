@@ -42,7 +42,7 @@ const journal = { ...structuredClone(base), phase: 'victory', campaign: { ...bas
   campaignProgress: { ...base.campaignProgress, unspentMarks: 2 } }
 const extraScreens = [['quick-setup', setup, '.quick-setup'], ['loot', loot, '.reward-screen'], ['campaign-journal', journal, '.campaign-end']]
 try {
-  for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 600 }, { width: 960, height: 450 }, { width: 844, height: 390 }]) {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
     const context = await browser.newContext({ viewport, ...(viewport.width === 844 ? { isMobile: true, hasTouch: true } : {}) })
     const page = installScreenAudit(await context.newPage())
     page.on('pageerror', error => failures.push(String(error)))

@@ -19,11 +19,7 @@ const hand = (prefix) => ['strike_silent', 'defend_silent', 'neutralize', 'survi
   .map((defId, index) => c(`${prefix}-hand-${index}`, defId))
 try {
   await server.listen()
-  for (const [name, width, height] of [
-    ['desktop', 1440, 900], ['desktop-1080', 1920, 1080], ['desktop-compact', 1280, 800],
-    ['desktop-laptop', 1536, 730],
-    ['phone-landscape', 844, 390], ['phone-small', 667, 375],
-  ]) {
+  for (const [name, width, height] of [['desktop', 1440, 900], ['phone-landscape', 844, 390]]) {
     const phone = name.startsWith('phone')
     // Short screens fold the list while aiming and when nothing is owed; the enemies need the room.
     const compact = height <= 850

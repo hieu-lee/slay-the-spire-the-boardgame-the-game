@@ -26,7 +26,7 @@
         "public/assets/combat/enemies/projectiles/downfall_witch.webp": "8bc43ee51943da0e63b06a1c72dd252567082847831eb8da7954bcfb94995e96"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_dark_core",
@@ -49,7 +49,7 @@
         "public/assets/combat/enemies/projectiles/downfall_dark_core.webp": "2a1aff4f5d4881e2f91a683111c18a9824d85d6d59e2bb03e4e37c63df6a2c94"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_wrathful",
@@ -92,7 +92,7 @@
         "public/assets/combat/enemies/projectiles/downfall_orb_master.webp": "a81eedb6647a56810992af637323288d37a3c3b3afb63c4dc36f89dec731bd54"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_inferno",
@@ -115,7 +115,7 @@
         "public/assets/combat/enemies/projectiles/downfall_inferno.webp": "5fc41fa0df7f6b48b649e5a27a4c1fd8200214ac7ed96a3d31171aa3ccba9b76"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_trickster",
@@ -160,7 +160,7 @@
         "public/assets/combat/vfx/actions/downfall-demon-ground-splat.webp": "9144d986d1f77d3426f89de037bfc58d6341eb2208df5e807390bc86e893fb4d"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "vfxDerivative": "Ground splat repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references; see combat-vfx-restyle.json."
+      "vfxDerivative": "Ground splat repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_wraith",
@@ -183,7 +183,7 @@
         "public/assets/combat/enemies/projectiles/downfall_wraith.webp": "0255da399b26bd66a3df7ce25b4112e2d3a53c5b448ff183d4e047ab3f288d40"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_blasphemer",
@@ -206,7 +206,7 @@
         "public/assets/combat/enemies/projectiles/downfall_blasphemer.webp": "a053576c6fcf2e3d9bd16f98c879e4b5a88bd21112453e96672acc154e8fce42"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_neow",
@@ -229,7 +229,7 @@
         "public/assets/combat/enemies/projectiles/downfall_neow.webp": "817a725d1df99ae0456341e4cfb31985cec0e9f3a23c3c95f7bf3a4c6bf7753a"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_flame_barrier",
@@ -290,7 +290,7 @@
         "public/assets/combat/enemies/projectiles/downfall_corrupted.webp": "f5c383aa9ba42d3e195cf2ba248c00521be467a32ef2ebbe26c2131bb914151a"
       },
       "resolutionDerivative": "Static runtime cutout restored with gpt-image-2.5-sunburst, native transparency, then registered to original subject bounds at 2x; see asset-resolution.json.",
-      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.json."
+      "projectileDerivative": "Repainted with gpt-image-2.5-sunburst using existing character and enemy artwork as style references, native transparency and original canvas registration; see combat-vfx-restyle.md."
     },
     {
       "artId": "downfall_pc_ironclad",

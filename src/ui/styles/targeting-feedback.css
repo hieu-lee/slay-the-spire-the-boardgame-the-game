@@ -26,9 +26,3 @@
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
-
-.pip--energy .icon-value__number {
-  /* Dark on the gold disc. Painting it `--energy` put gold on gold at 1.3:1. */
-  color: #241a0c;
-  font-size: 1.2rem;
-}

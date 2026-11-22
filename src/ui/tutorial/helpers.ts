@@ -69,7 +69,6 @@ export const at = {
 export const neowProgress = (run: RunState) => run.neow?.players.p1
 export const inNeow = (run: RunState) => run.phase === 'neow' && Boolean(neowProgress(run))
 export const onMapAt = (roomId: string | null) => (run: RunState) => run.phase === 'map' && run.map.position === roomId
-export const inRoom = (roomId: string) => (run: RunState) => run.map.position === roomId
 /** A player turn in that room's fight, including aiming the extra copy of a card (Rapid Fire, Necronomicon). */
 export const inFight = (roomId: string, turn?: number) => (run: RunState) =>
   run.phase === 'combat' && run.map.position === roomId && (run.combat?.phase === 'player' || run.combat?.phase === 'copy') &&

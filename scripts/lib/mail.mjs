@@ -9,7 +9,7 @@ export const MAX_LETTER_LENGTH = 2_000
 export const MAX_THREAD_LETTERS = 100
 /** Player letters in a row with no reply; the next one waits for an answer. */
 export const MAX_UNANSWERED_LETTERS = 20
-export const MAX_THREADS = 20_000
+const MAX_THREADS = 20_000
 /** Every letter body together. The archive is one JSON file on the host. */
 export const MAX_MAIL_CHARACTERS = 8_000_000
 export const WELCOME_LETTER = "Hi, I'm Hieu, the guy who developed this game. Welcome to Slay the Spire: The Board Game! If you have any words for the developer, just send me a letter here. I read every message and will reply to you."

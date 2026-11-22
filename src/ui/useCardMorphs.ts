@@ -114,7 +114,7 @@ export function diffDeckMorphs(
  * - Otherwise APPEND, so several upgrades in one step (Astrolabe takes three)
  *   queue up and play in order.
  */
-export type MorphPlan = {
+type MorphPlan = {
   /** What the next update should diff against. */
   baseline: readonly CardInstance[] | null
   /** `replace` discards what is on screen first; `idle` leaves the queue alone. */

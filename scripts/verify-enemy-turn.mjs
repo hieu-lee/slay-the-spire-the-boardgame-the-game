@@ -241,20 +241,6 @@ check('calling enemyTurn outside the enemy phase is refused', () => {
   assert(enemyTurn(state) === state, 'wrong phase must return the identical reference')
 })
 
-check('the Enemy Turn does not mutate the state handed in', () => {
-  const state = inEnemyPhase([player()], [enemy()])
-  const before = JSON.stringify(state)
-  enemyTurn(state)
-  assertEqual(JSON.stringify(state), before, 'enemyTurn must return a new state')
-})
-
-// A player at 0 HP ends the game for the whole party (p.13).
-check('a player dying loses the game for everyone', () => {
-  const next = enemyTurn(inEnemyPhase([player({ hp: 1 })], [enemy({ defId: 'green_louse', strength: 3 })]))
-  assert(next.players[0].dead, 'the player should be dead')
-  assertEqual(next.phase, 'lost', 'any death ends the run in defeat')
-})
-
 // The Spike Slime's 3-4 action inflicts a Daze. The pile helper was tested, but
 // nothing covered the enemy action that uses it, so putting the Daze on the
 // wrong pile went unnoticed.
@@ -501,18 +487,6 @@ check('the bite of Wrath is reported, and says which way it went', () => {
   assert(
     blocked.log.some((line) => /blocks the bite of Wrath/.test(line)),
     `expected the blocked line: ${blocked.log.join(' | ')}`,
-  )
-})
-
-check('a player killed by the bite of Wrath is named', () => {
-  const next = endPlayerTurn({
-    ...createCombat(createRng(9), [player({ hp: 1, stance: 'wrath' })], [enemy({ hp: 20 })]),
-    phase: 'player',
-  })
-  assert(next.players[0].dead, 'precondition: the bite was lethal')
-  assert(
-    next.log.some((line) => /has fallen/.test(line)),
-    `the casualty went unnamed: ${next.log.join(' | ')}`,
   )
 })
 

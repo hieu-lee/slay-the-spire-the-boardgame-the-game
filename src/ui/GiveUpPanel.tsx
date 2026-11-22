@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-export type GiveUpVote = {
+type GiveUpVote = {
   runId: string
   deadlineAt: number
   remainingMs: number

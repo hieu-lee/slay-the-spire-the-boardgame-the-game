@@ -11,16 +11,4 @@ timing and visual hierarchy used while implementing the web table's motion.
 
 ## Local regression captures
 
-- `source-sts1-card-play.png`: official STS1 launch-trailer frame at 0:35, with the committed Power held above the hand.
-- `source-sts2-map.png`: official STS2 Early Access trailer frame at 1:15, showing the live route and current-node treatment.
-- `source-sts2-reward.png`: official STS2 gameplay-trailer frame at 0:45, showing the three-card reward deal.
-- `combat-card-draw.png`: newly visible cards deal from the draw-pile side and settle into the existing fan.
-- `combat-card-play.png`: a committed card holds above the battlefield before resolving toward its real discard, exhaust, or draw destination.
-- `map-route.png`: reachable routes flow while the current node pulses.
-- `reward-deal.png`: revealed reward cards enter in a short stagger.
-
-Regenerate these after intentional motion changes with
-`UPDATE_ANIMATION_REFERENCES=1 pnpm verify:browser`. Routine browser
-verification writes equivalent captures under its artifact output instead of
-overwriting these reviewed references. Reduced-motion mode is separately
-asserted to collapse every effect.
+`UPDATE_ANIMATION_REFERENCES=1 pnpm verify:browser` writes the card-draw, card-play, map-route and reward-deal captures here for review after intentional motion changes; routine runs write them under the artifact output instead. The captures are not committed. Reduced-motion mode is separately asserted to collapse every effect.

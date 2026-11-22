@@ -1,11 +1,11 @@
 import type { EventEffect } from '../game/events.ts'
 import type { IconName } from './icons.ts'
 
-export type DieFace = 1 | 2 | 3 | 4 | 5 | 6
+type DieFace = 1 | 2 | 3 | 4 | 5 | 6
 export const DIE_FACES: readonly DieFace[] = [1, 2, 3, 4, 5, 6]
 
 /** One face's result, short enough to sit under a die pip. */
-export type DieOutcome = { icon?: IconName; text: string; label: string; tone: 'good' | 'bad' | 'plain' }
+type DieOutcome = { icon?: IconName; text: string; label: string; tone: 'good' | 'bad' | 'plain' }
 
 const NONE: DieOutcome = { text: '—', label: 'Nothing', tone: 'plain' }
 

@@ -6,17 +6,13 @@ import type { RuleSet } from '../game/meta.ts'
 import { cardIsCurse } from '../game/cards.ts'
 import type { ActionOutcome, PublicSeat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import type { CampfireDecision } from '../game/run.ts'
+import { choiceLabel } from './CampfireScreen.tsx'
 import { CardPicker } from './CardPicker.tsx'
 import { Icon } from './Icon.tsx'
 import { CampfireScene } from './CampfireScene.tsx'
 import { playerVisualId } from '../game/skins.ts'
 
 type Decision = CampfireDecision
-
-function choiceLabel(choice: Decision['choice']) {
-  if (choice === 'ruby') return 'Get Ruby Key'
-  return choice[0]!.toUpperCase() + choice.slice(1)
-}
 
 type Props = {
   player: VisiblePlayer

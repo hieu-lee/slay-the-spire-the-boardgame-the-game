@@ -13,7 +13,7 @@ type Staged = {
   potionReplacementIds?: readonly (string | null)[]
 }
 
-export const hasSozu = (seat: Seat) => seat.relics.some((relic) => relic.defId === 'sozu')
+export const hasSozu = (seat: { relics: readonly { defId: string }[] }) => seat.relics.some((relic) => relic.defId === 'sozu')
 
 /**
  * Who each revealed item belongs to, in the order the engine reveals them: an
@@ -95,7 +95,7 @@ export function defaultLootChoices(offers: readonly Offer[], holders: readonly (
  * else's, or the resolving player's with nothing left to discard), a Sozu, or
  * nobody to receive it.
  */
-export type PotionPlan = { legal: boolean; swaps: boolean[]; blocked: boolean[]; recipients: string[] }
+type PotionPlan = { legal: boolean; swaps: boolean[]; blocked: boolean[]; recipients: string[] }
 
 /**
  * Walks the taken Potions in order, the way the rules resolve them. A blank

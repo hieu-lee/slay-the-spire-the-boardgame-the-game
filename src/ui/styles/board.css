@@ -1,20 +1,9 @@
 .board {
-  flex: 1;
-  display: flex;
   flex-direction: column;
-  gap: 0.5rem;
   overflow-y: auto;
-  /* Tall enough for one whole enemy tile INCLUDING its token row — measured at
-     273px, so 13rem was never enough and the hit-point bar still fell below
-     the fold at 360x720. */
-  min-height: 17.5rem;
-  /* `safe` keeps the first row reachable when the rows overflow; plain `center`
-     would push the top out of the scrollable area. */
-  justify-content: safe center;
 }
 
 .board__bosses {
-  display: flex;
   gap: 0.5rem;
   justify-content: center;
   padding-bottom: 0.4rem;
@@ -46,16 +35,10 @@
   border-bottom: none;
 }
 
-/* The row you control is lit, not boxed. */
-.row--viewer {
-  background: radial-gradient(ellipse at 50% 50%, rgb(214 176 96 / 0.07), transparent 70%);
-}
-
 .row__enemies {
   min-width: 0;
   width: 100%;
   /* auto-fit rather than fixed widths: one enemy fills the row, four share it. */
-  display: grid;
   /* The upper bound matters: with a 1fr column the card fills the whole row and
      the portrait's aspect-ratio turns that width into ~500px of height. */
   grid-template-columns: repeat(auto-fit, minmax(190px, 250px));

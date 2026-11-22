@@ -21,7 +21,7 @@ type CampfireScreenProps = {
 
 type Decision = CampfireDecision
 
-function choiceLabel(choice: Decision['choice']) {
+export function choiceLabel(choice: Decision['choice']) {
   if (choice === 'ruby') return 'Get Ruby Key'
   return choice[0]!.toUpperCase() + choice.slice(1)
 }

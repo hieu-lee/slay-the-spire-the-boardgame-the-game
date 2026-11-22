@@ -1,6 +1,6 @@
 # Stats Explorer
 
-[Watch the desktop walkthrough](stats-explorer-demo.webm) (demonstration runs, not live player data).
+`node scripts/verify-stats-browser.mjs` records a desktop walkthrough (demonstration runs, not live player data) to `artifacts/stats-explorer-browser/stats-explorer-demo.webm`.
 
 The append-only `.leaderboard.log` contains runs not yet folded into the archive; include it when backing up the room store.
 

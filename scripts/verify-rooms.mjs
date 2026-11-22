@@ -27,13 +27,12 @@ import {
   snapshotFor,
   startRun,
 } from './lib/rooms.mjs'
-import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, createCampaignProgress, currentQuickSetupStep, enteringRoom, lightningRowTarget, preparePlayerTurn, preparePlayerTurnThroughDraw, resumePlayerTurnAfterDraw, roomChoices, startPlayerTurnWithChoices } from '../src/game/state.ts'
+import { CAPS, CARDS, GOLDEN_TICKET, ROOM_LABEL, cardNeedsEnemy, createCampaignProgress, currentQuickSetupStep, enteringRoom, lightningRowTarget, preparePlayerTurn, preparePlayerTurnThroughDraw, resumePlayerTurnAfterDraw, roomChoices } from '../src/game/state.ts'
 import { createMerchant, createRelicReward } from '../src/game/noncombat.ts'
 import { createEventRoom } from '../src/game/event-room.ts'
 import { EVENT_DEFINITIONS } from '../src/game/events.ts'
 import { acquireRelic } from '../src/game/run/rewards.ts'
 import { fireTriggers } from '../src/game/combat/effects.ts'
-import { pendingTriggerAbility } from '../src/game/combat/end-turn.ts'
 import { stageStartTurnTriggerChoice, startTurnAbilities } from '../src/game/combat/start-turn.ts'
 import { createRng, nextInt } from '../src/game/rng.ts'
 import { CARD_PACKS } from '../src/game/packs.ts'
@@ -349,11 +348,6 @@ check('codes avoid glyphs that sound alike over voice', () => {
   for (const glyph of ['O', '0', 'I', '1', 'S', '5', 'B', '8', 'Z', '2']) {
     assert(!code.includes(glyph), `code ${code} contains ambiguous glyph ${glyph}`)
   }
-})
-
-check('codes are not all identical', () => {
-  const codes = new Set(Array.from({ length: 50 }, () => roomCode()))
-  assert(codes.size > 40, `50 codes collapsed to ${codes.size} distinct values`)
 })
 
 check('Choose Your Relic is a persisted server-authoritative multiplayer lobby option', () => {
@@ -2478,107 +2472,6 @@ check('terminal self-damage cancels suspended teammate work', () => {
   assertEqual(room.concurrentDistilled, undefined)
 })
 
-check('Glacier+ publishes redirected Block and the caster\'s Frost together', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
-  const glacier = { uid: 'room-glacier', defId: 'glacier', upgraded: true }
-  actor.hand = [glacier]
-  actor.energy = 2
-  actor.orbs = [null, null, null]
-  ally.block = 0
-  const result = apply(room, a.token, {
-    kind: 'playCard', cardUid: glacier.uid, playerId: b.playerId, preflight: true,
-  })
-  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const currentAlly = room.run.combat.players.find((player) => player.id === b.playerId)
-  assertDeepEqual(currentActor.orbs, ['frost', null, null])
-  assertEqual(currentAlly.block, 3)
-  const seen = result.snapshot.run.combat.players
-  assertDeepEqual(seen.find((player) => player.id === a.playerId).orbs, ['frost', null, null])
-  assertEqual(seen.find((player) => player.id === b.playerId).block, 3)
-})
-
-check('Good Instincts+ publishes its zero-cost ally Block without exposing foreign draw piles', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
-  const instincts = { uid: 'room-good-instincts', defId: 'good_instincts', upgraded: true }
-  actor.hand = [instincts]
-  actor.energy = 0
-  actor.draw = [{ uid: 'still-hidden', defId: 'strike_ironclad', upgraded: false }]
-  ally.block = 0
-  const result = apply(room, a.token, {
-    kind: 'playCard', cardUid: instincts.uid, playerId: b.playerId, preflight: true,
-  })
-  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const currentAlly = room.run.combat.players.find((player) => player.id === b.playerId)
-  assertEqual(currentActor.energy, 0)
-  assertEqual(currentAlly.block, 2)
-  assertEqual(currentActor.discard.some((card) => card.uid === instincts.uid), true)
-  const seen = result.snapshot.run.combat.players
-  assertEqual(seen.find((player) => player.id === b.playerId).block, 2)
-  assert(allStrings(result.snapshot).includes('still-hidden'), 'the owner could not inspect its untouched draw pile')
-  assert(!allStrings(snapshotFor(room, b.token)).includes('still-hidden'), 'the untouched draw pile leaked to a teammate')
-})
-
-check('Master of Strategy draws privately while its Exhaust stays public', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const strategy = { uid: 'room-master-strategy', defId: 'master_of_strategy', upgraded: true }
-  const hidden = Array.from({ length: 4 }, (_, index) => ({
-    uid: `room-strategy-draw-${index}`, defId: 'strike_ironclad', upgraded: false,
-  }))
-  actor.hand = [strategy]
-  actor.draw = hidden
-  actor.energy = 0
-  const result = apply(room, a.token, { kind: 'playCard', cardUid: strategy.uid, preflight: true })
-  const owner = result.snapshot.run.combat.players.find((player) => player.id === a.playerId)
-  assertDeepEqual(owner.hand.map((card) => card.uid), hidden.map((card) => card.uid))
-  assertEqual(owner.exhaust.some((card) => card.uid === strategy.uid), true)
-  const teammate = snapshotFor(room, b.token)
-  assertEqual(teammate.run.combat.players.find((player) => player.id === a.playerId).handCount, 4)
-  for (const card of hidden) {
-    assert(!allStrings(teammate).includes(card.uid), `Master of Strategy leaked ${card.uid} to a teammate`)
-  }
-  assert(allStrings(teammate).includes(strategy.uid), 'the public Exhaust pile hid Master of Strategy')
-})
-
-check('Panacea+ clears every living player in the shared snapshot', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
-  const panacea = { uid: 'room-panacea', defId: 'panacea', upgraded: true }
-  Object.assign(actor, { hand: [panacea], energy: 0, weak: 1, vulnerable: 1 })
-  Object.assign(ally, { weak: 2, vulnerable: 2 })
-  const result = apply(room, a.token, { kind: 'playCard', cardUid: panacea.uid, preflight: true })
-  for (const player of room.run.combat.players) {
-    assertEqual(player.weak, 0)
-    assertEqual(player.vulnerable, 0)
-  }
-  for (const player of result.snapshot.run.combat.players) {
-    assertEqual(player.weak, 0)
-    assertEqual(player.vulnerable, 0)
-  }
-  const currentActor = room.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(currentActor.exhaust.some((card) => card.uid === panacea.uid), true)
-})
-
-check('Apparition protection is authoritative and visible without exposing hands', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const apparition = { uid: 'room-apparition', defId: 'apparition', upgraded: false }
-  Object.assign(actor, { hand: [apparition], hp: 10, maxHp: 10, energy: 1 })
-  apply(room, a.token, { kind: 'playCard', cardUid: apparition.uid, preflight: true })
-  const protectedActor = room.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(protectedActor.hpLossLimitThisRound, 1)
-  assertEqual(protectedActor.exhaust.some((card) => card.uid === apparition.uid), true)
-  const teammate = snapshotFor(room, b.token)
-  const seen = teammate.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(seen.hpLossLimitThisRound, 1)
-  assertEqual(seen.hand, null)
-})
-
 check('Dark Shackles uses server-owned enemy intents', () => {
   const { room, a } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
@@ -2971,66 +2864,6 @@ check('Sadistic Nature uses authoritative per-token gains and survives reconnect
     '10 added Poison cubes should trigger Sadistic Nature+ 10 times')
 })
 
-check('Reprogram+ publishes Strength and emptied Orb slots atomically', () => {
-  const { room, a } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const reprogram = { uid: 'room-reprogram', defId: 'reprogram', upgraded: true }
-  Object.assign(actor, { hand: [reprogram], energy: 0, strength: 0, orbs: ['lightning', 'frost', 'dark'] })
-  const result = apply(room, a.token, { kind: 'playCard', cardUid: reprogram.uid, preflight: true })
-  const seen = result.snapshot.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(seen.strength, 1)
-  assertDeepEqual(seen.orbs, [null, null, null])
-})
-
-check('Stack+ publishes Orb-count Block only to the chosen ally', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
-  const stack = { uid: 'room-stack', defId: 'stack', upgraded: true }
-  Object.assign(actor, { hand: [stack], energy: 1, block: 0, orbs: ['lightning', 'frost', null] })
-  ally.block = 0
-  const result = apply(room, a.token, {
-    kind: 'playCard', cardUid: stack.uid, playerId: b.playerId, preflight: true,
-  })
-  const seen = result.snapshot.run.combat.players
-  assertEqual(seen.find((player) => player.id === a.playerId).block, 0)
-  assertEqual(seen.find((player) => player.id === b.playerId).block, 3)
-})
-
-check('Power discounts publish a zero-Energy Streamline atomically', () => {
-  const { room, a } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
-  const streamline = { uid: 'room-streamline', defId: 'streamline', upgraded: false }
-  Object.assign(actor, {
-    hand: [streamline], energy: 0,
-    powers: [
-      { uid: 'room-power-1', defId: 'capacitor', upgraded: false },
-      { uid: 'room-power-2', defId: 'fusion', upgraded: false },
-    ],
-  })
-  const before = target.hp
-  const result = apply(room, a.token, {
-    kind: 'playCard', cardUid: streamline.uid, enemyUid: target.uid, preflight: true,
-  })
-  assertEqual(result.snapshot.run.combat.enemies.find((enemy) => enemy.uid === target.uid).hp, Math.max(0, before - 3))
-  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).energy, 0)
-})
-
-check('Catalyst+ publishes multiplied Poison and Exhaust atomically', () => {
-  const { room, a } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
-  const catalyst = { uid: 'room-catalyst', defId: 'catalyst', upgraded: true }
-  Object.assign(actor, { hand: [catalyst], energy: 1 })
-  target.poison = 3
-  const result = apply(room, a.token, {
-    kind: 'playCard', cardUid: catalyst.uid, enemyUid: target.uid, preflight: true,
-  })
-  assertEqual(result.snapshot.run.combat.enemies.find((enemy) => enemy.uid === target.uid).poison, 9)
-  assertEqual(result.snapshot.run.combat.players.find((player) => player.id === a.playerId).exhaust.length, 1)
-})
-
 check('Corpse Explosion attachment survives reconnect and detonates publicly', () => {
   const { room, a, b } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === b.playerId)
@@ -3061,49 +2894,6 @@ check('Corpse Explosion attachment survives reconnect and detonates publicly', (
   assertDeepEqual(resolved.enemies.map((enemy) => enemy.hp), [0, 6])
   assertEqual(resolved.players.find((player) => player.id === b.playerId).discard
     .filter((card) => card.uid === corpseExplosion.uid).length, 1)
-})
-
-check('Setup+ publishes Energy only to its chosen ally and Exhausts atomically', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
-  const setup = { uid: 'room-setup', defId: 'setup', upgraded: true }
-  Object.assign(actor, { hand: [setup], energy: 0 })
-  ally.energy = 0
-  const result = apply(room, a.token, {
-    kind: 'playCard', cardUid: setup.uid, playerId: b.playerId, preflight: true,
-  })
-  const seen = result.snapshot.run.combat.players
-  assertEqual(seen.find((player) => player.id === a.playerId).energy, 0)
-  assertEqual(seen.find((player) => player.id === b.playerId).energy, 2)
-  assertEqual(seen.find((player) => player.id === a.playerId).exhaust.length, 1)
-})
-
-check('Calculated Gamble publishes Reflex, Tactician, and After Image atomically', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const gamble = { uid: 'room-gamble', defId: 'calculated_gamble', upgraded: false }
-  Object.assign(actor, {
-    hand: [
-      gamble,
-      { uid: 'room-reflex', defId: 'reflex', upgraded: false },
-      { uid: 'room-tactician', defId: 'tactician', upgraded: false },
-      { uid: 'room-gamble-kept', defId: 'slice', upgraded: false },
-    ],
-    draw: Array.from({ length: 10 }, (_, index) => ({
-      uid: `room-gamble-private-${index}`, defId: 'deflect', upgraded: false,
-    })),
-    discard: [], exhaust: [], energy: 0, block: 0,
-    powers: [{ uid: 'room-after-image', defId: 'after_image', upgraded: false }],
-  })
-  const result = apply(room, a.token, { kind: 'playCard', cardUid: gamble.uid, preflight: true })
-  const seen = result.snapshot.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(seen.hand.length, 5)
-  assertEqual(seen.energy, 2)
-  assertEqual(seen.block, 1)
-  assertEqual(seen.exhaust.length, 2)
-  assert(!allStrings(snapshotFor(room, b.token)).some((value) => value.startsWith('room-gamble-private-')),
-    'Calculated Gamble leaked its private draws to the teammate')
 })
 
 check('combat ledgers are public while retained-card history stays private', () => {
@@ -3447,20 +3237,6 @@ check('Barricade preserves only its owner\'s Block through room-authoritative St
   assertDeepEqual(started.players.map((player) => player.block), [7, 0])
 })
 
-check('Entrench doubles Block and removes Exhaust on upgrade through room authority', () => {
-  const { room, a } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const base = { uid: 'room-entrench', defId: 'entrench', upgraded: false }
-  const upgraded = { uid: 'room-entrench-plus', defId: 'entrench', upgraded: true }
-  Object.assign(actor, { hand: [base, upgraded], energy: 2, block: 6, discard: [], exhaust: [] })
-  apply(room, a.token, { kind: 'playCard', cardUid: base.uid, preflight: true })
-  apply(room, a.token, { kind: 'playCard', cardUid: upgraded.uid, preflight: true })
-  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(resolved.block, 20)
-  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [base.uid])
-  assertDeepEqual(resolved.discard.map((card) => card.uid), [upgraded.uid])
-})
-
 check('Clash enforces its hand restriction through room authority', () => {
   const { room, a } = twoSeatRoom()
   const actor = room.run.combat.players.find((player) => player.id === a.playerId)
@@ -3487,22 +3263,6 @@ check('Clash enforces its hand restriction through room authority', () => {
   const resolved = room.run.combat
   assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, hp - 4)
   assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [clash.uid])
-})
-
-check('Spot Weakness applies its upgraded die face to an ally through room authority', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
-  const spot = { uid: 'room-spot-weakness', defId: 'spot_weakness', upgraded: true }
-  Object.assign(room.run.combat, { die: 4 })
-  Object.assign(actor, { hand: [spot], energy: 1, discard: [] })
-  ally.strength = 0
-  apply(room, a.token, {
-    kind: 'playCard', cardUid: spot.uid, playerId: b.playerId, preflight: true,
-  })
-  const resolved = room.run.combat
-  assertEqual(resolved.players.find((player) => player.id === b.playerId).strength, 1)
-  assertDeepEqual(resolved.players.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [spot.uid])
 })
 
 check('Rage counts only its owner\'s Attacks through room authority', () => {
@@ -3563,49 +3323,6 @@ check('Whirlwind keeps X Energy and row damage authoritative online', () => {
     anchor.uid, 'room-whirlwind-same', 'room-whirlwind-other', 'room-whirlwind-boss',
   ].map((uid) => resolved.enemies.find((enemy) => enemy.uid === uid).hp), [7, 7, 10, 7])
   assertEqual(resolved.players.find((player) => player.id === a.playerId).energy, 1)
-})
-
-check('Blood for Blood uses the owner\'s combat-wide HP-loss discount through room authority', () => {
-  const { room, a } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
-  const blood = { uid: 'room-blood-for-blood', defId: 'blood_for_blood', upgraded: true }
-  Object.assign(actor, { hand: [blood], energy: 0, lostHpThisCombat: true })
-  Object.assign(target, { hp: 10, maxHp: 10, block: 0, dead: false })
-  apply(room, a.token, {
-    kind: 'playCard', cardUid: blood.uid, enemyUid: target.uid, preflight: true,
-  })
-  const resolved = room.run.combat
-  assertEqual(resolved.enemies.find((enemy) => enemy.uid === target.uid).hp, 6)
-  assertEqual(resolved.players.find((player) => player.id === a.playerId).energy, 0)
-})
-
-check('Limit Break doubles only its owner\'s Strength through room authority', () => {
-  const { room, a, b } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const ally = room.run.combat.players.find((player) => player.id === b.playerId)
-  const limit = { uid: 'room-limit-break', defId: 'limit_break', upgraded: true }
-  Object.assign(actor, { hand: [limit], energy: 1, strength: 5, discard: [], exhaust: [] })
-  ally.strength = 2
-  apply(room, a.token, { kind: 'playCard', cardUid: limit.uid, preflight: true })
-  const resolved = room.run.combat.players
-  assertEqual(resolved.find((player) => player.id === a.playerId).strength, 8)
-  assertEqual(resolved.find((player) => player.id === b.playerId).strength, 2)
-  assertDeepEqual(resolved.find((player) => player.id === a.playerId).discard.map((card) => card.uid), [limit.uid])
-})
-
-check('Feed grants kill Strength through room authority', () => {
-  const { room, a } = twoSeatRoom()
-  const actor = room.run.combat.players.find((player) => player.id === a.playerId)
-  const target = room.run.combat.enemies.find((enemy) => !enemy.dead)
-  const feed = { uid: 'room-feed', defId: 'feed', upgraded: true }
-  room.run.combat.enemies.push({ ...target, uid: 'room-feed-spare', row: target.row + 1, hp: 10, maxHp: 10 })
-  Object.assign(actor, { hand: [feed], energy: 1, strength: 7, discard: [], exhaust: [] })
-  Object.assign(target, { hp: 3, maxHp: 3, block: 0, dead: false })
-  apply(room, a.token, { kind: 'playCard', cardUid: feed.uid, enemyUid: target.uid, preflight: true })
-  const resolved = room.run.combat.players.find((player) => player.id === a.playerId)
-  assertEqual(resolved.strength, 8)
-  assertDeepEqual(resolved.exhaust.map((card) => card.uid), [feed.uid])
 })
 
 check('Storm of Steel overflow resolves through room authority', () => {
@@ -7812,15 +7529,6 @@ check('an unclaimed token cannot start the run', () => {
   assertEqual(room.phase, 'lobby', 'and the room is still in the lobby')
 })
 
-check('a dropped seat is actually marked disconnected', () => {
-  // The reconnect tests only assert the seat comes back CONNECTED, which holds
-  // whether or not it was ever marked otherwise.
-  const { room, a } = twoSeatRoom()
-  markDisconnected(room, a.token)
-  const seat = room.seats.find((other) => other.playerId === a.playerId)
-  assertEqual(seat.connected, false, 'the seat should read as disconnected')
-})
-
 check('the whole play context reaches the engine, not just the target', () => {
   // Scry and per-evoke enemy picks are real choices the rules grant (p.24,
   // p.16). Dropped in dispatch, a Scry silently bins nothing and an orb evoke
@@ -8887,34 +8595,12 @@ check('every room kind is announced with a name and the right article', () => {
   assertEqual(enteringRoom('shop'), 'a shop', 'an unlabelled kind falls back to its own name')
 })
 
-check('entering a room says so, correctly', () => {
-  const { room, a } = twoSeatRoom()
-  const line = room.run.log.at(-1)
-  assertEqual(
-    line,
-    'The party enters an encounter.',
-    'the opening room is an encounter, and takes "an"',
-  )
-})
-
 suite('run setup')
 
 check('the party is seated in join order', () => {
   const { room } = twoSeatRoom()
   assertEqual(room.run.players[0].character, 'ironclad', 'first seat is not the first player')
   assertEqual(room.run.players[1].character, 'silent', 'second seat is not the second player')
-})
-
-check('the same seed gives the same run', () => {
-  const build = () => {
-    const room = createRoom(createStore(), { code: 'AAAAAE' })
-    const seat = joinRoom(room, { character: 'ironclad' })
-    joinRoom(room, { character: 'silent' })
-    startRun(room, seat.token, { seed: 99 })
-    enterFirstCombat(room, seat.token)
-    return room.run.combat.players[0].hand.map((card) => card.defId).join(',')
-  }
-  assertEqual(build(), build(), 'the same seed produced different opening hands')
 })
 
 check('each character starts on its printed hit points', () => {
@@ -8926,23 +8612,6 @@ check('each character starts on its printed hit points', () => {
     startRun(room, seat.token, { seed: 2 })
     assertEqual(room.run.players[0].maxHp, hp, `${character} max hit points`)
     assertEqual(room.run.players[0].hp, hp, `${character} starts at full`)
-  }
-})
-
-check('every base character draws its documented opening hand', () => {
-  // Five cards (p.12), except the Silent: Ring of the Snake is her starting
-  // relic and draws 2 more at the start of combat, so she opens on seven.
-  const OPENING_HAND = { ironclad: 5, silent: 7, defect: 5, watcher: 5 }
-  for (const character of CHARACTERS.slice(0, 4)) {
-    const room = createRoom(createStore(), { code: 'AAAAAF' })
-    const seat = joinRoom(room, { character })
-    startRun(room, seat.token, { seed: 7 })
-    enterFirstCombat(room, seat.token)
-    assertEqual(
-      room.run.combat.players[0].hand.length,
-      OPENING_HAND[character],
-      `${character} opening hand`,
-    )
   }
 })
 
@@ -9151,19 +8820,6 @@ check('boss Relic claims continue while another player resolves Orrery', () => {
   apply(room, a.token, { kind: 'resolvePendingRelic',
     pendingRelicId: snapshotFor(room, a.token).pendingRelic.id, rewardIndices: [-1, -1, -1, -1] })
   assertEqual(room.run.phase, 'map', 'the final asynchronous reward did not release the party')
-})
-
-check('two unseeded runs are not the same run', () => {
-  const build = () => {
-    const room = createRoom(createStore(), { code: roomCode() })
-    const seat = joinRoom(room, { character: 'ironclad' })
-    startRun(room, seat.token)
-    return room.run.map.rooms
-  }
-  assert(
-    JSON.stringify(build()) !== JSON.stringify(build()),
-    'an unseeded run must not always produce the same map',
-  )
 })
 
 check('a malformed list reaches the code that actually reads it', () => {

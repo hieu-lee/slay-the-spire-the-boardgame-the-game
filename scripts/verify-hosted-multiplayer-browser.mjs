@@ -42,7 +42,7 @@ try {
     return context
   }
   const desktop = await profile({ width: 1440, height: 900 }, 'HostedHost', '00000000-0000-4000-8000-000000000011')
-  const phone = await profile({ width: 640, height: 360 }, 'HostedGuest', '00000000-0000-4000-8000-000000000012')
+  const phone = await profile({ width: 844, height: 390 }, 'HostedGuest', '00000000-0000-4000-8000-000000000012')
   const host = await desktop.newPage()
   const guest = await phone.newPage()
   const guestSockets = []

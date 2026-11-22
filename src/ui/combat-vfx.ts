@@ -13,7 +13,7 @@ export type VfxFamily =
   | 'block' | 'buff' | 'debuff' | 'draw' | 'discard' | 'exhaust' | 'stance' | 'mantra'
   | 'orb' | 'utility'
 
-export type ActorMotion = 'none' | 'lunge' | 'recoil' | 'cast' | 'drink' | 'throw'
+type ActorMotion = 'none' | 'lunge' | 'recoil' | 'cast' | 'drink' | 'throw'
 
 const MELEE_BOSS_ART = new Set([
   'gremlin_nob',

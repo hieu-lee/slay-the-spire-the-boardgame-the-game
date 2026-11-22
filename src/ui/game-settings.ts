@@ -27,7 +27,7 @@ const volume = (value: unknown, fallback: number) => typeof value === 'number'
   ? Math.max(0, Math.min(100, Math.round(value)))
   : fallback
 
-export function loadGameSettings(): GameSettings {
+function loadGameSettings(): GameSettings {
   try {
     const savedSettings = localStorage.getItem(GAME_SETTINGS_KEY)
     const legacyMuted = savedSettings === null && localStorage.getItem(SFX_STORAGE_KEY) === 'off'

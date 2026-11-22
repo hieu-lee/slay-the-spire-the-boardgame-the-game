@@ -331,7 +331,7 @@ export function PowerGlyph({ def }: { def: CardDef }) {
 }
 
 /** "Metallicize: 1 Block at the end of each turn" — name, effect, and when. */
-export function describePower(def: CardDef): string {
+function describePower(def: CardDef): string {
   if (def.corruptSkills) return `${def.name}: your Skills cost 0 and Exhaust when played`
   if (def.retainBlock) return `${def.name}: keep leftover Block at the start of your turn, maximum 20`
   const when = def.trigger?.kind === 'onPlayCard' && def.trigger.cardType

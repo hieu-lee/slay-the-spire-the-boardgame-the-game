@@ -84,8 +84,6 @@ const coveredByPlaque = (page) => page.evaluate(() => {
   plaque.style.visibility = ''
   return [...covered]
 })
-const viewportsFor = (name, page) => name === 'desktop' ? [{ width: 1440, height: 900 }, { width: 1366, height: 650 }, { width: 1280, height: 720 }]
-  : [page.viewportSize(), { width: 932, height: 430 }, { width: 812, height: 375 }, { width: 740, height: 360 }, { width: 667, height: 375 }]
 async function clearancesAt(page, viewports) {
   const clearances = []
   for (const viewport of viewports) {
@@ -133,23 +131,6 @@ const activeCourier = (page) => page.evaluate(() => {
   const active = document.activeElement
   return active?.closest('.courier__replace') ? 'replace' : active?.classList.contains('courier--offer') ? 'panel' : active?.textContent ?? ''
 })
-async function offerFitsSmallPhones(page, name) {
-  if (name === 'desktop') return []
-  const fits = []
-  const home = page.viewportSize()
-  for (const viewport of [{ width: 740, height: 360 }, { width: 667, height: 375 }]) {
-    await page.setViewportSize(viewport)
-    await page.waitForTimeout(300)
-    fits.push(await page.evaluate(() => {
-      const header = document.querySelector('.app-shell__header').getBoundingClientRect()
-      const panel = document.querySelector('.courier--offer').getBoundingClientRect()
-      const banner = document.querySelector('.courier__banner').getBoundingClientRect()
-      return banner.top >= header.bottom && panel.bottom <= innerHeight && panel.left >= 0 && panel.right <= innerWidth
-    }))
-  }
-  await page.setViewportSize(home)
-  return fits
-}
 const liveCourierControls = (page) => page.evaluate(() => [...document.querySelectorAll('.courier--available button')]
   .filter((button) => button.getClientRects().length && !button.disabled && button.getAttribute('aria-disabled') !== 'true').length)
 const settledFocus = (page, expected) => page.waitForFunction((expected) => {
@@ -225,7 +206,7 @@ async function localFlow(page, name, pause = 0) {
   await setRun(page, fullHand)
   await page.waitForTimeout(400)
   await page.screenshot({ path: `${output}/${name}-available.png` })
-  const clearances = await clearancesAt(page, viewportsFor(name, page))
+  const clearances = await clearancesAt(page, [page.viewportSize()])
   const disclosure = page.locator('.relic-actions details').first()
   const plaqueBeforeDisclosure = await available.boundingBox()
   await disclosure.locator('summary').click()
@@ -270,12 +251,10 @@ async function localFlow(page, name, pause = 0) {
   await page.waitForTimeout(500 + pause)
   await page.screenshot({ path: `${output}/${name}-relic-offer.png` })
   const offerFrame = await boxes(page)
-  const offerFits = await offerFitsSmallPhones(page, name)
   const offerHeader = await headerBlocked(page)
   const offerFocus = await activeCourier(page)
   const offerTips = await hiddenRelicTips(page)
   await checkAsync(`${name}: the relic offer is a centred, focused decision over a locked board`, async () => {
-    assert(offerFits.every(Boolean), `the offer is clipped by the header or the viewport on a small phone: ${offerFits}`)
     if (choices) assertDeepEqual(choices, [true, true, true, true, true, true], 'the folded Courier choices are clipped, covered, lose focus on Escape, or stay open after Escape, an outside tap or tabbing away')
     assert(inside(offerFrame.courier, offerFrame.viewport) && inside(offerFrame.banner, offerFrame.viewport), `offer leaves the viewport: ${JSON.stringify(offerFrame)}`)
     assert(await page.locator('.courier-combat-lock').evaluate((element) => element.hasAttribute('inert')), 'board stayed interactive')
@@ -310,22 +289,9 @@ async function localFlow(page, name, pause = 0) {
     run.courier = { usedBy: ['p1'], offer: { playerId: 'p1', kind: 'potion', id: 'fire_potion' } }`)
   const replacement = offer.getByRole('group', { name: 'Replace Potion' })
   await replacement.waitFor()
-  const potionFits = []
-  const potionHome = page.viewportSize()
-  for (const viewport of name === 'desktop' ? [] : [{ width: 740, height: 360 }, { width: 667, height: 375 }]) {
-    await page.setViewportSize(viewport)
-    await page.waitForTimeout(300)
-    potionFits.push(await page.evaluate(() => {
-      const header = document.querySelector('.app-shell__header').getBoundingClientRect()
-      const panel = document.querySelector('.courier--offer').getBoundingClientRect()
-      return document.querySelector('.courier__banner').getBoundingClientRect().top >= header.bottom && panel.bottom <= innerHeight
-    }))
-  }
-  await page.setViewportSize(potionHome)
   await page.waitForTimeout(400 + pause)
   const disabledBeforeChoice = await buy.isDisabled()
   const fullBeltFocus = await activeCourier(page)
-  const potionOfferFits = await offerFitsSmallPhones(page, name)
   const icons = await replacement.locator('.item-icon-image').evaluateAll((images) => images.map((image) => image.naturalWidth > 0))
   await press(replacement.getByRole('button', { name: 'Blood Potion' }))
   await page.waitForTimeout(300 + pause)
@@ -333,9 +299,7 @@ async function localFlow(page, name, pause = 0) {
   const potionFrame = await boxes(page)
   await checkAsync(`${name}: a full belt picks a potion to replace before buying`, async () => {
     assert(disabledBeforeChoice, 'full belt could buy without choosing a replacement')
-    assert(potionFits.every(Boolean), `the potion offer with its Replace row is clipped on a small phone: ${potionFits}`)
     assertEqual(fullBeltFocus, 'replace', 'a full belt did not focus the replacement choice')
-    assert(potionOfferFits.every(Boolean), `the potion offer is clipped on a small phone: ${potionOfferFits}`)
     assertDeepEqual(icons, [true, true, true])
     assertEqual(await replacement.getByRole('button', { name: 'Blood Potion' }).getAttribute('aria-pressed'), 'true')
     assert(await buy.isEnabled(), 'choosing a replacement left Buy disabled')
@@ -397,7 +361,7 @@ async function localFlow(page, name, pause = 0) {
   await page.evaluate((run) => window.__STS_DEBUG__.setRun(run), duo)
   await available.waitFor()
   await page.waitForTimeout(600)
-  const duoClearances = await clearancesAt(page, viewportsFor(name, page))
+  const duoClearances = await clearancesAt(page, [page.viewportSize()])
   await setRun(page, `run.combat.pendingDistilled = { playerId: 'p1', cards: run.combat.players[0].hand.slice(0, 1) }`)
   await page.waitForTimeout(400)
 

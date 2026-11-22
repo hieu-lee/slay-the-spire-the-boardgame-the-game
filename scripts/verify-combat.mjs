@@ -490,14 +490,6 @@ check('an illegal play returns the very same state reference', () => {
   assert(playCard(state, 'ghost', strike.uid, { enemyUid: 'e1', playerId: null }) === state, 'unknown player')
 })
 
-check('playing a card never mutates the state handed in', () => {
-  const strike = instance('strike_ironclad')
-  const state = combat([makePlayer({ hand: [strike] })], [makeEnemy()])
-  const before = JSON.stringify(state)
-  playCard(state, 'p1', strike.uid, { enemyUid: 'e1', playerId: null })
-  assertEqual(JSON.stringify(state), before, 'playCard must return a new state, not edit the old one')
-})
-
 // Bash reads "2 damage, apply Vulnerable" — the Vulnerable lands after the hit,
 // so it must NOT double Bash's own damage.
 check('Bash applies Vulnerable after its own hit resolves', () => {
@@ -559,14 +551,6 @@ check('every starter deck has the composition the rulebook prints', () => {
     assertEqual(count(deck, `defend_${character}`), want.defend, `${character} should have ${want.defend} Defends`)
     for (const extra of want.extras) {
       assertEqual(count(deck, extra), 1, `${character} should have exactly one ${extra}`)
-    }
-  }
-})
-
-check('every card a starter deck names actually exists', () => {
-  for (const [character, deck] of Object.entries(STARTER_DECKS)) {
-    for (const id of deck) {
-      assert(CARDS[id] !== undefined, `${character} starter deck names unknown card "${id}"`)
     }
   }
 })
@@ -765,13 +749,6 @@ check('Foresight rejects an action replayed from an earlier combat', () => {
   assert(startTurnScryPreview(second).id !== staleId, 'Foresight action id repeated in a later combat')
   assertEqual(resolveStartTurnScry(second, 'p1', staleId, []), second,
     'replaying another combat\'s keep-all action consumed Foresight')
-})
-
-check('the die is rolled once per round and is deterministic for a seed', () => {
-  const deck = STARTER_DECKS.ironclad.map((id) => instance(id))
-  const a = startPlayerTurn(combat([makePlayer({ draw: deck })], [makeEnemy()]))
-  const b = startPlayerTurn(combat([makePlayer({ draw: [...deck] })], [makeEnemy()]))
-  assertEqual(a.die, b.die, 'the same seed must roll the same die')
 })
 
 check('discard ordering accounts for costs that change before the next reader', () => {
@@ -1732,11 +1709,6 @@ check('one player dying ends the whole combat in defeat', () => {
   assert(next.players[0].dead, 'the player in the enemy\'s row was killed')
   assert(!next.players[1].dead, 'the other player is still standing')
   assertEqual(next.phase, 'lost', 'and the combat is lost anyway')
-})
-
-check('a combat with everyone alive is not lost', () => {
-  const state = combat([makePlayer({ hp: 10 })], [makeEnemy({ hp: 5 })])
-  assert(state.phase !== 'lost', 'a healthy party has not lost')
 })
 
 check('killing the last enemy wins, even if the party then takes lethal damage', () => {

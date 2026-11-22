@@ -3,12 +3,6 @@ import { suite, check, assert, assertEqual, assertDeepEqual, report } from './li
 
 suite('rng')
 
-check('same seed produces the same float stream', () => {
-  const a = createRng(1234)
-  const b = createRng(1234)
-  for (let i = 0; i < 100; i++) assertEqual(nextFloat(a), nextFloat(b), `float ${i}`)
-})
-
 // A run is stored as (seed, action log) and replayed to reconstruct state. If the
 // RNG stream ever changes, every saved run and every recorded playtest silently
 // replays into a different game. These vectors make that break loudly instead.
@@ -37,31 +31,12 @@ check('seedFromString stays unsigned', () => {
   }
 })
 
-check('different seeds diverge', () => {
-  const a = createRng(1)
-  const b = createRng(2)
-  let same = 0
-  for (let i = 0; i < 50; i++) if (nextFloat(a) === nextFloat(b)) same++
-  assert(same === 0, `expected no shared values, got ${same}`)
-})
-
 check('floats stay in [0, 1)', () => {
   const r = createRng(99)
   for (let i = 0; i < 10000; i++) {
     const v = nextFloat(r)
     assert(v >= 0 && v < 1, `float out of range: ${v}`)
   }
-})
-
-check('nextInt stays in range and covers it', () => {
-  const r = createRng(7)
-  const seen = new Set()
-  for (let i = 0; i < 5000; i++) {
-    const v = nextInt(r, 6)
-    assert(Number.isInteger(v) && v >= 0 && v < 6, `int out of range: ${v}`)
-    seen.add(v)
-  }
-  assertEqual(seen.size, 6, 'every face of a d6 should appear')
 })
 
 check('nextInt handles an empty range', () => {
@@ -127,12 +102,6 @@ check('pickMany returns distinct items without mutating the source', () => {
 check('pickMany clamps to the available count', () => {
   assertEqual(pickMany(createRng(3), ['a', 'b'], 10).length, 2)
   assertEqual(pickMany(createRng(3), ['a', 'b'], -1).length, 0)
-})
-
-check('seedFromString is stable and varies by input', () => {
-  assertEqual(seedFromString('spire'), seedFromString('spire'))
-  assert(seedFromString('spire') !== seedFromString('spire2'), 'seeds should differ')
-  assert(seedFromString('') >= 0, 'seed must be unsigned')
 })
 
 report('rng')

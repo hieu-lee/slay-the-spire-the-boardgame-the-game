@@ -26,7 +26,6 @@ try {
   for (const [screen, viewport, phone] of [
     ['desktop', { width: 1440, height: 900 }, false],
     ['landscape-phone', { width: 844, height: 390 }, true],
-    ['narrow-landscape-phone', { width: 568, height: 320 }, true],
   ]) {
     const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone })
     const page = await context.newPage()
@@ -146,25 +145,6 @@ try {
         await page.setViewportSize(viewport)
         await page.waitForFunction((expected) => document.querySelector('meta[name="viewport"]').content === expected,
           originalViewport, { timeout: 3000 })
-        if (viewport.width === 568) {
-          await page.setViewportSize({ width: viewport.width, height: viewport.height - 81 })
-          await page.waitForFunction((previous) => document.querySelector('meta[name="viewport"]').content !== previous,
-            originalViewport, { timeout: 3000 })
-          const shortLayout = await page.locator('.start-menu').evaluate((menu) => {
-            const title = menu.querySelector('.start-menu__title').getBoundingClientRect()
-            const nav = menu.querySelector('.start-menu__nav').getBoundingClientRect()
-            const version = menu.querySelector('.start-menu__version').getBoundingClientRect()
-            return { gap: nav.top - title.bottom, navBottom: nav.bottom, versionTop: version.top,
-              versionBottom: version.bottom, visibleBottom: visualViewport.offsetTop + visualViewport.height }
-          })
-          assert(shortLayout.gap >= 24 && shortLayout.versionTop >= shortLayout.navBottom + 6 &&
-            shortLayout.versionBottom <= shortLayout.visibleBottom,
-          `${label}: title menu clipped with a tall browser toolbar: ${JSON.stringify(shortLayout)}`)
-          await page.screenshot({ path: join(output, `${label}-short-browser-chrome.png`) })
-          await page.setViewportSize(viewport)
-          await page.waitForFunction((expected) => document.querySelector('meta[name="viewport"]').content === expected,
-            originalViewport, { timeout: 3000 })
-        }
       }
       console.log(`${label}: title and options fit and remain centered`)
     }

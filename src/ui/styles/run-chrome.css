@@ -1,9 +1,6 @@
 .run-status {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  font-size: 0.8rem;
-  color: var(--ink-dim);
 }
 
 .room-screen {

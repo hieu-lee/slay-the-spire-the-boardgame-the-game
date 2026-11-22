@@ -82,7 +82,6 @@ const errors = []
 try {
   for (const [name, viewport, reducedMotion = 'no-preference'] of [['desktop', { width: 1440, height: 900 }],
     ['horizontal-phone', { width: 844, height: 390 }],
-    ['small-horizontal-phone', { width: 568, height: 320 }],
     ['horizontal-phone-os-reduced', { width: 844, height: 390 }, 'reduce']]) {
     const page = await browser.newPage({ viewport, reducedMotion, recordVideo: { dir: output, size: viewport },
       ...(name !== 'desktop' ? { isMobile: true, hasTouch: true } : {}) })

@@ -24,18 +24,7 @@
   padding: 0.35rem 0.45rem;
 }
 
-/* When the board does overflow, fade the bottom edge so it is obvious there is
-   more below rather than looking like a clean end. */
-.board {
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
-}
-
-.board:not(:hover) {
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 18px), transparent 100%);
-}
-
 /* The row the player controls, so it is findable in a crowded board. */
 .row--viewer {
   border-color: rgb(215 169 75 / 0.45);
-  background: linear-gradient(to right, rgb(215 169 75 / 0.05), transparent 40%), var(--bg-panel);
 }

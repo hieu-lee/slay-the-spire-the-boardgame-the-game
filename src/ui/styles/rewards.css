@@ -40,64 +40,8 @@
   margin: 12px 0 18px;
 }
 
-.reward-screen__choice {
-  display: flex;
-  flex: 0 1 clamp(92px, 10vw, 165px);
-  flex-direction: column;
-  gap: 6px;
-  position: relative;
-  transition: transform 140ms ease, filter 140ms ease;
-  animation: reward-card-deal 380ms cubic-bezier(0.16, 0.8, 0.24, 1) both;
-}
-
-.reward-screen__choice:nth-child(2) { animation-delay: 70ms; }
-.reward-screen__choice:nth-child(3) { animation-delay: 140ms; }
-.reward-screen__choice:nth-child(4) { animation-delay: 210ms; }
-.reward-screen__choice:nth-child(5) { animation-delay: 280ms; }
-
-@keyframes reward-card-deal {
-  from { opacity: 0; transform: translateY(54px) rotate(-5deg) scale(0.72); filter: brightness(0.65); }
-  72% { opacity: 1; transform: translateY(-6px) scale(1.04); filter: brightness(1.25); }
-}
-
-.reward-screen__choice:focus-within {
-  z-index: 2;
-  transform: translateY(-8px) scale(1.03);
-  filter: drop-shadow(0 0 10px rgb(72 202 228 / 70%));
-}
-
 .reward-screen__cards .card {
   width: 100%;
-}
-
-.reward-screen__choice > button {
-  min-height: 44px;
-  padding: 6px 4px;
-  border: 0;
-  background: none;
-  color: var(--ink-dim);
-  font-size: 0.7rem;
-  line-height: 1.25;
-  text-decoration: underline;
-}
-
-.reward-screen__scroll-hint {
-  display: none;
-}
-
-.reward-screen__unrevealed {
-  /* The centring this used to set is gone rather than relocated: the reveal and
-     skip keys are a banner now, and a banner is stretched by the grid's own
-     default. chrome.css owns its `min-height`, `margin` and `gap`. */
-  display: grid;
-}
-
-.reward-screen__unrevealed button {
-  padding: 0.6rem 1rem;
-  border: 1px solid var(--gold);
-  border-radius: 4px;
-  background: var(--bg-raised);
-  color: var(--gold);
 }
 
 .reward-screen > button,
@@ -118,21 +62,6 @@
   --skip-ink: #ffd4cb;
   --skip-plate: #461b1a;
   --skip-plate-lit: #8a352f;
-  --collect-edge: #55b8cc;
-  --collect-ink: #e8fbff;
-  --collect-plate: #143d49;
-  --collect-plate-lit: #2b7c8f;
-}
-
-.reward-screen__rare {
-  min-height: 24px;
-  color: #ffe08a;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-align: center;
-  text-transform: uppercase;
-  text-shadow: 0 0 8px #bc7e24;
 }
 
 .reward-screen__relic button,
@@ -223,15 +152,4 @@
   color: var(--gold);
   background: rgb(205 151 56 / 20%);
   box-shadow: inset 0 0 0 1px rgb(255 224 145 / 35%);
-}
-
-.reward-screen__upgrade {
-  /* Its own, not inherited from a `.reward-screen__player > p` rule: this <p>
-     is the only paragraph left in a reward panel, and without this the UA's 1em
-     block margin grew an upgraded-card panel by 25px. */
-  margin: 0;
-  color: var(--gold);
-  font-size: 0.78rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }

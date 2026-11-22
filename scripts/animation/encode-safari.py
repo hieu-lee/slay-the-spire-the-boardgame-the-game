@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Encode rigged WebPs as Safari's hardware-decoded HEVC-with-alpha format."""
+"""Encode hero rig WebPs as Safari's hardware-decoded HEVC-with-alpha format.
+
+Enemies always render their WebP (or APNG) in Safari, so only `hero-*` rigs
+have `.mov` companions.
+"""
 import argparse
 import hashlib
 import json
@@ -139,7 +143,7 @@ def main():
     args = parser.parse_args()
     files = [path if path.is_absolute() else ROOT / path for path in args.files]
     if not files:
-        files = sorted(RIGGED.glob('*.webp'))
+        files = sorted(RIGGED.glob('hero-*.webp'))
     if args.rigs:
         rigs = set(args.rigs.split(','))
         known_rigs = json.loads((ROOT / 'scripts/animation/rigs.json').read_text())
@@ -164,7 +168,7 @@ def main():
         MANIFEST.write_text(json.dumps(dict(sorted(records.items())), indent=2) + '\n')
         print(f'{output.relative_to(ROOT)}', flush=True)
 
-    existing = {path.relative_to(ROOT).as_posix() for path in RIGGED.glob('*.webp')}
+    existing = {path.relative_to(ROOT).as_posix() for path in RIGGED.glob('hero-*.webp')}
     records = {name: records[name] for name in sorted(records) if name in existing}
     MANIFEST.write_text(json.dumps(records, indent=2) + '\n')
 

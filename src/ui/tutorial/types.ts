@@ -26,7 +26,7 @@ export type TutorialChapter = {
   steps: readonly TutorialStep[]
 }
 
-export type FightPlan = {
+type FightPlan = {
   kind: 'fight'
   /** Enemy definitions in the fight, as dealt. */
   enemies: readonly string[]
@@ -37,7 +37,7 @@ export type FightPlan = {
   pick?: string | null
 }
 
-export type RoomPlan =
+type RoomPlan =
   | FightPlan
   | { kind: 'event'; event: string; option: string; cards?: readonly string[]; pick?: string | null }
   | { kind: 'merchant'; buy?: readonly { section: 'card' | 'potion' | 'relic'; slot: number; id: string }[] }

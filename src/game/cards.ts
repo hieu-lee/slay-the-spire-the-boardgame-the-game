@@ -3088,10 +3088,6 @@ export function registerCardDefinitions(definitions: Readonly<Record<string, Car
   Object.assign(CARDS, definitions)
 }
 
-export function registeredCardDefinitions(): Readonly<Record<string, CardDef>> {
-  return REGISTERED_CARD_POOLS
-}
-
 export function cardDef(id: string): CardDef {
   const def = CARDS[id] ?? REGISTERED_CARD_POOLS[id]
   if (!def) throw new Error(`unknown card id: ${id}`)

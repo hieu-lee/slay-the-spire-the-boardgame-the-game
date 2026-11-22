@@ -6,7 +6,7 @@ import { Icon } from '../Icon.tsx'
 import { ItemImage } from '../ItemImage.tsx'
 import { PowerGlyph } from '../PowerRow.tsx'
 
-export type StartTurnOrderStep = {
+type StartTurnOrderStep = {
   id: string
   playerId: string
   label: string

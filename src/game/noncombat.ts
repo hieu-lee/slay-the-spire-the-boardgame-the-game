@@ -1,4 +1,3 @@
-import { CARDS } from './cards.ts'
 import {
   addCard,
   bottomItems,
@@ -347,8 +346,4 @@ export function resolveRelicReward(
   }
   bottomItems(itemDecks.relics, bottom)
   return { players: next, sapphire }
-}
-
-export function shopHasPurchasableCard(shop: MerchantState, playerId: string): boolean {
-  return shop.cards[playerId]?.choices.some((id) => Boolean(id && CARDS[id])) ?? false
 }

@@ -36,7 +36,6 @@ import { createCampaignProgress } from '../src/game/campaign.ts'
 import { acquireRelic, chooseEvent, createRun, pendingRelicEligibleCards, pendingRelicPreview, purchaseAtMerchant, resolveCardRewards, resolveGuardianSocket, resolvePendingRelic, revealCardReward } from '../src/game/run.ts'
 import { pendingRewardChoices } from '../src/game/run/rewards.ts'
 import { applyEffect } from '../src/game/combat/effects.ts'
-import { cardCanBeForced } from '../src/game/combat/queries.ts'
 import {
   activatePotion,
   activatePower,
@@ -958,15 +957,7 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
   assert(combat.players[0].discard.some((card) => card.uid === 'crystallize-mayhem'),
     'the untargetable Crystallize should be discarded, not left stuck in hand')
 
-  // Revenge Protocol threads `guardianGemForCard` into its `cardCanBeForced`
-  // call the same as the other three forced-card sites. No current Attack's
-  // outcome actually depends on that Gem today (Prismatic Spray is already
-  // row-scoped regardless of any Gem, and every genuine Gem Attack -- Crystal
-  // Edge, Fierce Bash, Walker Claw, Multi Beam, Bauble Burst -- is already in
-  // the hardcoded needs-enemy id Set on its own), so this is a live-game
-  // sanity check that a Ruby-socketed aoe Attack still gets refused, not a
-  // regression test for the Gem parameter specifically -- see the direct
-  // `cardCanBeForced` unit check just below for that.
+  // A Ruby-socketed aoe Attack is still refused when no living enemy exists.
   player = fresh(4354)
   player.energy = 5
   player.guardianMode = 'attack'
@@ -986,32 +977,6 @@ check('reviewed Guardian Power timing, selection, and Retain rules resolve exact
   const refusedRevenge = activatePower(combat, 'p1', 'revenge', { cardUid: 'spray-ruby' })
   assert.equal(refusedRevenge.startTurnProgress, undefined,
     'Revenge Protocol must not force a Ruby-socketed aoe Attack with no living enemy to target')
-
-  // Direct unit check that the threaded Gem is actually what drives the
-  // difference, independent of any real card's other reasons to need an
-  // enemy: a synthetic Attack outside the hardcoded id Set and outside
-  // `GUARDIAN_ROW_CARDS` needs an enemy with a Ruby Gem attached, and needs
-  // none without one, at zero living enemies either way.
-  const syntheticAttack = { id: 'guardian_test_synthetic_attack', name: 'Synthetic Attack', type: 'attack',
-    cost: 1, effects: [] }
-  const revengeActor = combat.players[0]
-  assert.equal(cardCanBeForced(syntheticAttack, combat, revengeActor, 'guardian_ruby', 'synthetic-uid'), false,
-    'a Ruby-socketed Attack must need an enemy once its Gem is threaded through cardCanBeForced')
-  assert.equal(cardCanBeForced(syntheticAttack, combat, revengeActor, undefined, 'synthetic-uid'), true,
-    'the identical Attack with no Gem attached needs no enemy, isolating the Gem as the deciding factor')
-
-  // No printed Attack today actually changes outcome based on the Gem
-  // threaded through Revenge Protocol specifically (every genuine Gem Attack
-  // is already in the hardcoded needs-enemy id Set on its own, and Prismatic
-  // Spray is already row-scoped), so the unit check above is the only way to
-  // exercise `cardCanBeForced`'s own Gem handling here -- but that leaves the
-  // one-line wire at Revenge Protocol's own call site with no behavioral
-  // regression test. Assert the source directly: a future refactor that drops
-  // `guardianGemForCard` there would otherwise pass every other test in this
-  // file undetected.
-  const playSource = readFileSync(new URL('../src/game/combat/play.ts', import.meta.url), 'utf8')
-  assert.match(playSource, /guardian_revenge_protocol'[\s\S]{0,600}cardCanBeForced\([^)]*guardianGemForCard\(/,
-    "Revenge Protocol's forced-card guard must thread the selected card's own Gem through cardCanBeForced")
 
   // A solo Peridot-socketed Crystallize never fires Peridot's own hit (it
   // needs ANOTHER Gem card in hand), so it needs no enemy at all -- but

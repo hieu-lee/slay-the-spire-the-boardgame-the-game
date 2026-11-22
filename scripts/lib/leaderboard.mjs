@@ -44,11 +44,11 @@ function personalDecks(value) {
 }
 
 const DAY_MS = 86_400_000
-export const DAILY_RANKING_LIMIT = 100
+const DAILY_RANKING_LIMIT = 100
 // A Daily Climb deck is a solo deck; the cap bounds the public ranking payload.
-export const DAILY_MAX_DECK = 200
+const DAILY_MAX_DECK = 200
 // Acts I–IV hold at most 13 + 10 + 9 + 4 map rows plus the Act bosses; the cap leaves margin.
-export const DAILY_MAX_FLOORS = 50
+const DAILY_MAX_FLOORS = 50
 const utcDay = (time) => new Date(time).toISOString().slice(0, 10)
 /** A real calendar day written as `YYYY-MM-DD`. */
 const isCalendarDay = (day) => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day) &&

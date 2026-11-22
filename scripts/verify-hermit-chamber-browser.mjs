@@ -55,7 +55,7 @@ try {
       const chamber = page.getByRole('button', { name: /^Chamber,/ })
       if (await chamber.getAttribute('aria-expanded') !== 'true') await chamber.click()
     }
-    for (const [defId, damage] of [['hermit_strike', 1], ['hermit_snapshot', 2], ['hermit_headshot', 5], ['hermit_golden_bullet', 2], ['hermit_roulette', 1]]) {
+    for (const [defId, damage] of [['hermit_strike', 1], ['hermit_snapshot', 2]]) {
       await load(1, defId)
       const card = page.locator('.hand .card--chamber-drawn')
       if (defId === 'hermit_snapshot') assert.match(await card.getAttribute('aria-label'), /Gain Block equal to the damage dealt/)

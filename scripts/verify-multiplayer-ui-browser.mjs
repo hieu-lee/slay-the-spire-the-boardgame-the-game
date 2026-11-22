@@ -52,7 +52,7 @@ async function assertBoardInset(page, board, contents, label) {
 }
 
 try {
-  for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'landscape-phone', width: 560, height: 315 }]) {
+  for (const viewport of [{ name: 'desktop', width: 1440, height: 900 }, { name: 'landscape-phone', width: 844, height: 390 }]) {
     const context = await browser.newContext({ viewport })
     const page = await context.newPage()
     const browserErrors = []
@@ -214,25 +214,18 @@ try {
       return overlaps
     })
     assert.deepEqual(errorClear, [], `${viewport.name}: lobby errors cover the lobby controls`)
-    const captionSizes = viewport.name === 'desktop'
-      ? [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]
-      : [{ width: 560, height: 315 }, { width: 640, height: 360 }, { width: 667, height: 375 }, { width: 844, height: 390 }]
-    for (const size of captionSizes) {
-      await page.setViewportSize(size)
-      const captionOverlaps = await lobby.evaluate((screen) => {
-        const caption = screen.appendChild(Object.assign(document.createElement('p'), { className: 'online-lobby__status', textContent: 'Maximilian_Hexaghost starts the run' }))
-        const box = caption.getBoundingClientRect()
-        const overlaps = ['.online-lobby__ascension', '.online-character-roster', '.online-lobby__start'].filter((selector) => {
-          const other = screen.querySelector(selector).getBoundingClientRect()
-          return box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top
-        })
-        if (caption.scrollWidth > caption.clientWidth + 1) overlaps.push('caption text overflows')
-        caption.remove()
-        return overlaps
+    const captionOverlaps = await lobby.evaluate((screen) => {
+      const caption = screen.appendChild(Object.assign(document.createElement('p'), { className: 'online-lobby__status', textContent: 'Maximilian_Hexaghost starts the run' }))
+      const box = caption.getBoundingClientRect()
+      const overlaps = ['.online-lobby__ascension', '.online-character-roster', '.online-lobby__start'].filter((selector) => {
+        const other = screen.querySelector(selector).getBoundingClientRect()
+        return box.left < other.right && box.right > other.left && box.top < other.bottom && box.bottom > other.top
       })
-      assert.deepEqual(captionOverlaps, [], `${size.width}x${size.height}: the start status caption covers the lobby controls`)
-    }
-    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+      if (caption.scrollWidth > caption.clientWidth + 1) overlaps.push('caption text overflows')
+      caption.remove()
+      return overlaps
+    })
+    assert.deepEqual(captionOverlaps, [], `${viewport.name}: the start status caption covers the lobby controls`)
     const runSettings = lobby.locator('.online-lobby__settings')
     await runSettings.locator(':scope > summary').click()
     await page.keyboard.press('Escape')

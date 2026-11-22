@@ -1,4 +1,4 @@
-export type UnknownPowerRefreshDecision = 'committed' | 'restore' | 'wait' | 'unlock'
+type UnknownPowerRefreshDecision = 'committed' | 'restore' | 'wait' | 'unlock'
 
 // The action callback and the authoritative room refresh race each other. Keep
 // that ordering decision independent from React state so every arrival order is

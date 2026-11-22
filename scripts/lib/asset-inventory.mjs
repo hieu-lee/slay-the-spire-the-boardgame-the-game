@@ -50,7 +50,8 @@ export const cardArtFiles = CARD_ART_OWNERS.flatMap((owner) =>
 export const iconFiles = listing(iconRoot, '.png')
 export const enemyFiles = listing(enemyRoot, '.webp')
 export const combatEnemyFiles = listing(combatEnemyRoot, '.webp')
-export const combatRiggedFiles = listing(combatRiggedRoot, '.webp')
+// Enemies always paint WebP/APNG in Safari (EnemyCard forces it); only heroes ship HEVC companions.
+export const combatRiggedFiles = listing(combatRiggedRoot, '.webp').filter((file) => file.startsWith('hero-'))
 export const combatRiggedVideoFiles = listing(combatRiggedRoot, '.mov')
 export const bossAnimationFiles = listing(bossAnimationRoot, '.webp')
 export const bossProjectileFiles = listing(bossProjectileRoot, '.webp')

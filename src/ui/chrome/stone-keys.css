@@ -4,7 +4,7 @@
   .combat button:not([class]), .combat button[class=''], .combat button.is-chosen, .combat .prompt__cancel, .combat__end-turn,
   .event-stage button:not([class]), .event-stage button[class=''], .event-stage button.is-chosen, .event-stage .room-proceed, .event-card-confirm,
   .neow-screen button:not([class]), .neow-screen button[class=''], .neow-screen button.is-chosen,
-  .neow-screen .reward-screen__skip, .neow-screen .neow-offer__skip,
+  .neow-screen .reward-screen__skip,
   .room-screen:has(> .run-summary) > button, .room-screen:has(> .run-summary) > :where(.room-screen__actions) > button,
   .campaign-end > div > button, .courier button
 ):not(.ribbon-back) {

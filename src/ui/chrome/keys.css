@@ -14,7 +14,6 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
@@ -58,7 +57,6 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
@@ -74,7 +72,6 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
@@ -90,7 +87,6 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
   .sts-scope .merchant-removal-dialog__confirm,
   .sts-scope .merchant-potion-dialog__confirm
@@ -200,7 +196,6 @@
   .sts-scope button[class=''],
   .sts-scope .is-chosen,
   .sts-scope .reward-screen__skip,
-  .sts-scope .neow-offer__skip,
   .sts-scope .prompt__cancel,
   /* These two carry their own `clip-path` in styles.css and were missed when
      this list was written, so the global 2px ring was clipped away entirely and

@@ -13,7 +13,7 @@ NAMES = {'lagavulin', 'gremlin_leader', 'reptomancer', 'guardian_attack', 'guard
 
 
 def canonical(name):
-    return Image.open(ROOT / f'public/assets/combat/rigged/{name}-idle.webp').convert('RGBA')
+    return Image.open(SOURCES / 'canonical' / f'{name}-idle.webp').convert('RGBA')
 
 
 def feet(image):

@@ -59,12 +59,13 @@ check('frontend surfaces select their cores and named focused browser checks', (
     'verify-monogatari-skins-browser.mjs', 'verify-monogatari-online-browser.mjs', 'verify-defect-chan-evoke-browser.mjs',
     'verify-start-turn-party-browser.mjs', 'verify-start-turn-resync-browser.mjs',
     'verify-run-replay-browser.mjs', 'verify-unload-shivs-browser.mjs',
-    'verify-boss-heavy-attacks-browser.mjs', 'verify-double-tap-recover-browser.mjs'], 'combat screen')
+    'verify-boss-heavy-attacks-browser.mjs', 'verify-double-tap-recover-browser.mjs',
+    'verify-combat-choices-browser.mjs'], 'combat screen')
   assert(!combat.includes('verify-noncombat-browser.mjs'))
   assert(combat.includes('verify-runic-pyramid-browser.mjs'))
   assert(combat.includes('verify-empty-scry-browser.mjs'))
   assert(combat.includes('verify-singleton-slime-command-browser.mjs'))
-  assertEqual(combat.length, 45, 'combat screen selected an unrelated browser suite')
+  assertEqual(combat.length, 46, 'combat screen selected an unrelated browser suite')
   includesEvery(affectedBrowser('src/ui/TokenRow.tsx'), ['verify-turn-targets-browser.mjs',
     'verify-row-target-browser.mjs', 'verify-combat-target-geometry-browser.mjs'], 'Orb row')
   assert(affectedBrowser('src/ui/styles/stage-scale.css').includes('verify-combat-layout-reload-browser.mjs'))

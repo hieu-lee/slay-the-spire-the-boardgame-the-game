@@ -97,7 +97,7 @@ export class ReplayTimeline {
   }
 }
 
-export type ReplaySnapshot = {
+type ReplaySnapshot = {
   position: number
   total: number
   speed: number

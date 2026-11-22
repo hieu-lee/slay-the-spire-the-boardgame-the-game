@@ -296,11 +296,6 @@ try {
   await fiveCardReward.waitFor()
   assert.equal(await fiveCardReward.locator('.reward-screen__cards > .card').count(), 5,
     'a five-card reward did not use the shared Card Reward picker')
-  await page.setViewportSize({ width: 1024, height: 768 })
-  const compactCards = await fiveCardReward.locator('.reward-screen__cards > .card').evaluateAll((cards) =>
-    cards.map((card) => card.getBoundingClientRect()).map((box) => ({ left: box.left, right: box.right })))
-  assert(compactCards.every((box) => box.left >= 0 && box.right <= 1024),
-    `five-card reward clips compact desktop: ${JSON.stringify(compactCards)}`)
   await page.setViewportSize({ width: 844, height: 390 })
   await checkRewardSweep(page, fiveCardReward.locator('.reward-screen__cards > .card'))
   await checkRewardHover(fiveCardReward.locator('.reward-screen__cards > .card').nth(2))

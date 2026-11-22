@@ -167,7 +167,7 @@
   background: none;
 }
 
-.relic-actions > section { display: flex; flex-wrap: wrap; gap: .4rem; max-width: min(36rem, calc(100vw - 2rem)); padding: .45rem; background: rgb(10 13 15 / .96); }
+.relic-actions > section { flex-wrap: wrap; }
 
 .relic-actions details {
   padding: 0.3rem;

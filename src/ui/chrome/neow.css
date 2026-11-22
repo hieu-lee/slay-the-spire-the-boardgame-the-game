@@ -121,10 +121,6 @@
   text-align: center;
 }
 
-.sts-scope .neow-action--offer .neow-offer__cards {
-  --card-width: clamp(100px, 25vh, 180px);
-}
-
 .sts-scope .neow-action--offer .neow-offer__actions {
   width: min(32rem, calc(100% - 2rem));
   margin: 0.5rem auto 0;

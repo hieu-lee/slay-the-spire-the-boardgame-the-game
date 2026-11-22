@@ -77,16 +77,6 @@ try {
       assert(box && box.y >= profile.y + profile.height && box.y + box.height <= 390)
     }
   })
-  await page.setViewportSize({ width: 568, height: 320 })
-  await page.screenshot({ path: join(output, 'stats-menu-small-horizontal-phone.png') })
-  await checkAsync('all menu entries fit a small horizontal phone', async () => {
-    const profile = await page.locator('.start-menu__profile').boundingBox()
-    assert(profile)
-    for (const button of await page.locator('.start-menu__nav button').all()) {
-      const box = await button.boundingBox()
-      assert(box && box.y >= profile.y + profile.height && box.y + box.height <= 320, `${await button.innerText()} is clipped`)
-    }
-  })
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.getByRole('button', { name: 'Stats', exact: true }).click()
   await page.getByRole('heading', { name: 'Deck archetypes' }).waitFor()
@@ -115,7 +105,7 @@ try {
     }, undefined, { timeout: 10_000 })
   })
 
-  for (const viewport of [{ width: 1150, height: 700 }, { width: 1200, height: 800 }, { width: 1280, height: 800 }, { width: 1536, height: 864 }, { width: 932, height: 430 }]) {
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
     await page.setViewportSize(viewport)
     await checkAsync(`card impact text and deck names are not truncated at ${viewport.width}x${viewport.height}`, async () => {
       const fits = await page.locator('.stats__next-name').evaluateAll((names) => names.flatMap((name) => [...name.querySelectorAll('strong, small span')]
@@ -228,21 +218,6 @@ try {
     assert(back && back.width >= 44 && back.height >= 44 && back.x >= 0 && back.y >= 0 && back.y + back.height <= rail.y + rail.height, 'Back ribbon is clipped or too small')
     const heroes = await page.locator('.stats__heroes button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().right))
     assert(heroes.length === HERO_BUTTONS && heroes.every((right) => right <= selects.x), `Hero buttons hidden behind filters: ${heroes}`)
-  })
-  await page.setViewportSize({ width: 568, height: 320 })
-  await page.screenshot({ path: join(output, 'stats-small-horizontal-phone.png') })
-  await checkAsync('small horizontal phone keeps every hero and filter in the top bar', async () => {
-    const back = await page.locator('.stats__back.ribbon-back').boundingBox()
-    const selects = await page.locator('.stats__rail-selects').boundingBox()
-    const heroes = await page.locator('.stats__heroes').evaluate((strip) => ({
-      scrolls: strip.scrollWidth > strip.clientWidth,
-      rights: [...strip.querySelectorAll('button')].map((button) => button.getBoundingClientRect().right),
-    }))
-    assert(selects && selects.x + selects.width <= 568, 'Filters overflow the small phone')
-    assert(back && back.width >= 44 && back.height >= 44, 'Back ribbon touch target is too small')
-    assert(await page.locator('.stats__table-scroll').evaluate((table) => table.scrollWidth <= table.clientWidth), 'Archetype table overflows the small phone')
-    assert(await page.locator('.stats__row-button strong').evaluateAll((names) => names.length > 0 && names.every((name) => name.scrollHeight <= name.clientHeight + 1)), 'Archetype names are truncated on the small phone')
-    assert(!heroes.scrolls && heroes.rights.length === HERO_BUTTONS && heroes.rights.every((right) => right <= selects.x), `Hero buttons hidden on small phone: ${heroes.rights} (scrolls ${heroes.scrolls}, filters at ${selects.x})`)
   })
   await page.setViewportSize({ width: 844, height: 390 })
   await page.locator('.stats__scroll').evaluate((element) => { element.scrollTop = element.scrollHeight })

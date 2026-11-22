@@ -91,7 +91,7 @@ try {
     run.neow.players[run.players[0].id].pendingEffect = { kind: 'upgrade', count: 1 }
     debug.setRun(run)
   })
-  await page.setViewportSize({ width: 568, height: 320 })
+  await page.setViewportSize({ width: 844, height: 390 })
   await neowPicker.locator('.card-picker__grid > .card').first().click()
   await neowPicker.locator('.card-picker__preview').waitFor()
   const neowPhone = await neowPicker.evaluate((element) => {
@@ -186,7 +186,6 @@ try {
   await picker.getByRole('button', { name: 'Confirm' }).click()
   await picker.waitFor({ state: 'detached' })
 
-  await page.setViewportSize({ width: 1920, height: 1080 })
   await page.getByRole('button', { name: /^Current deck,/ }).click()
   const deck = page.getByRole('dialog', { name: 'Current deck' })
   await deck.waitFor()
@@ -262,7 +261,7 @@ try {
   await picker.getByRole('button', { name: 'Confirm' }).click()
   await picker.waitFor({ state: 'detached' })
 
-  await page.setViewportSize({ width: 568, height: 320 })
+  await page.setViewportSize({ width: 844, height: 390 })
   await page.evaluate(() => {
     const debug = window.__STS_DEBUG__
     const run = structuredClone(debug.getRun())

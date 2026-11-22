@@ -12,7 +12,6 @@
       .sts-scope button[class=''],
       .sts-scope .is-chosen,
       .sts-scope .reward-screen__skip,
-      .sts-scope .neow-offer__skip,
       .sts-scope .prompt__cancel
     ):hover:not(:disabled),
     :is(
@@ -20,7 +19,6 @@
       .sts-scope button[class=''],
       .sts-scope .is-chosen,
       .sts-scope .reward-screen__skip,
-      .sts-scope .neow-offer__skip,
       .sts-scope .prompt__cancel
     ):active:not(:disabled)
   ) { transform: none; }

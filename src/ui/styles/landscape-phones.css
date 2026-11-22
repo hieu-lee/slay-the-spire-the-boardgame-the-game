@@ -56,8 +56,7 @@ html[data-mobile-performance='true'] .orbs__target .token--orb { animation: none
     .motion-pulse-0,
     .motion-pulse-1,
     .combat__phase,
-    .combat__result,
-    .reward-screen__choice
+    .combat__result
   ) {
     animation: none;
   }

@@ -3,8 +3,6 @@
 .combat {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  min-height: 0;
   min-width: 0;
 }
 
@@ -15,7 +13,6 @@
   flex-wrap: nowrap;
   min-width: 0;
   font-size: 0.85rem;
-  color: var(--ink-dim);
 }
 
 .combat__die {
@@ -26,9 +23,6 @@
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-size: 0.7rem;
-  padding: 0.1rem 0.45rem;
-  border: 1px solid var(--edge);
-  border-radius: 999px;
   animation: phase-change 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 

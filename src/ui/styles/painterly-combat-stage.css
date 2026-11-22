@@ -17,7 +17,6 @@
   background:
     linear-gradient(180deg, rgb(50 69 80 / 0.98), rgb(29 42 51 / 0.98)),
     #24343e;
-  box-shadow: 0 5px 0 #15232b, 0 9px 22px rgb(0 0 0 / 0.55);
 }
 
 .app-shell--combat > .app-shell__header h1 {
@@ -99,7 +98,6 @@
   min-height: clamp(20rem, 50vh, 29rem);
   gap: 0;
   justify-content: safe center;
-  overflow: auto;
   border: 0;
   outline-offset: -3px;
   background:
@@ -145,10 +143,8 @@
 .board:has(.enemy--targeted, .row__enemies--targetable) > .row { z-index: auto; }
 
 .row__seat {
-  position: relative;
   z-index: 3;
   display: grid;
-  align-content: end;
   justify-items: start;
   min-width: 0;
 }
@@ -158,7 +154,6 @@
   position: relative;
   align-items: center;
   gap: 0.15rem;
-  width: clamp(7.5rem, 13vw, 11rem);
   padding: 0;
   overflow: visible;
   color: #f3e5c3;
@@ -322,10 +317,8 @@
   place-items: center;
   border: 1px solid rgb(255 244 186 / 0.68);
   border-radius: 999px;
-  color: #fff4bd;
   font: 700 min(0.62rem, calc(0.72rem * var(--stage-scale))) / 1 'Kreon', Georgia, serif;
   text-shadow: 0 1px 2px #000;
-  background: rgb(25 56 28 / 0.94);
   box-shadow: 0 1px 3px #000;
 }
 

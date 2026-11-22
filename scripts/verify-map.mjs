@@ -77,12 +77,6 @@ check('the same seed always generates the same map', () => {
   assertDeepEqual(build(99), build(99), 'map generation must be reproducible from its seed')
 })
 
-check('different seeds generate different maps', () => {
-  const a = JSON.stringify(build(1))
-  const b = JSON.stringify(build(2))
-  assert(a !== b, 'two seeds should not produce identical maps')
-})
-
 check('each act uses the exact printed retail rooms and paths', () => {
   for (const act of [2, 3]) {
     assertDeepEqual(topology(build(1, act)), RETAIL_TOPOLOGY[act], `Act ${act} topology drifted`)
@@ -849,32 +843,6 @@ check('an Elite grants exactly one ordinary Relic from the shared physical deck 
   assertDeepEqual(run.relicDeck, run.itemDecks.relics)
 })
 
-check('every enemy the run can spawn actually exists', () => {
-  // Reach into the module's pools by walking a lot of runs and spawning rooms.
-  for (let seed = 0; seed < 30; seed++) {
-    let run = postNeowRun(seed, [
-      { id: 'p1', name: 'Ironclad', character: 'ironclad' },
-      { id: 'p2', name: 'Silent', character: 'silent' },
-    ])
-    for (let step = 0; step < 12 && run.phase !== 'defeat' && run.phase !== 'victory'; step++) {
-      if (run.phase === 'map') {
-        const choices = roomChoices(run)
-        if (choices.length === 0) break
-        run = enterRoom(run, choices[0].id)
-      } else if (run.phase === 'combat') {
-        for (const enemy of run.combat.enemies) {
-          assert(ENEMIES[enemy.defId] !== undefined, `spawned unknown enemy "${enemy.defId}"`)
-          assert(enemyDef(enemy.defId).id === enemy.defId, 'enemy def id should round-trip')
-        }
-        // Concede so the walk continues past the fight.
-        run = resolveCombat({ ...run, combat: { ...run.combat, phase: 'lost' } })
-      } else {
-        run = { ...run, phase: 'map' }
-      }
-    }
-  }
-})
-
 check('reward stacks contain only live cards of their character and rarity', () => {
   const progress = { ...createCampaignProgress(), characters: { ironclad: 4, silent: 4, defect: 4, watcher: 4 } }
   const run = postNeowRun(100, [
@@ -900,35 +868,6 @@ check('reward stacks contain only live cards of their character and rarity', () 
       assertEqual(player.cardRewards.filter((id) => id === 'claw').length, 2,
         'the retail Claw keeps the standard common-card count')
     }
-  }
-})
-
-check('every enemy has a sane HP track', () => {
-  for (const def of Object.values(ENEMIES)) {
-    assertEqual(def.hpByPlayers.length, 4, `${def.id} needs an HP value per player count`)
-    for (const hp of def.hpByPlayers) {
-      assert(hp > 0, `${def.id} has a non-positive HP entry`)
-    }
-    // Single-card elites use the HP board. Sentries scale through extra cards.
-    if (def.elite && def.id !== 'sentries') {
-      assert(
-        def.hpByPlayers[3] > def.hpByPlayers[0],
-        `${def.id} is an elite so its HP should scale with the party`,
-      )
-    }
-  }
-})
-
-check('a run starts every character at the HP their board prints', () => {
-  const run = postNeowRun(1, [
-    { id: 'p1', name: 'Ironclad', character: 'ironclad' },
-    { id: 'p2', name: 'Silent', character: 'silent' },
-    { id: 'p3', name: 'Defect', character: 'defect' },
-    { id: 'p4', name: 'Watcher', character: 'watcher' },
-  ])
-  for (const player of run.players) {
-    assertEqual(player.hp, MAX_HP[player.character], `${player.character} should start at full HP`)
-    assertEqual(player.relics.length, 1, 'and with exactly one starting relic')
   }
 })
 

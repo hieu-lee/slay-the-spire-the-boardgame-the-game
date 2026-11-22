@@ -323,7 +323,7 @@ try {
           node.style.cssText = 'width:320px;height:240px'
           document.body.append(node)
           ;(D.createRoot ?? D.default.createRoot)(node).render((R.createElement ?? R.default.createElement)(CombatAnimation, {
-            src: './assets/combat/rigged/guardian_attack-attack.webp',
+            src: './assets/combat/enemies/animated/guardian_attack-attack.webp',
             posterSrc: './assets/combat/enemies/guardian_attack.webp',
             forceWebp: true,
             style: { width: '100%', height: '100%', objectFit: 'contain' },

@@ -30,7 +30,7 @@ const OFFENSIVE_VFX_FAMILIES = new Set([
  * CombatScreen delays its reveal by the same amount, so they read as separate
  * beats — zap, pause, zap — rather than one.
  */
-export const DEFECT_EVOKE_CONTACT_MS = 240
+const DEFECT_EVOKE_CONTACT_MS = 240
 export const ORB_END_TURN_STAGGER_MS = 380
 export const SLIME_COMMAND_ANIMATION_MS = 1_700
 export const SLIME_COMMAND_CONTACT_MS = 850
@@ -382,13 +382,13 @@ export const HERMIT_VOLLEYS = [
   { ms: 1100, muzzles: [[313, 218], [243, 244]] },
 ] as const
 export const HERMIT_ATTACK_MS = 1_650
-export const HERMIT_FLIGHT_MS = 180
+const HERMIT_FLIGHT_MS = 180
 // Both barrels arrive together: one impact and damage step per volley/target.
-export const HERMIT_IMPACT_COUNT = HERMIT_VOLLEYS.length
+const HERMIT_IMPACT_COUNT = HERMIT_VOLLEYS.length
 const HERMIT_IMPACT_WEIGHTS = HERMIT_VOLLEYS.map(() => 1 / HERMIT_IMPACT_COUNT)
 
 /** A slow decode can start bullets after the wall-clock settle deadline. */
-export function hermitAnimationPending(seq: number): boolean {
+function hermitAnimationPending(seq: number): boolean {
   return [...document.querySelectorAll<HTMLElement>(
     `[data-hermit-seq="${seq}"] .hermit-shot__flight, [data-hermit-impact-seq="${seq}"]`,
   )].some(node => node.getAnimations().some(animation =>

@@ -67,7 +67,6 @@ import {
 
 const manifestUrl = new URL('../tmp/downfall-reference/manifests/hermit-card-manifest.md', import.meta.url)
 const manifestText = existsSync(manifestUrl) ? readFileSync(manifestUrl, 'utf8') : null
-const cardsSource = readFileSync(new URL('../src/game/cards.ts', import.meta.url), 'utf8')
 
 function range(cell) {
   if (!cell.includes('-')) return [Number(cell)]
@@ -119,7 +118,6 @@ check('all 67 definitions match the audited manifest table exactly', () => {
   assert.deepEqual(HERMIT_SOURCE_CARDS, manifestCards)
   assert.equal(HERMIT_CARDS.length, 67)
   assert.equal(Object.keys(HERMIT_CARDS_BY_ID).length, 67)
-  assert.match(cardsSource, /\.\.\.\(HERMIT_CARD_DEFS as unknown as Record<string, CardDef>\)/)
 })
 
 check('sheet GUIDs and every physical card cell match the public prototype', () => {

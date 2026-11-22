@@ -65,7 +65,7 @@ export function moveChapter(from: string | null, to: string, title: string, body
 
 // Rewards after a fight.
 
-export type RewardScript = {
+type RewardScript = {
   gold?: number
   potion?: { id: string; why: string }
   /** What the coach says about each offered card, in the order they are offered. */

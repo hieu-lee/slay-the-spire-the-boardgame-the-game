@@ -22,7 +22,7 @@ node scripts/verify-elite-signatures-browser.mjs --webkit
 
 The shared rig renderer dispatches to the same exporter. Runtime assets use
 `combat/enemies/animated/`, so they need no macOS HEVC authoring dependency.
-The old rig exports remain canonical registration references, not live animations.
+The old rig idle exports live in `sources/elite-signatures/canonical/` as registration references, not live animations.
 Wide dagger and casting poses use transparent overscan, reduced back to an 800px
 export and compensated by metadata display scale. Body stature is registered
 from the neutral drawing once; crouches do not get resized to idle height.
@@ -114,7 +114,7 @@ node scripts/verify-rig-animation-browser.mjs
 ```
 
 The rig renderer also refreshes same-resolution HEVC-alpha `.mov` companions for
-Safari. To refresh companions after replacing committed WebPs directly, run
+Safari hero rigs (`hero-*`); enemies always paint their WebP/APNG in Safari. To refresh companions after replacing committed WebPs directly, run
 `python3 scripts/animation/encode-safari.py`; runtime paths and the source-hash
 manifest are derived automatically, so new art never needs a code mapping. The
 encoder preserves each source frame's millisecond boundary at maximum quality

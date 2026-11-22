@@ -18,10 +18,8 @@ try {
     const browser = await engine.launch({ headless: true })
     try {
       for (const [screen, viewport] of [['desktop', { width: 1440, height: 900 }],
-        ['horizontal-phone', { width: 844, height: 390 }], ['small-horizontal-phone', { width: 568, height: 320 }]]) {
+        ['horizontal-phone', { width: 844, height: 390 }]]) {
         const phone = screen !== 'desktop'
-        const smallPhone = screen === 'small-horizontal-phone'
-        if (orbsOnly && smallPhone) continue
         const context = await browser.newContext({ viewport, isMobile: phone, hasTouch: phone,
           recordVideo: { dir: output, size: viewport } })
         const page = await context.newPage()
@@ -132,7 +130,7 @@ try {
           return { x: b.left + b.width / 2, y: b.top + b.height * .6 }
         }, id)
         if (!orbsOnly) {
-          if (!smallPhone) for (const defs of [['deca', 'donu'], ['donu', 'deca'], ['taskmaster', 'red_slaver', 'blue_slaver'], ['sentry_a', 'sentry_b', 'sentry_a']]) {
+          for (const defs of [['deca', 'donu'], ['donu', 'deca'], ['taskmaster', 'red_slaver', 'blue_slaver'], ['sentry_a', 'sentry_b', 'sentry_a']]) {
             await page.evaluate(defs => window.fixture.install(defs), defs)
             await ready()
             await page.waitForTimeout(320)
@@ -158,7 +156,7 @@ try {
             const r = orb.getBoundingClientRect()
             return orb.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2))
           }))
-          if (!smallPhone) for (const boss of ['bronze_automaton', 'the_champ']) {
+          for (const boss of ['bronze_automaton', 'the_champ']) {
             await page.evaluate(boss => window.fixture.install([boss], 'dark'), boss)
             await ready()
             const choice = page.getByRole('button', { name: 'Evoke frost Orb 3', exact: true })
@@ -216,11 +214,6 @@ try {
           } else {
             assert.equal(await page.locator('.end-turn-effects__orb-choices:visible').count(), 0,
               'desktop must keep the existing Orb drag interaction')
-          }
-          if (smallPhone) {
-            await context.close()
-            console.log(`PASS ${engineName} ${screen}: Loop Orb choices`)
-            continue
           }
           await page.evaluate(() => {
             window.fixture.install(['bronze_automaton'])

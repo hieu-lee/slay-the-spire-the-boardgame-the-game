@@ -18,11 +18,11 @@ export const ANIMATION_SOUND_VOLUMES = {
 } as const
 export type AnimationSound = keyof typeof ANIMATION_SOUND_VOLUMES
 
-export type CombatSound =
+type CombatSound =
   | AnimationSound
   | 'ui' | 'card' | 'draw' | 'attack' | 'magic' | 'enemy' | 'block' | 'heal' | 'weak'
 
-export type CombatSfxLayer = Readonly<{
+type CombatSfxLayer = Readonly<{
   sound: CombatSound
   rate: number
   volume: number

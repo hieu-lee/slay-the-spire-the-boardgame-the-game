@@ -1,10 +1,10 @@
 import { DAILY_MODIFIERS } from '../game/meta.ts'
 import type { DailyModifier, DailyModifierId, QuickStartAct } from '../game/meta.ts'
 
-export type MetaRunMode = 'standard' | 'daily' | 'custom'
-export type MetaRunAct = 1 | QuickStartAct
+type MetaRunMode = 'standard' | 'daily' | 'custom'
+type MetaRunAct = 1 | QuickStartAct
 
-export type MetaRunOptionsProps = {
+type MetaRunOptionsProps = {
   mode: MetaRunMode
   /** Today's Daily Climb modifiers; the Daily Climb is chosen from the solo menu. */
   dailyModifiers?: readonly DailyModifier[]

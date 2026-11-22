@@ -5,9 +5,8 @@ import { courierCost, type CourierOffer } from '../game/noncombat.ts'
 import { potionDef, relicDef } from '../game/relics.ts'
 import { mandatoryChoicePending, type CombatState } from '../game/combat.ts'
 import type { Player } from '../game/types.ts'
+import { hasSozu } from './event-loot.ts'
 import { ItemImage } from './ItemImage.tsx'
-
-const hasSozu = (player: Player) => player.relics.some((relic) => relic.defId === 'sozu')
 
 export const courierReady = (player: Player | undefined, usedBy: string[]) =>
   Boolean(player && !player.dead && !usedBy.includes(player.id) && player.relics.some((relic) => relic.defId === 'the_courier'))

@@ -43,7 +43,7 @@ type Point = { x: number; y: number }
 type ControlRef = { selector: string; name?: string; value?: string; checked?: boolean; drag?: true; card?: true; target?: true }
 type RunLogChoice = { source: ControlRef; steps?: ControlRef[]; target?: ControlRef }
 type RunLogPatch = { path: (string | number)[]; value?: unknown; remove?: true }
-export type RunLogEvent = { patch: RunLogPatch[]; choice?: RunLogChoice; viewerId?: string }
+type RunLogEvent = { patch: RunLogPatch[]; choice?: RunLogChoice; viewerId?: string }
 export type RunLog = { version: 2; runId: string; initial: RunState; events: RunLogEvent[] }
 
 /** Drops a skin its hero cannot wear, so an old or edited log still replays with the default look. */

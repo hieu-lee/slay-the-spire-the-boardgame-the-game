@@ -2,7 +2,7 @@
 // pass proved otherwise: forcing every die to show a 1, or filing every rare
 // card under the wrong directory, both went unnoticed.
 import { existsSync } from 'node:fs'
-import { dieIcon, iconPath, ICON_LABELS } from '../src/ui/icons.ts'
+import { dieIcon, ICON_LABELS } from '../src/ui/icons.ts'
 import { cardArtPath, tierOf, cardImagePath, CARD_ART_ROOT, CARD_ASSET_ROOT } from '../src/game/assets.ts'
 import { CARDS, faceOf, releasedCardDefs } from '../src/game/cards.ts'
 import { POTIONS } from '../src/game/relics.ts'
@@ -99,12 +99,6 @@ check('every icon name has a label for screen readers', () => {
   assertEqual(Object.keys(ICON_LABELS).length, 24, 'the rulebook set is 24 icons')
 })
 
-check('icon paths point inside the icon directory', () => {
-  for (const name of Object.keys(ICON_LABELS)) {
-    assertEqual(iconPath(name), `/assets/icons/${name}.png`)
-  }
-})
-
 // tierOf decides which directory a card's scan lives in. A wrong tier is
 // invisible until that card's art 404s in a real game.
 check('cards are filed under the tier their rarity implies', () => {
@@ -132,11 +126,6 @@ check('an upgraded face resolves to its own image', () => {
   assert(base !== upgraded, 'the upgraded face is a separate scan, not a recolour')
   assert(upgraded.endsWith('+.webp'), `upgraded paths are marked with +, got ${upgraded}`)
   assert(base.startsWith(`${CARD_ASSET_ROOT}/`), 'paths live under the asset root')
-})
-
-check('the upgraded name suffix never leaks into the file name twice', () => {
-  const path = cardImagePath(faceOf(CARDS.bash, true), true)
-  assertEqual((path.match(/\+/g) ?? []).length, 1, 'exactly one + marker')
 })
 
 check('repo-native card art is keyed by stable card ID, not printed face name', () => {

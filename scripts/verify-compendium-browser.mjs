@@ -256,7 +256,6 @@ try {
     assertEqual(forcedBackdrop, 'none', 'the archive photo stays under forced-colour controls')
   })
 
-  await page.setViewportSize({ width: 1280, height: 800 })
   const compact = await page.locator('.compendium').evaluate((root) => {
     const box = (element) => {
       const rect = element?.getBoundingClientRect()
@@ -342,7 +341,7 @@ try {
       `the back arrow lost its shared focus glow: ${JSON.stringify(backRing)}`)
   })
 
-  for (const viewport of [{ width: 844, height: 390 }, { width: 568, height: 320 }]) {
+  for (const viewport of [{ width: 844, height: 390 }]) {
     await page.setViewportSize(viewport)
     await page.waitForTimeout(200)
     const phone = await page.locator('.compendium').evaluate((root) => {

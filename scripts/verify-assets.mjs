@@ -111,7 +111,7 @@ import {
 
 suite('assets')
 
-check('every rigged animation has a Safari hardware-video companion', () => {
+check('every hero rig animation has a current Safari hardware-video companion', () => {
   const manifestPath = join(repoRoot, 'scripts/animation/safari-video-sources.json')
   assert(existsSync(manifestPath), 'missing Safari animation manifest; run pnpm sync:combat-video')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))

@@ -136,11 +136,6 @@
   100% { opacity: 0; transform: translate3d(12%, -28%, 0) scale(1.35); }
 }
 
-@keyframes enemy-fade {
-  0%, 18% { opacity: 1; transform: translate3d(0, 0, 0); }
-  100% { opacity: 0; transform: translate3d(4%, -5%, 0); }
-}
-
 .hand-area {
   /* Safari can shorten the visible viewport without changing vh-sized actors. */
   flex-shrink: 0;
@@ -610,24 +605,4 @@
   :root { --card-width: 2.75rem; }
 
   .board { min-height: 10rem; }
-}
-
-@media (min-width: 30.0625rem) and (max-width: 49.9375rem) and (orientation: portrait) {
-  .combat__end-turn { top: 4rem; right: 1rem; bottom: auto; }
-}
-
-@media (orientation: portrait) and (max-width: 480px) {
-  .combat[data-character='slime_boss'] .combat__end-turn {
-    top: 5.4rem;
-  }
-
-  .combat__end-turn {
-    position: absolute;
-    top: 3.25rem;
-    right: auto;
-    bottom: auto;
-    left: 4rem;
-    width: 6.2rem;
-    min-width: 6.2rem;
-  }
 }

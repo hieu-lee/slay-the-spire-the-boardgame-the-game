@@ -113,13 +113,6 @@
   background: transparent;
 }
 
-/* The reveal keys were a small key, a wide key and a centred key on one screen.
-   All three are one banner now. */
-.sts-scope .reward-screen__unrevealed { gap: 0.5rem; }
-
-.sts-scope .reward-screen__unrevealed > button { justify-content: flex-start; }
-.sts-scope .reward-screen__unrevealed > .muted { text-align: center; }
-
 /* The removal picker laid the whole deck out in one non-wrapping row, so past
    about eight cards the rest scrolled off behind a horizontal scroller —
    reachable, but nothing on screen said so. */

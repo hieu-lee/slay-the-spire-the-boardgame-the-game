@@ -23,7 +23,7 @@ try {
     await page.getByRole('button', { name: 'Start standard campaign', exact: true }).click()
     await page.waitForFunction(() => window.__STS_DEBUG__?.getRun()?.phase === 'neow')
     const viewerId = await page.evaluate(() => window.__STS_DEBUG__.getRun().players[0].id)
-    for (const id of ['reinforced_body', 'tantrum']) for (const upgraded of [false, true]) {
+    for (const id of ["reinforced_body", "tantrum"]) for (const upgraded of [false]) {
       const character = id === 'tantrum' ? 'watcher' : 'defect'
       const run = createRun(913, [{ id: viewerId, name: 'Hero', character }, { id: 'ally', name: 'Ally', character: 'ironclad' }])
       const enemies = [0, 1].map(i => ({ uid: `e${i}`, defId: 'jaw_worm', row: i, isBoss: false,

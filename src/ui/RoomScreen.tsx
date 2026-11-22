@@ -32,7 +32,7 @@ import { CardRewardPicker } from "./CardRewardPicker.tsx";
 import { MapScreen } from "./MapScreen.tsx";
 import { EventDie, forgetShownRolls } from "./EventDie.tsx";
 import { rolledTable } from "./die-outcomes.ts";
-import { defaultLootChoices, freePotionSlots, lootHolders, planEventPotions } from "./event-loot.ts";
+import { defaultLootChoices, freePotionSlots, hasSozu, lootHolders, planEventPotions } from "./event-loot.ts";
 import type { SpireMap } from "../game/map.ts";
 import type { ActionOutcome } from "../multiplayer/useRoomSession.ts";
 
@@ -88,7 +88,6 @@ type PropsPledgeMap = Record<
 type EventCardSlot = (card: Player["deck"][number]) => boolean;
 type PublicPlayerCounts = { cardRewardCount?: number; tradableDeckCount?: number };
 
-const hasSozu = (player: Player) => player.relics.some((relic) => relic.defId === "sozu");
 
 function eventCardSlots(effects: readonly EventEffect[], die: number | undefined, player: Player, players: readonly Player[]): EventCardSlot[] {
   const slots: EventCardSlot[] = [];

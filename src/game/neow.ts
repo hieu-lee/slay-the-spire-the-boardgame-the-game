@@ -210,20 +210,6 @@ export const NEOW_CARDS: readonly NeowCard[] = [
   ] },
 ] as const
 
-export function dealNeow(rng: RngState, playerIds: readonly string[], colorlessUnlocked: boolean): {
-  deck: string[]
-  dealt: Record<string, string>
-} {
-  if (playerIds.length < 1 || playerIds.length > 4 || new Set(playerIds).size !== playerIds.length) {
-    throw new Error('Neow requires 1 to 4 unique players')
-  }
-  const shuffled = shuffle(rng, NEOW_CARDS.filter((card) => colorlessUnlocked || !card.unlocked).map((card) => card.id))
-  return {
-    dealt: Object.fromEntries(playerIds.map((playerId, index) => [playerId, shuffled[index]!])),
-    deck: shuffled.slice(playerIds.length),
-  }
-}
-
 export function dealBlessings(
   rng: RngState,
   players: readonly { id: string; character: CharacterId }[],

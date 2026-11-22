@@ -58,17 +58,6 @@
 }
 
 .sts-scope .reward-screen__player h3 { margin: 0; color: var(--light-yellow); }
-.sts-scope .reward-screen__unrevealed { min-height: 0; margin: 0; }
-.sts-scope .reward-screen__unrevealed button {
-  min-height: 3.5rem;
-  padding-left: 3.25rem;
-  text-align: left;
-  background:
-    radial-gradient(circle at 1.65rem 50%, #e8e0ce 0 0.55rem, transparent 0.6rem),
-    linear-gradient(180deg, #61777c, #405459);
-  border-color: rgb(223 231 215 / 0.34);
-  color: #f4ead4;
-}
 
 .sts-scope .reward-screen__cards {
   /* Off the ROW's own width, not the viewport's. The row is a near-constant
@@ -85,5 +74,4 @@
   padding: 0.5rem 0 0.8rem;
 }
 
-.sts-scope .reward-screen__choice { flex-basis: var(--card-width); }
 .sts-scope .reward-screen__cards > .card { width: var(--card-width); }

@@ -12,12 +12,10 @@ replace glossy neon filaments. Original subjects, palettes, directions and empty
 ring centers are preserved. Character bodies and physical enemy weapon props are
 already painted in this style and are not effects sprites.
 
-`combat-vfx-restyle.json` records the source commit, input hashes, exact prompts
-(`promptPrefix` + each `subjectPrompt`), reference paths, generated-image hashes,
-registration, final geometry and final WebP hashes. To reproduce an edit, obtain
-its first input (`path`) from `sourceCommit`; for the three new strips, use
-the committed restyled `inputPath` identified by `inputVersion`. Append the four
-reference images in their listed order. Pass its complete prompt to the bundled CLI with `--no-augment`.
+The per-sprite generation record (source commit, input hashes, exact prompts,
+reference paths, generated-image hashes, registration and final geometry) was
+`docs/combat-vfx-restyle.json`; it was removed from the tree and remains in git
+history.
 Generated PNG intermediates remain local under `artifacts/vfx-restyle/generated/`.
 
 ## Runtime registration

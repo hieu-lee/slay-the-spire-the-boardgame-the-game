@@ -5,10 +5,8 @@
 // this module with the public TTS sheets without reverse-engineering effects.
 import { registerCardDefinitions, STARTER_DECKS } from '../cards.ts'
 import type { Amount, CardDef, Effect, TargetScope } from '../cards.ts'
-import type { CardInstance, Player, Rarity, SlimeInstance } from '../types.ts'
+import type { Rarity, SlimeInstance } from '../types.ts'
 
-export const SLIME_BOSS_MAX_HP = 9
-export const SLIME_BOSS_PUBLIC_VERSION = '1.47'
 export const SLIME_BOSS_GOLDEN_TICKET = {
   name: 'Golden Ticket',
   deck: 'rewards',
@@ -321,18 +319,8 @@ export const SLIME_BOSS_REWARD_DECK = copies('rewards')
 export const SLIME_BOSS_RARE_DECK = copies('rare')
 STARTER_DECKS.slime_boss = [...SLIME_BOSS_STARTER_DECK]
 
-export function makeSlimeBossStarterDeck(makeUid: (defId: string) => string): CardInstance[] {
-  return SLIME_BOSS_STARTER_DECK.map((defId) => ({ uid: makeUid(defId), defId, upgraded: false }))
-}
-
 export function bruiserSlime(uid = 'slime:bruiser'): SlimeInstance {
   return { card: { uid, defId: id('Bruiser Slime'), upgraded: false }, level: 1, vigor: 0, commandsThisTurn: 0, vigorLossAtEndOfTurn: 0, vigorTriggerUsedThisTurn: false }
-}
-
-/** Marks an existing Player as Slime Boss data without widening the base-game CharacterId. */
-export function setupSlimeBossPlayer(player: Player, makeUid: (defId: string) => string): Player {
-  const deck = makeSlimeBossStarterDeck(makeUid)
-  return { ...player, hp: SLIME_BOSS_MAX_HP, maxHp: SLIME_BOSS_MAX_HP, deck, draw: [...deck], hand: [], discard: [], exhaust: [], powers: [], slimes: [bruiserSlime()] }
 }
 
 export function slimeDef(slime: SlimeInstance): CardDef {

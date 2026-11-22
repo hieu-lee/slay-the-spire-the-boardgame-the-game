@@ -4,13 +4,9 @@
   gap: 0.9rem;
   align-items: center;
   /* Depth, so the climb reads as a place rather than a page. */
-  background:
-    radial-gradient(ellipse at 50% 0%, rgb(72 40 30 / 0.5), transparent 60%),
-    radial-gradient(ellipse at 50% 100%, rgb(20 16 16 / 0.8), transparent 55%);
   overflow-y: auto;
   min-height: 0;
   flex: 1;
-  padding: 0.5rem 0;
 }
 
 .map[hidden] {
@@ -19,15 +15,11 @@
 
 .map__hint {
   margin: 0;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
-  font-size: 0.72rem;
-  color: var(--gold);
 }
 
 .map__row {
   display: flex;
-  gap: 1.6rem;
   justify-content: center;
   flex-wrap: wrap;
 }
@@ -48,7 +40,6 @@
   height: 52px;
   padding: 0;
   border-radius: 50%;
-  color: var(--ink-dim);
   background:
     radial-gradient(circle at 50% 34%, rgb(58 48 40 / 0.95), rgb(24 20 18 / 0.95)),
     var(--bg-panel);

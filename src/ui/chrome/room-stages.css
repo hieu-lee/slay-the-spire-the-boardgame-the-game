@@ -76,8 +76,6 @@
 }
 
 .sts-scope .event-options button {
-  min-height: 3.6rem;
-  padding: 0.65rem 1.2rem 0.65rem 1.5rem;
   border-color: #a96a41;
   color: #f7ecd7;
   background: linear-gradient(90deg, rgb(89 40 29 / 0.96), rgb(45 31 28 / 0.96));

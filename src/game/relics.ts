@@ -514,21 +514,6 @@ export function createRelicDecks(rng: RngState, ruleset: 'base' | 'downfall' = '
   }
 }
 
-export type RelicOffer = { choices: string[]; deck: string[] }
-
-/** Reveal from the top without leaking the remaining deck to a client payload. */
-export function revealRelics(deck: readonly string[], count: number): RelicOffer {
-  const size = Math.max(0, Math.min(deck.length, Math.floor(count)))
-  return { choices: deck.slice(0, size), deck: deck.slice(size) }
-}
-
-/** Gain chosen cards and put every skipped/unused reveal on the bottom (p.8). */
-export function resolveRelicOffer(offer: RelicOffer, gained: readonly string[]): { gained: string[]; deck: string[] } | undefined {
-  if (new Set(gained).size !== gained.length || gained.some((id) => !offer.choices.includes(id))) return undefined
-  const chosen = new Set(gained)
-  return { gained: [...gained], deck: [...offer.deck, ...offer.choices.filter((id) => !chosen.has(id))] }
-}
-
 /** Boss reward reveal is players + 1, except solo always reveals 3 (p.8). */
 export function bossRelicOfferSize(playerCount: number): number {
   return playerCount === 1 ? 3 : Math.max(0, Math.floor(playerCount)) + 1

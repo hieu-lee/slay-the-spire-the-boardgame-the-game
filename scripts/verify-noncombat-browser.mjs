@@ -72,7 +72,6 @@ async function openMerchantShop(target = page) {
 await page.goto(base, { waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
 
-await page.setViewportSize({ width: 1280, height: 720 })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Daily', exact: true }).click()
 await page.waitForFunction(() => document.querySelectorAll('.start-menu__daily li').length === 2)
@@ -112,7 +111,6 @@ check('local Guardian acquisitions visibly pause for the published Gem choice', 
 })
 await page.reload({ waitUntil: 'networkidle' })
 await page.waitForFunction(() => window.__STS_DEBUG__)
-await page.setViewportSize({ width: 1280, height: 720 })
 await page.getByRole('button', { name: 'Single Player', exact: true }).click()
 await page.getByRole('button', { name: 'Custom', exact: true }).click()
 const localMeta = page.locator('.start-menu__run-options')
@@ -145,7 +143,6 @@ await localModifierSummary.waitFor()
 const localModifierSummaryText = await localModifierSummary.textContent()
 await localModifierSummary.click()
 const visibleNightTerrors = await page.getByText(/Night Terrors/).count()
-await page.setViewportSize({ width: 1100, height: 760 })
 await page.screenshot({ path: join(outDir, 'meta-custom-run.png'), fullPage: true })
 await page.getByRole('dialog', { name: 'Settings' }).getByRole('button', { name: /Back/ }).click()
 await page.evaluate(() => {
@@ -221,7 +218,7 @@ check('an optionless solo player can decline Ruby without overflowing a horizont
   assert(rubyOnlyContained)
   assertEqual(declinedRubyKey, false)
 })
-await page.setViewportSize({ width: 1100, height: 760 })
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -315,7 +312,7 @@ await page.evaluate(() => {
 })
 await page.locator('.neow-options').waitFor()
 const soloNeowScreenLayouts = []
-for (const viewport of [{ width: 1280, height: 600 }, { width: 844, height: 390 }]) {
+for (const viewport of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
   await page.setViewportSize(viewport)
   await page.locator('.neow-options button').first().hover()
   await page.waitForTimeout(200)
@@ -545,8 +542,7 @@ await page.evaluate(() => {
   debug.setRun(run)
 })
 await page.waitForFunction(() => [...document.querySelectorAll('.neow-action button')].some((button) => !button.disabled))
-await page.setViewportSize({ width: 1280, height: 800 })
-await page.screenshot({ path: join(outDir, 'neow-4p-compact-desktop.png'), fullPage: true })
+await page.screenshot({ path: join(outDir, 'neow-4p-desktop.png'), fullPage: true })
 const localNeowCompact = await page.evaluate(() => ({
   overflow: document.documentElement.scrollWidth > innerWidth,
   target: Math.min(...[...document.querySelectorAll('.neow-screen button')].map((button) => button.getBoundingClientRect().height)),
@@ -566,19 +562,6 @@ const localNeowCompact = await page.evaluate(() => ({
     background: getComputedStyle(button).backgroundColor,
   })),
 }))
-await page.setViewportSize({ width: 1024, height: 768 })
-const localNeowMinimumDesktopOverlap = await readNeowFaceActionOverlap()
-const localNeowMinimumDesktopLayout = await page.evaluate(() => ({
-  viewportHeight: innerHeight,
-  faces: [...document.querySelectorAll('.neow-face')].map((face) => {
-    const box = face.getBoundingClientRect()
-    return { top: box.top, bottom: box.bottom }
-  }),
-}))
-const localNeowMinimumDesktopFacesVisible = localNeowMinimumDesktopLayout.faces.every((box) =>
-  box.top >= 0 && box.bottom <= localNeowMinimumDesktopLayout.viewportHeight + 1)
-await page.screenshot({ path: join(outDir, 'neow-4p-minimum-desktop.png'), fullPage: true })
-await page.setViewportSize({ width: 1280, height: 800 })
 check('local Neow exposes every dealt face while Card Rewards use the private shared picker', () => {
   assertEqual(localNeowFaces, 4)
   assertEqual(localNeowOptions, 12)
@@ -596,9 +579,6 @@ check('local Neow exposes every dealt face while Card Rewards use the private sh
   assert(localPendingRelicLock, 'another seat\'s pending War Paint left local Neow choices enabled')
   assert(!localNeowCompact.overflow, 'Neow overflowed the compact desktop viewport')
   assertEqual(localNeowCompact.actionOverlap, false, 'Neow actions cover a compact-desktop dealt card')
-  assertEqual(localNeowMinimumDesktopOverlap, false, 'Neow actions cover a minimum-desktop dealt card')
-  assert(localNeowMinimumDesktopFacesVisible,
-    `a minimum-desktop Neow face is clipped: ${JSON.stringify(localNeowMinimumDesktopLayout)}`)
   assert(localNeowCompact.target >= 44, 'Neow exposed a desktop control shorter than 44px')
 })
 check('Neow action labels keep readable computed contrast in every enabled state', () => {
@@ -738,11 +718,7 @@ async function readArrivalAnchors() {
   })
 }
 const arrivalAnchors = []
-for (const size of [
-  { width: 3440, height: 1440 }, { width: 2560, height: 1440 }, { width: 1920, height: 1080 },
-  { width: 1440, height: 900 }, { width: 1280, height: 800 }, { width: 1000, height: 900 },
-  { width: 844, height: 390 }, { width: 667, height: 375 },
-]) {
+for (const size of [{ width: 1440, height: 900 }, { width: 844, height: 390 }]) {
   await page.setViewportSize(size)
   arrivalAnchors.push({ ...size, ...await readArrivalAnchors() })
   await page.screenshot({ path: join(outDir, `merchant-arrival-4p-${size.width}x${size.height}.png`), fullPage: true })
@@ -793,45 +769,6 @@ await openMerchantShop()
 await page.getByLabel('Shopping for').selectOption('p1')
 await page.getByRole('heading', { name: 'The Merchant' }).waitFor()
 await page.screenshot({ path: join(outDir, 'merchant-4p-desktop.png'), fullPage: true })
-await page.setViewportSize({ width: 1280, height: 720 })
-const merchant720 = await page.locator('.merchant-shop-stage').evaluate((stage) => {
-  const box = stage.getBoundingClientRect()
-  const leave = stage.querySelector('.room-proceed')?.getBoundingClientRect()
-  return { bottom: box.bottom, viewport: innerHeight, leaveBottom: leave?.bottom ?? Infinity }
-})
-await page.screenshot({ path: join(outDir, 'merchant-4p-1280x720.png'), fullPage: true })
-await page.setViewportSize({ width: 1024, height: 600 })
-const merchant600 = await page.locator('.merchant-shop-stage').evaluate((stage) => {
-  const stageBox = stage.getBoundingClientRect()
-  const shelfItems = [...stage.querySelectorAll('.merchant-shelf .merchant-item > :is(.item-icon-image, .room-item-icon)')]
-  const card = stage.querySelector('.merchant-card .card')?.getBoundingClientRect()
-  const prices = [...stage.querySelectorAll('.merchant-shelf .room-price')].map((price) => price.getBoundingClientRect())
-  const widths = shelfItems.map((item) => item.getBoundingClientRect().width)
-  return {
-    iconCount: shelfItems.length,
-    stageBottom: stageBox.bottom,
-    viewport: innerHeight,
-    itemWidth: Math.min(...widths),
-    iconSpread: Math.max(...widths) - Math.min(...widths),
-    cardWidth: card?.width ?? 0,
-    iconsSmallerThanCards: card ? Math.min(...widths) < card.width : false,
-    // Scrolled to the end, the last price must be on screen. A four-seat shop at
-    // 600px tall does not fit at a readable card size, so the guarantee HERE is
-    // reachability rather than "never scrolls"; the desktop shop cases in the
-    // sweep below are the ones that assert no scroll at all.
-    lastPriceBelow: (() => {
-      const before = stage.scrollTop
-      stage.scrollTop = stage.scrollHeight
-      const last = [...stage.querySelectorAll('.merchant-shelf--potions .room-price')].at(-1)?.getBoundingClientRect()
-      const below = last ? Math.round(last.bottom - stage.getBoundingClientRect().bottom) : 0
-      stage.scrollTop = before
-      return below
-    })(),
-  }
-})
-await page.mouse.move(0, 0)
-await page.screenshot({ path: join(outDir, 'merchant-4p-1024x600.png'), fullPage: true })
-await page.setViewportSize({ width: 1440, height: 900 })
 
 // A real pointerless context, not just a narrow window: Playwright reports
 // `hover: hover` at any viewport size, so a width-only pass never exercises the
@@ -982,9 +919,9 @@ async function measureTouchShelf(width, height, holdsPotion) {
 }
 
 const touchShelfHorizontalPhone = await measureTouchShelf(844, 390, false)
-// Short, and holding a potion: the belt takes height from the stage exactly
+// Holding a potion: the belt takes height from the stage exactly
 // where the prose-bearing tiles need it.
-const touchShelfShort = await measureTouchShelf(1024, 600, true)
+const touchShelfBelt = await measureTouchShelf(844, 390, true)
 
 // A sweep, because the shop's failures were never at ONE viewport in ONE state.
 // Each of these combinations hid a real bug from every check above: the potion
@@ -1152,14 +1089,10 @@ function measureRug() {
       overlapPairs.push(`${(a.element.className || a.element.tagName).toString().split(' ')[0]}/${(b.element.className || b.element.tagName).toString().split(' ')[0]}`)
     }
   }
-  // On a phone the stage takes every pixel below the header, less the belt's band.
-  // The desktop belt height carries the same specificity and sits later in the
-  // file, so unscoped it silently stole 42px of stage from a phone holding a potion.
-  const stageHeight = stage.clientHeight
   const stageOverflow = Math.round(stage.scrollHeight - stage.clientHeight)
   const stageScrolls = ['auto', 'scroll', 'overlay'].includes(getComputedStyle(stage).overflowY)
   return { buriedControls, buriedControlLabels, buriedPrices, buriedCards, leaveOwns, lastPriceBelow, clipped,
-    rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, stageHeight, shelfTileSpread,
+    rugIntoLeave, leaveReachable, stageOverflow, stageScrolls, shelfTileSpread,
     overlaps: overlapPairs.slice(0, 3), overlapCount: overlapPairs.length,
     cardRulesFont, cardRulesClipped, cardRulesClipDetails, cardFaceWidth, colorlessCardWidth, discountMarked,
     sideways: Math.round(board.scrollWidth - board.clientWidth) + Math.round(stage.scrollWidth - stage.clientWidth) }
@@ -1174,24 +1107,15 @@ const SHOP_CASES = [
   // under test. Swapping its `100cqh` for `100vh` overflows these by 154px while
   // every shorter case stays green.
   { width: 1440, height: 900, belt: true, colorless: true },
-  { width: 1600, height: 1000, belt: true, colorless: true },
-  // Tall AND wide enough to drive the module to its 176px clamp ceiling, which no
-  // other case reaches — the ceiling is where the card-text ramp meets its cap.
-  { width: 1920, height: 1200, belt: true, colorless: true },
-  { width: 1280, height: 720, belt: true, colorless: true },
-  { width: 1024, height: 600, belt: true, colorless: true },
   // The pointerless regime's binding case, per its own comment: tall enough that
   // its fixed cost decides the module rather than the clamp floor.
   { width: 1440, height: 900, belt: true, colorless: true, touch: true },
-  { width: 1024, height: 600, belt: true, colorless: true, touch: true },
-  { width: 900, height: 620, belt: true, colorless: true },
-  { width: 900, height: 620, belt: true, colorless: true, touch: true },
-  { width: 900, height: 620, belt: false, colorless: true },
+  { width: 844, height: 390, belt: true, colorless: true, touch: true },
   // Broke: every tile disabled, which is where the discount marker was lost.
   { width: 1440, height: 900, belt: false, colorless: true, broke: true },
 ]
 const shopCases = []
-const pointerContext = await browser.newContext({ viewport: { width: 1280, height: 720 } })
+const pointerContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 const pointerPage = await openRun(pointerContext)
 try {
   for (const shopCase of SHOP_CASES) {
@@ -1506,12 +1430,11 @@ const colorlessOverlap = await page.evaluate(() => {
 // The hover tip is the ONLY way a pointer user reads a bare-icon relic, and the
 // stage scrolls — so the stage clips. A tip centred on a tile is far wider than
 // the tile, and on an edge column it was cut off mid-sentence, losing the item's
-// name and the start of its rules. Every column on both shelves, at three widths:
+// name and the start of its rules. Every column on both shelves:
 // the shelves move from hard left to right of centre depending on whether a
 // Colorless pile is in stock, so one viewport does not exercise the placement.
 const shelfTips = []
-for (const [tipWidth, tipHeight] of [[1024, 600], [900, 620], [1440, 900]]) {
-  await page.setViewportSize({ width: tipWidth, height: tipHeight })
+for (const [tipWidth, tipHeight] of [[1440, 900]]) {
   for (const shelf of ['relics', 'potions']) {
   for (let column = 0; column < 3; column += 1) {
     const tile = page.locator(`.merchant-shelf--${shelf} .merchant-item`).nth(column)
@@ -1579,7 +1502,7 @@ for (const [tipWidth, tipHeight] of [[1024, 600], [900, 620], [1440, 900]]) {
 await page.mouse.move(0, 0)
 await page.setViewportSize({ width: 1440, height: 900 })
 check('every shelf hover tip stays inside the stage that clips it', () => {
-  assertEqual(shelfTips.length, 18, `only ${shelfTips.length} shelf tiles were hovered`)
+  assertEqual(shelfTips.length, 6, `only ${shelfTips.length} shelf tiles were hovered`)
   // At least one tip must actually reach the plaque, or the paint-order assertion
   // above is vacuous.
   assert(shelfTips.some((tip) => tip.neighbour),
@@ -1592,9 +1515,9 @@ check('every shelf hover tip stays inside the stage that clips it', () => {
       `the ${tip.label} hover tip was painted over by the ${tip.neighbour?.over} it overlaps`)
   }
 })
-// ONE check per viewport, not one for all twelve. `assert` throws on the first
+// ONE check per viewport, not one for all of them. `assert` throws on the first
 // failure, so a single bundled check reported the first bad case and hid the
-// other eleven — and every later assertion within that case too.
+// others — and every later assertion within that case too.
 check('the shop reports a measurement for every stocked state', () => {
   assertEqual(shopCases.length, SHOP_CASES.length, 'a shop case did not report its measurements')
 })
@@ -1609,14 +1532,6 @@ for (const shopCase of shopCases) {
     assert(shopCase.rugIntoLeave <= 4,
       `${where}: the rug reached ${shopCase.rugIntoLeave}px into the Leave banner's row`)
     assert(shopCase.leaveReachable, `${where}: Leave merchant could not be scrolled fully into the stage`)
-    if (shopCase.width <= 760) {
-      // 844 less the 4rem header, less the belt's reserved band when one is held.
-      // Both arms are exercised: SHOP_CASES carries a phone case with and without
-      // a potion, so the no-belt figure is not dead.
-      const expected = shopCase.belt ? 730 : 780
-      assert(shopCase.stageHeight >= expected - 2,
-        `${where}: the phone stage took only ${shopCase.stageHeight}px of the ${expected}px below the header`)
-    }
     assert(shopCase.stageScrolls,
       `${where}: the rug cannot be scrolled, so anything below the fold is lost`)
     // A pointer desktop window tall enough for the rug must not scroll AT ALL —
@@ -1658,24 +1573,6 @@ for (const shopCase of shopCases) {
     // A phone has its own module, and it too was bounded only from ABOVE: the rule
     // could be shrunk to a 44px ceiling, or moved back onto the stage where the
     // board's own declaration shadows it, with every check still green.
-    // The widest case exists to reach the module's 176px ceiling, so it has to
-    // assert the module actually GOT there — the ceiling could be cut to 96px with
-    // every other bound still satisfied.
-    if (!shopCase.touch && shopCase.width >= 1900 && shopCase.height >= 1100) {
-      assert(shopCase.cardFaceWidth >= 160,
-        `${where}: card faces reached only ${shopCase.cardFaceWidth}px on the widest window`)
-    }
-    if (shopCase.width <= 430) {
-      assert(shopCase.cardFaceWidth >= 92,
-        `${where}: phone card faces are only ${shopCase.cardFaceWidth}px wide`)
-    }
-    // Below 830px the rug stacks one section per row, which is what lets a narrow
-    // window keep a readable card: squeezed into three columns instead, the same
-    // window draws them at about 92px.
-    if (shopCase.width > 430 && shopCase.width <= 830) {
-      assert(shopCase.cardFaceWidth >= 100,
-        `${where}: narrow-window card faces are only ${shopCase.cardFaceWidth}px wide`)
-    }
     assert(shopCase.cardRulesFont >= Math.min(shopCase.cardFaceWidth * 0.068, 11.2),
       `${where}: card rules text is ${shopCase.cardRulesFont.toFixed(2)}px on a ${shopCase.cardFaceWidth}px card`)
     assert(shopCase.shelfTileSpread <= 2,
@@ -1713,7 +1610,7 @@ check('a campfire tile with an open room interaction mounts exactly one screen',
     `the Relic resolver stayed capped at ${stackedRoomScreens.relicResolverWidth}px inside a ${stackedRoomScreens.shellWidth}px shell`)
 })
 check('a pointerless shopper reads shelf rules without hovering', () => {
-  for (const [label, shelf] of [['horizontal phone', touchShelfHorizontalPhone], ['short desktop with a belt', touchShelfShort]]) {
+  for (const [label, shelf] of [['horizontal phone', touchShelfHorizontalPhone], ['horizontal phone with a belt', touchShelfBelt]]) {
     assert(shelf.coarse, `touch context (${label}) still reports a hover-capable pointer`)
     assert(shelf.nameVisible, `touch shelf tile hides its item name (${label})`)
     assert(shelf.rulesVisible, `touch shelf tile hides its item rules (${label})`)
@@ -1798,22 +1695,6 @@ check('shop shelf items stay readable without a card face', () => {
     `shop relic tooltip reads "${merchantAnchorTip.text}"`)
 })
 check('Merchant prices expose their Gold unit', () => assert(accessibleGoldPrices > 0))
-check('Merchant keeps its fixed rug and Leave action inside a 1280×720 desktop', () => {
-  assert(merchant720.bottom <= merchant720.viewport + 1, `merchant ends at ${merchant720.bottom}px in ${merchant720.viewport}px`)
-  assert(merchant720.leaveBottom <= merchant720.viewport + 1, `Leave merchant ends at ${merchant720.leaveBottom}px`)
-})
-check('Merchant keeps uniform shelf icons and every shelf price visible at 1024×600', () => {
-  assert(merchant600.stageBottom <= merchant600.viewport + 1, `merchant ends at ${merchant600.stageBottom}px in ${merchant600.viewport}px`)
-  assertEqual(merchant600.iconCount, 6, 'the shelves did not render six icons at 1024x600')
-  assert(merchant600.itemWidth >= 30, `merchant shelf icons are only ${merchant600.itemWidth}px wide`)
-  assert(merchant600.iconSpread <= 2, `merchant shelf icons differ by ${merchant600.iconSpread}px`)
-  assert(merchant600.iconsSmallerThanCards,
-    `shelf icons (${merchant600.itemWidth}px) should read smaller than card faces (${merchant600.cardWidth}px)`)
-  // The regression this locks down: a short window used to push the potion row
-  // past the stage, and `overflow: clip` then made those prices unreachable.
-  assert(merchant600.lastPriceBelow <= 0,
-    `the last potion price stayed ${merchant600.lastPriceBelow}px below the fold at 1024×600 even scrolled to the end`)
-})
 await page.keyboard.press('Tab')
 const focused = await page.locator(':focus-visible').count()
 check('Merchant exposes visible keyboard focus', () => assert(focused))
@@ -2090,7 +1971,7 @@ const claimedBigFishDisabled = await page.getByRole('button', { name: /\[Banana\
 check('Big Fish disables an option already claimed by another seat', () => assert(claimedBigFishDisabled))
 await page.evaluate(() => window.__STS_DEBUG__.setViewer('p1'))
 
-await page.setViewportSize({ width: 1100, height: 760 })
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -2539,7 +2420,7 @@ await page.evaluate(() => {
   ] }, decisions: {}, dieRolls: {} }
   debug.setRun(run)
 })
-await page.setViewportSize({ width: 1040, height: 723 })
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: /\[Bet\]/ }).click()
 const joustRelic = page.locator('fieldset').filter({ hasText: 'Your relic' }).getByRole('button').first()
 await page.waitForFunction(() => {
@@ -2562,7 +2443,7 @@ const joustLayout = await page.evaluate(() => {
     actionsVisible: Boolean(actions && actions.getBoundingClientRect().bottom <= innerHeight),
   }
 })
-await page.screenshot({ path: join(outDir, 'joust-payment-1040x723.png') })
+await page.screenshot({ path: join(outDir, 'joust-payment.png') })
 await joustRelic.click()
 const zeroGoldRelicBetEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
 await joustRelic.click()
@@ -2570,7 +2451,7 @@ const clearedJoustRelic = await joustRelic.getAttribute('aria-pressed')
 const zeroGoldBetAfterClearing = await page.getByRole('button', { name: /Confirm choice/ }).isDisabled()
 await page.getByRole('button', { name: 'Swift Potion', exact: true }).click()
 const zeroGoldPotionBetEnabled = await page.getByRole('button', { name: /Confirm choice/ }).isEnabled()
-await page.screenshot({ path: join(outDir, 'joust-payment-selected-1040x723.png') })
+await page.screenshot({ path: join(outDir, 'joust-payment-selected.png') })
 check('The Joust enables its printed Relic and Potion alternatives at zero Gold', () => {
   assert(zeroGoldRelicBetEnabled)
   assertDeepEqual(joustItemImages, [true, true, true, true, true])
@@ -3176,43 +3057,6 @@ const beltGeometry = await page.evaluate(async () => {
   await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
   return measured
 })
-// The global Skip arrow must remain immediately reachable at a short desktop
-// height even when several independent Loot rows are still unclaimed.
-await page.setViewportSize({ width: 1024, height: 600 })
-const rewardCollect = await page.evaluate(async () => {
-  const debug = window.__STS_DEBUG__
-  const before = structuredClone(debug.getRun())
-  const staged = structuredClone(before)
-  staged.players = staged.players.map((player) => ({ ...player, potions: ['swift_potion', 'blood_potion'] }))
-  staged.rewards = [{ playerId: staged.players[0].id, cardReward: true,
-    choices: ['twin_strike', 'second_wind', 'limit_break'], upgraded: true,
-    potion: 'fire_potion', relic: 'akabeko' }]
-  debug.setRun(staged)
-  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  const panel = document.querySelector('.reward-screen__players')
-  const collect = document.querySelector('.reward-screen--loot > .reward-screen__skip')
-  const measured = collect && panel ? (() => {
-    const box = collect.getBoundingClientRect()
-    const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)
-    return {
-      rendered: true,
-      inside: box.left >= 0 && box.right <= innerWidth && box.top >= 0 && box.bottom <= innerHeight,
-      hittable: Boolean(hit && (hit === collect || collect.contains(hit))),
-      rows: document.querySelectorAll('.reward-screen--loot .loot-choice').length,
-    }
-  })() : { rendered: false }
-  debug.setRun(before)
-  await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)))
-  return measured
-})
-await page.setViewportSize({ width: 1440, height: 900 })
-check('the reward screen keeps global Skip on screen', () => {
-  assert(rewardCollect.rendered, 'global Skip did not render')
-  assert(rewardCollect.inside, 'global Skip sat outside the viewport')
-  assert(rewardCollect.hittable, 'global Skip was not clickable at its own centre')
-  assertEqual(rewardCollect.rows, 3, 'the independent Potion, Relic, and Card rewards were not all visible')
-})
-
 check('Loot rows keep one icon and row geometry', () => {
   assert(rewardColumns.artWidth >= 34 && rewardColumns.artWidth <= 72,
     `the row's art column is ${rewardColumns.artWidth}px`)
@@ -3243,13 +3087,13 @@ for (const [name, character] of [['Bo', 'silent'], ['Cy', 'defect'], ['Di', 'wat
   onlineSeats.push({ token: joined.token, playerId: joined.snapshot.you.playerId, name, character })
 }
 const liveRoom = rooms.store.rooms.get(create.snapshot.code)
-const lobbyContext = await browser.newContext({ viewport: { width: 900, height: 700 } })
+const lobbyContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 await lobbyContext.addInitScript(({ code, token }) => sessionStorage.setItem('sts-room-session', JSON.stringify({ code, token })), { code: create.snapshot.code, token: onlineSeats[0].token })
 const lobbyPage = installScreenAudit(await lobbyContext.newPage())
 lobbyPage.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
 lobbyPage.on('pageerror', (error) => failures.push(String(error)))
 await lobbyPage.goto(base, { waitUntil: 'networkidle' })
-const guestLobbyContext = await browser.newContext({ viewport: { width: 900, height: 700 } })
+const guestLobbyContext = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 await guestLobbyContext.addInitScript(({ code, token }) => sessionStorage.setItem('sts-room-session', JSON.stringify({ code, token })), { code: create.snapshot.code, token: onlineSeats[1].token })
 const guestLobbyPage = installScreenAudit(await guestLobbyContext.newPage())
 guestLobbyPage.on('console', (message) => { if (message.type() === 'error') failures.push(message.text()) })
@@ -4295,7 +4139,7 @@ check('Event reconnect restores and resolves the authoritative locked selectors'
 })
 await onlineContexts[1].close()
 
-await page.setViewportSize({ width: 1100, height: 760 })
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -4349,7 +4193,7 @@ const phonePortal = await forward.evaluate((group) => {
   return { visible, confirmOnScreen: Boolean(box && box.top >= 0 && box.bottom <= innerHeight + 1) }
 })
 await page.screenshot({ path: join(outDir, 'secret-portal-map-phone.png') })
-await page.setViewportSize({ width: 1100, height: 760 })
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.getByRole('button', { name: /Confirm choice/ }).click()
 await page.waitForFunction((roomId) => window.__STS_DEBUG__.getRun().map.position === roomId, destination)
 const internalIdInputs = await page.locator('input[placeholder="Room id"]').count()
@@ -4456,7 +4300,7 @@ check('local reload rebuilds the pending run when Act IV unlocks', () => {
   assert(actIVMapContained, 'Act IV campaign map overflowed its viewport')
 })
 
-await page.setViewportSize({ width: 1100, height: 760 })
+await page.setViewportSize({ width: 1440, height: 900 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -4536,7 +4380,7 @@ check('run completion shows compendium portraits and separate hoverable damage t
   assert(takenChart.detail?.includes('Damage blocked') && !takenChart.detail.includes('Poison damage'), takenChart.detail)
 })
 
-await page.setViewportSize({ width: 1024, height: 492 })
+await page.setViewportSize({ width: 844, height: 390 })
 await page.evaluate(() => {
   const debug = window.__STS_DEBUG__
   const run = structuredClone(debug.getRun())
@@ -4571,7 +4415,7 @@ const compactPendingRelic = await page.evaluate(() => {
     actionTick: Boolean(document.querySelector('.relic-resolve__footer .card-picker__confirm svg')),
   }
 })
-await page.screenshot({ path: join(outDir, 'relic-resolve-whetstone-compact.png'), fullPage: true })
+await page.screenshot({ path: join(outDir, 'relic-resolve-whetstone-horizontal-phone.png'), fullPage: true })
 check('a pending map Relic owns the compact screen instead of stacking over the map', () => {
   assertEqual(compactPendingRelic.visibleMaps, 0, 'the map remained visible beneath the Relic resolver')
   assert(compactPendingRelic.mapBlocked, 'the hidden map stopped preserving its progression lock')

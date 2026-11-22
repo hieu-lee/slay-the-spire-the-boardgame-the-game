@@ -4,10 +4,6 @@
   gap: 0.25rem;
   min-width: 0;
   text-align: left;
-  background: var(--bg-raised);
-  border: 1px solid var(--edge);
-  border-radius: 5px;
-  padding: 0.4rem 0.5rem;
   transition:
     border-color var(--motion-fast) var(--ease),
     transform var(--motion-fast) var(--ease);
@@ -32,15 +28,6 @@
   display: flex;
   align-items: center;
   gap: 0.4rem;
-}
-
-.enemy__boss-tag {
-  font-size: 0.55rem;
-  letter-spacing: 0.14em;
-  color: var(--blood);
-  border: 1px solid var(--blood);
-  border-radius: 999px;
-  padding: 0 0.3rem;
 }
 
 .enemy__intent {

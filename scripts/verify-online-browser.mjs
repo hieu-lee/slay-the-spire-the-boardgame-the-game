@@ -5290,7 +5290,7 @@ try {
   await onlineSmithPicker.waitFor()
   await onlineSmithPicker.locator('.card-picker__grid > .card').first().click()
   const compactOnlineSmith = []
-  for (const viewport of [{ width: 1244, height: 409 }]) {
+  for (const viewport of [{ width: 844, height: 390 }]) {
     await a.setViewportSize(viewport)
     await a.waitForTimeout(60)
     compactOnlineSmith.push({ ...viewport, ...await ownerGame.locator('.campfire').evaluate((campfire) => {
@@ -5306,7 +5306,7 @@ try {
           !picker.querySelector('.card-picker__confirm').disabled,
       }
     }) })
-    await a.screenshot({ path: join(outDir, '08-compact-online-smith.png'), fullPage: true })
+    await a.screenshot({ path: join(outDir, '08-phone-online-smith.png'), fullPage: true })
   }
   check('online Smith keeps a compact full-card upgrade preview', () => {
     for (const shape of compactOnlineSmith) {

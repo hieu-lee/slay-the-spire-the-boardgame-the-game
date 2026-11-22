@@ -34,9 +34,7 @@ export {
   SLIME_BOSS_CARDS,
   SLIME_BOSS_CARD_COUNT,
   SLIME_BOSS_GOLDEN_TICKET,
-  SLIME_BOSS_MAX_HP,
   SLIME_BOSS_PHYSICAL_DECK_COUNT,
-  SLIME_BOSS_PUBLIC_VERSION,
   SLIME_BOSS_RARE_DECK,
   SLIME_BOSS_REWARD_DECK,
   SLIME_BOSS_STARTER_DECK,
@@ -44,9 +42,7 @@ export {
   commandSlime,
   gainSlimeVigor,
   growSlime,
-  makeSlimeBossStarterDeck,
   removeTemporarySlimeVigor,
-  setupSlimeBossPlayer,
   slimeDef,
 } from './downfall/slime-boss.ts'
 

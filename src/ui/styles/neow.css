@@ -241,11 +241,6 @@
   background: rgb(7 9 10 / .94);
   border: 1px solid #8ca7ad;
 }
-.neow-action--offer .neow-offer__cards {
-  --card-width: clamp(88px, 23vh, 160px);
-  justify-content: safe center;
-}
-.neow-action--offer .neow-offer__cards .card { flex-basis: var(--card-width); }
 
 .neow-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; }
 .neow-options button { min-height: 68px; display: grid; grid-template-columns: 2rem 1fr; align-items: center; gap: .4rem; text-align: left; }
@@ -259,12 +254,9 @@
 .neow-source-choice { display: flex; flex-wrap: wrap; gap: .45rem .8rem; margin: 0 0 .7rem; border: 0; padding: 0; }
 .neow-source-choice legend { width: 100%; color: #e9ddc8; }
 .neow-source-choice label { display: inline-flex; min-height: 2.75rem; align-items: center; gap: .35rem; }
-.neow-offer__cards { display: flex; align-items: flex-start; gap: .7rem; padding: .6rem .2rem; overflow-x: auto; scroll-snap-type: x proximity; }
-.neow-offer__cards .card { flex: 0 0 min(210px, 65vw); scroll-snap-align: center; }
 .neow-offer__actions { display: flex; flex-wrap: wrap; gap: .55rem; }
 .neow-offer button, .neow-options button, .neow-card-choice > button { min-height: 44px; }
 .neow-offer__actions button { flex: 1 1 10rem; }
-.neow-offer__skip { margin-left: auto; }
 
 .neow-card-choice { min-width: 0; margin-top: .9rem; padding: .75rem 0 0; border: 0; }
 .neow-card-choice legend { padding: 0 .4rem; color: #83d9fa; font-weight: 800; }

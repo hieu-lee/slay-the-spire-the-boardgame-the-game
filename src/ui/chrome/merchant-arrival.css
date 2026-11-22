@@ -26,7 +26,6 @@
     max(calc(var(--scene-basis) * var(--scene-fill)), calc(100cqh * var(--scene-ar))),
     calc(var(--scene-basis) / var(--scene-span))
   );
-  --scene-half-height: calc(var(--scene-width) / var(--scene-ar) / 2);
   position: relative;
   container-type: size;
   /* Grid/flex supplies the available height, including a wrapped online HUD. */
@@ -215,30 +214,12 @@
   .sts-scope .merchant-hand { height: 105vh; }
 }
 
-/* A portrait window is far taller than the art it can show, so the room reads as a band
-   of scene in a dark frame. Hang the title and Proceed off the band's own edges — parked
-   in the stage's corners they float in the filler and the band looks like a cut-off
-   image rather than the framed stage it is. */
-@media (orientation: portrait) {
-  .sts-scope .merchant-arrival__title {
-    top: auto;
-    bottom: calc(50% + var(--scene-half-height) + 0.75rem);
-  }
-
-  .sts-scope .merchant-arrival > .room-proceed {
-    top: calc(50% + var(--scene-half-height) + 0.75rem);
-    bottom: auto;
-  }
-}
-
 @media (max-height: 520px) {
   .sts-scope .merchant-arrival > .room-proceed { top: 0.5rem; bottom: auto; }
   /* Short frames crop the art tightly, so hold a lower row of the room in the middle:
      that lifts the floor line clear of the Proceed button parked bottom right. */
   .sts-scope .merchant-arrival { --scene-focus-y: 60%; }
-  /* `bottom: auto` undoes the portrait block above: a frame this short has no room to
-     hang the plaque over the band, and leaving both edges set would stretch it. */
-  .sts-scope .merchant-arrival__title { top: 0.5rem; bottom: auto; left: 0.75rem; max-width: 52%; padding: 0.45rem 0.7rem; }
+  .sts-scope .merchant-arrival__title { top: 0.5rem; left: 0.75rem; max-width: 52%; padding: 0.45rem 0.7rem; }
   .sts-scope .merchant-arrival__title h2 { font-size: clamp(1.35rem, 7vh, 1.85rem); }
   .sts-scope .merchant-arrival__title p { display: none; }
 }

@@ -11,7 +11,7 @@ import { chosenDieRelicAbilities, relicDef } from '../game/relics.ts'
 import type { Enemy, Player } from '../game/types.ts'
 import { relicNote, relicOptionLabel, RelicTooltipAnchor } from './RelicChip.tsx'
 
-export type DieRelicChoice = {
+type DieRelicChoice = {
   owner: Player
   relicIndex: number
   abilityIndex: number

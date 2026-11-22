@@ -2552,7 +2552,6 @@ export const DOWNFALL_ITEMS_MANIFEST = {
   }
 } as const
 
-export type DownfallSheet = (typeof DOWNFALL_ITEMS_MANIFEST.sheets)[number]
 export type DownfallRelic = (typeof DOWNFALL_ITEMS_MANIFEST.relics)[number]
 export type DownfallPotion = (typeof DOWNFALL_ITEMS_MANIFEST.potions)[number]
 export type DownfallBossRelic = (typeof DOWNFALL_ITEMS_MANIFEST.bossRelics)[number]
@@ -2653,7 +2652,6 @@ export const DOWNFALL_RELIC_DECK = DOWNFALL_RELICS.flatMap((item) => Array(item.
 export const DOWNFALL_POTION_DECK = DOWNFALL_POTIONS.flatMap((item) => Array(item.multiplicity).fill(itemId(item.name)))
 export const DOWNFALL_BOSS_RELIC_DECK = DOWNFALL_BOSS_RELICS.flatMap((item) => Array(item.multiplicity).fill(downfallRelicId(item.name)))
 export const DOWNFALL_COLORLESS_DECK = DOWNFALL_COLORLESS_CARDS.flatMap((item) => Array(item.multiplicity).fill(itemId(item.name)))
-export const CORRUPTED_SHARD_SUPPLY = 4
 
 /** Merchant prices transcribed from the coin printed on each v1.47 expansion-only item. */
 export const DOWNFALL_RELIC_COSTS: Readonly<Record<string, number>> = {

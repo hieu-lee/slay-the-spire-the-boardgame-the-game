@@ -1042,19 +1042,20 @@ function CombatScreenView({
   const pendingPlunder = state.pendingPlunderSwitches?.[0]
   const voluntaryActionsBlocked = mandatoryChoicePending(state)
   const requiredHermitChamberCard = state.pendingHermitChamberPlays?.[0]
+  const resetChamber = (open: boolean) => {
+    if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
+    if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
+    if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
+    chamberCloseTimer.current = null
+    chamberContactTimer.current = null
+    chamberReflowFrame.current = null
+    setChamberClosing(false)
+    setChamberContact(false)
+    setChamberReturnFlights([])
+    setChamberOpen(open)
+  }
   useEffect(() => {
-    if (requiredHermitChamberCard?.playerId === viewerId) {
-      if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
-      if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
-      if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
-      chamberCloseTimer.current = null
-      chamberContactTimer.current = null
-      chamberReflowFrame.current = null
-      setChamberClosing(false)
-      setChamberContact(false)
-      setChamberReturnFlights([])
-      setChamberOpen(true)
-    }
+    if (requiredHermitChamberCard?.playerId === viewerId) resetChamber(true)
   }, [requiredHermitChamberCard?.playerId, requiredHermitChamberCard?.cardUids[0], viewerId])
   useEffect(() => () => {
     if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
@@ -1064,30 +1065,12 @@ function CombatScreenView({
   }, [])
   useEffect(() => {
     if (state.phase === 'player') return
-    if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
-    if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
-    if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
-    chamberCloseTimer.current = null
-    chamberContactTimer.current = null
-    chamberReflowFrame.current = null
-    setChamberClosing(false)
-    setChamberContact(false)
-    setChamberReturnFlights([])
-    setChamberOpen(false)
+    resetChamber(false)
   }, [state.phase])
   useEffect(() => {
     if (chamberViewerId.current === viewerId) return
     chamberViewerId.current = viewerId
-    if (chamberCloseTimer.current !== null) window.clearTimeout(chamberCloseTimer.current)
-    if (chamberContactTimer.current !== null) window.clearTimeout(chamberContactTimer.current)
-    if (chamberReflowFrame.current !== null) window.cancelAnimationFrame(chamberReflowFrame.current)
-    chamberCloseTimer.current = null
-    chamberContactTimer.current = null
-    chamberReflowFrame.current = null
-    setChamberClosing(false)
-    setChamberContact(false)
-    setChamberReturnFlights([])
-    setChamberOpen(false)
+    resetChamber(false)
   }, [viewerId])
   useEffect(() => {
     if (!viewer?.chamberSlots) return

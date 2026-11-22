@@ -6,7 +6,7 @@ import type { TutorialStep } from './types.ts'
 // the cards in hand; these are also the lessons for a run that has left its
 // script. Every number is the board game's: see `docs/rules.md` § 11.
 
-export type CharacterLessons = {
+type CharacterLessons = {
   /** Shown before cards can be played in the first fight, for heroes with an opening choice. */
   setup?: readonly TutorialStep[]
   intro: readonly TutorialStep[]
