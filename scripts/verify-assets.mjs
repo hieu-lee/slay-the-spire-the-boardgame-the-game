@@ -1113,7 +1113,7 @@ check('combat animation effects are complete, warmed, alpha WebPs and compact', 
   assert(readFileSync(join(repoRoot, 'src/ui/EnemyCard.tsx'), 'utf8')
     .includes("'combat/vfx/actions/downfall-demon-ground-splat.webp'"),
   'Demon splat is not conditionally preloaded with the rendered boss')
-  assert(readFileSync(join(repoRoot, 'src/ui/CombatScreen.tsx'), 'utf8')
+  assert(readFileSync(join(repoRoot, 'src/ui/combat-screen/useAttackPosePreload.ts'), 'utf8')
     .includes("['hermit-bullet', 'hermit-impact']"), 'Hermit assets are not conditionally preloaded')
   const files = [
     ...expected.map((file) => join(combatVfxRoot, file)),

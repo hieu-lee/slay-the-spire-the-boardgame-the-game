@@ -4,7 +4,7 @@ set -euo pipefail
 if [ "${1:-}" = exec ]; then prompt=$(cat); fi
 codex_bin=${STS_CODEX_BIN:-$HOME/.local/bin/codex}
 auth_file=$HOME/.codex/auth.json
-if [ ! -x "$codex_bin" ] || ! command -v bwrap >/dev/null; then exit 66; fi
+if [ "$(uname -s)" != Linux ] || [ ! -x "$codex_bin" ] || ! command -v bwrap >/dev/null; then exit 66; fi
 if [ -n "${OPENAI_API_KEY:-}" ]; then mkdir -p -m 700 "$HOME/.codex"
 elif [ ! -r "$auth_file" ]; then exit 66
 fi
