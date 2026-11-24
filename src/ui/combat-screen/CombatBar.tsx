@@ -1,4 +1,4 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react'
+import { memo, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import { assetPath, potionIconPath } from '../../game/assets.ts'
 import { cardCost, cardDef, faceOf } from '../../game/cards.ts'
 import {
@@ -160,7 +160,7 @@ export type CombatBarProps = {
   setResyncing: Dispatch<SetStateAction<boolean>>
 }
 
-export function CombatBar({
+export const CombatBar = memo(function CombatBar({
   combatBarRef,
   endTurnRef,
   state,
@@ -720,4 +720,4 @@ export function CombatBar({
       </span>
     </header>
   )
-}
+})

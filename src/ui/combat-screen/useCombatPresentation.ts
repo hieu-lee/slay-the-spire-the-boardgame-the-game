@@ -1,4 +1,4 @@
-import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { cardDef } from '../../game/cards.ts'
 import { enemyTurn, startPlayerTurnWithChoices } from '../../game/combat.ts'
 import type { CombatState } from '../../game/combat.ts'
@@ -80,10 +80,10 @@ export function useCombatPresentation({
     prefersReducedMotion,
   )
   const livePresentationEvents = livePresentation.events
-  const targetPresentationTimings = new Map(state.enemies.map((enemy) => [
+  const targetPresentationTimings = useMemo(() => new Map(state.enemies.map((enemy) => [
     enemy.uid,
     targetPresentationTiming(state, enemy.uid, livePresentation.contactDeadlines),
-  ]))
+  ])), [state, livePresentation.contactDeadlines])
   const visualResetKey = `${state.combatId}:${authoritativeRestoration ?? ''}:${authoritativeConnected ?? ''}:${prefersReducedMotion}`
 
   usePersonalCombatSoundEffects(
@@ -151,22 +151,33 @@ export function useCombatPresentation({
     return delays
   }, [activeVfx])
 
-  const actorVfxFor = (playerId: string) => activeVfx.filter(({ event }) =>
-    event.actorId === playerId && (event.kind !== 'turn' || event.actorTargeted))
-  const playerVfxFor = (playerId: string) => activeVfx.filter(({ event, recipe }) =>
+  const actorVfxFor = useCallback((playerId: string) => activeVfx.filter(({ event }) =>
+    event.actorId === playerId && (event.kind !== 'turn' || event.actorTargeted)), [activeVfx])
+  const playerVfxFor = useCallback((playerId: string) => activeVfx.filter(({ event, recipe }) =>
     event.actorId !== playerId && event.playerIds.includes(playerId) &&
     (event.kind === 'turn' || !['slash', 'blunt', 'projectile', 'poison', 'shiv', 'lightning', 'dark', 'debuff']
-      .includes(recipe.family)))
-  const enemyVfxFor = (enemy: Enemy) => activeVfx
-    .filter((active) => active.event.enemyIds.includes(enemy.uid) && !isEndTurnLightning(active.event) &&
-      !(state.players.some(p => p.id === active.event.actorId && hasStagedAttack(playerVisualId(p))) && isCharacterAttack(active)))
-    .map((active) => createElement(CombatVfx, {
-      key: `${active.event.seq}-${active.recipe.asset}`,
-      active,
-      role: 'target',
-      attackContactMs: prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid, active.event),
-      revealDelayMs: orbEndTurnRevealDelayMs.get(active.event.seq),
-    }))
+      .includes(recipe.family))), [activeVfx])
+  const enemyVfxByUid = useMemo(() => {
+    const map = new Map<string, ReactNode>()
+    if (activeVfx.length === 0) return map
+    for (const enemy of state.enemies) {
+      const nodes: ReactNode[] = []
+      for (const active of activeVfx) {
+        if (!active.event.enemyIds.includes(enemy.uid) || isEndTurnLightning(active.event)) continue
+        if (state.players.some(p => p.id === active.event.actorId && hasStagedAttack(playerVisualId(p))) && isCharacterAttack(active)) continue
+        nodes.push(createElement(CombatVfx, {
+          key: `${active.event.seq}-${active.recipe.asset}`,
+          active,
+          role: 'target',
+          attackContactMs: prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid, active.event),
+          revealDelayMs: orbEndTurnRevealDelayMs.get(active.event.seq),
+        }))
+      }
+      if (nodes.length > 0) map.set(enemy.uid, nodes)
+    }
+    return map
+  }, [activeVfx, orbEndTurnRevealDelayMs, prefersReducedMotion, state])
+  const enemyVfxFor = useCallback((enemy: Enemy) => enemyVfxByUid.get(enemy.uid) ?? null, [enemyVfxByUid])
 
   // The enemy phase stays open until the prior player attacks clear, so bosses
   // start after that shared presentation window while player attacks remain concurrent.
@@ -196,10 +207,10 @@ export function useCombatPresentation({
 
   useCombatSoundEffects(state, viewerId, animateOpeningHand, authoritativeRestoration, authoritativeConnected)
 
-  const weakByActor = [
+  const weakByActor = useMemo(() => [
     ...state.players.map((player) => [`player:${player.id}`, player.weak] as const),
     ...state.enemies.map((enemy) => [`enemy:${enemy.uid}`, enemy.weak] as const),
-  ]
+  ], [state.players, state.enemies])
   const previousWeakByActor = useRef(new Map(weakByActor))
   const previousWeakPresentationSeq = useRef(state.presentationEvents?.at(-1)?.seq ?? 0)
   const previousWeakRestoration = useRef(authoritativeRestoration)

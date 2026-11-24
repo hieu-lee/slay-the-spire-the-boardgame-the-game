@@ -111,40 +111,142 @@ async function persistEvent(runId: string, index: number, event: RunLogEvent) {
   await committed(transaction)
 }
 
+const CARD_PILE_KEYS = new Set(['deck', 'draw', 'hand', 'discard', 'exhaust'])
+
+export function cloneJson<T>(value: T): T {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) {
+    const length = value.length
+    const copy = new Array(length)
+    for (let i = 0; i < length; i += 1) copy[i] = cloneJson(value[i])
+    return copy as T
+  }
+  const source = value as Record<string, unknown>
+  const keys = Object.keys(source)
+  const copy: Record<string, unknown> = {}
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i]!
+    copy[key] = cloneJson(source[key])
+  }
+  return copy as T
+}
+
+export function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') return a !== a && b !== b
+  const isArrayA = Array.isArray(a)
+  if (isArrayA !== Array.isArray(b)) return false
+  if (isArrayA) {
+    const arrA = a as unknown[]
+    const arrB = b as unknown[]
+    const length = arrA.length
+    if (length !== arrB.length) return false
+    for (let i = 0; i < length; i += 1) {
+      if (!deepEqual(arrA[i], arrB[i])) return false
+    }
+    return true
+  }
+  const objA = a as Record<string, unknown>
+  const objB = b as Record<string, unknown>
+  const keysA = Object.keys(objA)
+  const keysB = Object.keys(objB)
+  let definedA = 0
+  for (let i = 0; i < keysA.length; i += 1) {
+    const key = keysA[i]!
+    const valA = objA[key]
+    if (valA === undefined) continue
+    definedA += 1
+    if (!Object.hasOwn(objB, key) || !deepEqual(valA, objB[key])) return false
+  }
+  let definedB = 0
+  for (let i = 0; i < keysB.length; i += 1) {
+    if (objB[keysB[i]!] !== undefined) definedB += 1
+  }
+  return definedA === definedB
+}
+
 export async function startRunLog(run: RunState) {
-  const log: RunLog = { version: 2, runId: run.campaign.runId, initial: structuredClone(run), events: [] }
+  const log: RunLog = { version: 2, runId: run.campaign.runId, initial: cloneJson(run), events: [] }
   memoryLog = log
   try { localStorage.setItem(RUN_LOG_KEY, log.runId) } catch {}
   persistence = persistence.catch(() => {}).then(() => persistStart(log))
   try { await persistence; return true } catch { return false }
 }
 
-function statePatch(before: unknown, after: unknown, path: (string | number)[] = [], result: RunLogPatch[] = []): RunLogPatch[] {
-  if (Object.is(before, after)) return result
+function diffState(before: unknown, after: unknown, path: (string | number)[], result: RunLogPatch[]): void {
+  if (before === after) return
   if (after === undefined) {
-    result.push({ path, remove: true })
-    return result
+    result.push({ path: path.slice(), remove: true })
+    return
   }
   if (before === null || after === null || typeof before !== 'object' || typeof after !== 'object' || Array.isArray(before) !== Array.isArray(after)) {
-    result.push({ path, value: structuredClone(after) })
-    return result
+    if (before === before || after === after) result.push({ path: path.slice(), value: cloneJson(after) })
+    return
   }
   if (Array.isArray(before) && Array.isArray(after)) {
-    if (['deck', 'draw', 'hand', 'discard', 'exhaust'].includes(String(path.at(-1)))) {
-      if (JSON.stringify(before) !== JSON.stringify(after)) result.push({ path, value: structuredClone(after) })
-      return result
+    if (path.length > 0 && CARD_PILE_KEYS.has(String(path[path.length - 1]))) {
+      if (!deepEqual(before, after)) result.push({ path: path.slice(), value: cloneJson(after) })
+      return
     }
-    for (let index = 0; index < Math.min(before.length, after.length); index += 1) statePatch(before[index], after[index], [...path, index], result)
-    for (let index = before.length; index < after.length; index += 1) result.push({ path: [...path, index], value: structuredClone(after[index]) })
-    for (let index = before.length - 1; index >= after.length; index -= 1) result.push({ path: [...path, index], remove: true })
-    return result
+    const beforeLen = before.length
+    const afterLen = after.length
+    const common = beforeLen < afterLen ? beforeLen : afterLen
+    for (let index = 0; index < common; index += 1) {
+      if (before[index] !== after[index]) {
+        path.push(index)
+        diffState(before[index], after[index], path, result)
+        path.pop()
+      }
+    }
+    for (let index = beforeLen; index < afterLen; index += 1) {
+      path.push(index)
+      result.push({ path: path.slice(), value: cloneJson(after[index]) })
+      path.pop()
+    }
+    for (let index = beforeLen - 1; index >= afterLen; index -= 1) {
+      path.push(index)
+      result.push({ path: path.slice(), remove: true })
+      path.pop()
+    }
+    return
   }
   const left = before as Record<string, unknown>
   const right = after as Record<string, unknown>
-  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
-    if (!(key in right)) result.push({ path: [...path, key], remove: true })
-    else statePatch(left[key], right[key], [...path, key], result)
+  const leftKeys = Object.keys(left)
+  const rightKeys = Object.keys(right)
+  let matched = 0
+  for (let i = 0; i < leftKeys.length; i += 1) {
+    const key = leftKeys[i]!
+    if (!Object.hasOwn(right, key)) {
+      path.push(key)
+      result.push({ path: path.slice(), remove: true })
+      path.pop()
+    } else {
+      matched += 1
+      if (left[key] !== right[key]) {
+        path.push(key)
+        diffState(left[key], right[key], path, result)
+        path.pop()
+      }
+    }
   }
+  if (matched < rightKeys.length) {
+    for (let i = 0; i < rightKeys.length; i += 1) {
+      const key = rightKeys[i]!
+      if (!Object.hasOwn(left, key)) {
+        const rightVal = right[key]
+        if (rightVal !== undefined) {
+          path.push(key)
+          result.push({ path: path.slice(), value: cloneJson(rightVal) })
+          path.pop()
+        }
+      }
+    }
+  }
+}
+
+export function statePatch(before: unknown, after: unknown, path: (string | number)[] = [], result: RunLogPatch[] = []): RunLogPatch[] {
+  diffState(before, after, path.slice(), result)
   return result
 }
 
@@ -181,7 +283,7 @@ export function useRunLog(run: RunState, active: boolean, viewerId: string) {
     if (hydrationRun.current === runId) return
     hydrationRun.current = runId
     const generation = ++hydrationGeneration.current
-    previous.current = structuredClone(run)
+    previous.current = cloneJson(run)
     pendingChoice.current = null
     queuedEvents.current = []
     setLogReady(false)
@@ -194,13 +296,14 @@ export function useRunLog(run: RunState, active: boolean, viewerId: string) {
   }, [active, run.campaign.runId])
 
   useLayoutEffect(() => {
-    const before = previous.current ?? structuredClone(run)
+    if (!previous.current) previous.current = cloneJson(run)
+    const before = previous.current
     if (before.campaign.runId !== run.campaign.runId) {
-      previous.current = structuredClone(run)
+      previous.current = cloneJson(run)
       pendingChoice.current = null
       return
     }
-    if (!active) { previous.current = structuredClone(run); return }
+    if (!active) { previous.current = cloneJson(run); return }
     if (logReady && log.current?.runId === run.campaign.runId && queuedEvents.current.length) {
       for (const event of queuedEvents.current.splice(0)) {
         const index = log.current.events.push(event) - 1
@@ -208,10 +311,10 @@ export function useRunLog(run: RunState, active: boolean, viewerId: string) {
       }
       setAvailable(log.current.events.length > 0)
     }
-    if (run.campaign.finalized) { previous.current = structuredClone(run); return }
+    if (run.campaign.finalized) { previous.current = cloneJson(run); return }
     const patch = statePatch(before, run)
-    previous.current = structuredClone(run)
     if (!patch.length) return
+    previous.current = cloneJson(run)
     const choice = normalizeRunLogChoice(pendingChoice.current)
     const rawEvent = { patch, ...(choice ? { choice } : {}), viewerId }
     const recordedChoice = runLogEventChoice(rawEvent, before)

@@ -1,4 +1,4 @@
-import type { Dispatch, RefObject, SetStateAction } from 'react'
+import { memo, type Dispatch, type RefObject, type SetStateAction } from 'react'
 import { potionIconPath } from '../../game/assets.ts'
 import { cardDef, cardIsCurse, faceOf, type CardDef } from '../../game/cards.ts'
 import {
@@ -34,7 +34,7 @@ export type CombatPotionDialogsProps = {
   viewerHasSozu: boolean
 }
 
-export function CombatPotionDialogs({
+export const CombatPotionDialogs = memo(function CombatPotionDialogs({
   state,
   viewer,
   stanceChangedThisTurn,
@@ -135,7 +135,7 @@ export function CombatPotionDialogs({
       ) : null}
     </>
   )
-}
+})
 
 export type CombatChoiceDialogsProps = {
   state: CombatState
@@ -197,7 +197,7 @@ export type CombatChoiceDialogsProps = {
   confirmChoice: () => void
 }
 
-export function CombatChoiceDialogs({
+export const CombatChoiceDialogs = memo(function CombatChoiceDialogs({
   state,
   viewer,
   viewerId,
@@ -495,7 +495,7 @@ export function CombatChoiceDialogs({
       ) : null}
     </>
   )
-}
+})
 
 export function PlayerChoiceDiscardDialog({
   dialogRef,

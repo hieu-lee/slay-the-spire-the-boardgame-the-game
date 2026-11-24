@@ -1,5 +1,5 @@
 import type React from 'react'
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
 import type { CardDef } from '../game/cards.ts'
@@ -57,7 +57,7 @@ type CardProps = {
   accessibleNote?: string
   onClick?: (card: CardInstance) => void
   /** `playable` is the card's state at press time, so a press can pan without starting a play. */
-  onPointerDown?: (event: React.PointerEvent<HTMLButtonElement>, playable: boolean) => void
+  onPointerDown?: (event: React.PointerEvent<HTMLButtonElement>, playable: boolean, card: CardInstance) => void
   onPointerMove?: React.PointerEventHandler<HTMLButtonElement>
   onPointerUp?: React.PointerEventHandler<HTMLButtonElement>
   onPointerCancel?: React.PointerEventHandler<HTMLButtonElement>
@@ -82,6 +82,19 @@ export function revealDecodedImage(image: HTMLImageElement, options?: {
   )
 }
 
+export function cardKeywordTipsKey(
+  tips: readonly { name: string, text: string, icon?: IconName, statusIcon?: StatusIconName }[],
+): string {
+  if (tips.length === 0) return ''
+  let key = ''
+  for (let i = 0; i < tips.length; i += 1) {
+    const tip = tips[i]!
+    if (i > 0) key += '\x1e'
+    key += `${tip.name}\x1f${tip.text}\x1f${tip.icon ?? ''}\x1f${tip.statusIcon ?? ''}`
+  }
+  return key
+}
+
 export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips = EMPTY_KEYWORD_TIPS, hover = false, children }: {
   def?: CardDef
   hover?: boolean
@@ -97,7 +110,11 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
 }) {
   const { tips, tipsKey, description } = useMemo(() => {
     const tips = composeCardKeywordTips(def, additionalDef, gemPowerDamage, extraTips)
-    return { tips, tipsKey: JSON.stringify(tips), description: tips.map((tip) => `${tip.name}: ${tip.text}`).join(' ') }
+    return {
+      tips,
+      tipsKey: cardKeywordTipsKey(tips),
+      description: tips.map((tip) => `${tip.name}: ${tip.text}`).join(' '),
+    }
   }, [def, additionalDef, gemPowerDamage, extraTips])
   const tooltipId = `card-keyword-help-${useId()}`
   const anchorRef = useRef<HTMLElement | null>(null)
@@ -138,7 +155,7 @@ export function CardKeywordHelp({ def, additionalDef, gemPowerDamage, extraTips 
   </>
 }
 
-export function Card({
+export const Card = memo(function Card({
   card,
   className: extraClassName,
   style,
@@ -205,7 +222,7 @@ export function Card({
           document.activeElement !== event.currentTarget
         blockedMousePress.current = event.pointerType === 'mouse' && !playable
         if (blockedMousePress.current) event.preventDefault()
-        onPointerDown?.(event, playable)
+        onPointerDown?.(event, playable, card)
       }}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -283,4 +300,4 @@ export function Card({
       ) : null}
     </button>
   )}</CardKeywordHelp>
-}
+})

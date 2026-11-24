@@ -1,4 +1,4 @@
-import type { Dispatch, PointerEvent, RefObject, SetStateAction } from 'react'
+import { memo, useCallback, useRef, type CSSProperties, type Dispatch, type PointerEvent, type RefObject, type SetStateAction } from 'react'
 import { assetPath } from '../../game/assets.ts'
 import { cardDef, faceOf } from '../../game/cards.ts'
 import {
@@ -73,7 +73,17 @@ export type HandAreaProps = {
   cancelCardDrag: (event: PointerEvent<HTMLElement>) => void
 }
 
-export function HandArea({
+const DEAL_INDEX_STYLES: CSSProperties[] = []
+function dealIndexStyle(index: number): CSSProperties {
+  let style = DEAL_INDEX_STYLES[index]
+  if (!style) {
+    style = { '--deal-index': index } as CSSProperties
+    DEAL_INDEX_STYLES[index] = style
+  }
+  return style
+}
+
+export const HandArea = memo(function HandArea({
   state,
   viewer,
   viewerVisual,
@@ -128,6 +138,93 @@ export function HandArea({
   finishCardDrag,
   cancelCardDrag,
 }: HandAreaProps) {
+  const actionsRef = useRef({
+    state,
+    visibleHand,
+    hermitSetupPending,
+    hermitTargetedCurses,
+    pending,
+    setPending,
+    suppressCardClick,
+    submitHermitChamber,
+    chooseStartTurnExhaust,
+    submitHermitSetup,
+    activateCard,
+    onCardPointerDown,
+    onCardPointerMove,
+    finishCardDrag,
+    cancelCardDrag,
+  })
+  actionsRef.current = {
+    state,
+    visibleHand,
+    hermitSetupPending,
+    hermitTargetedCurses,
+    pending,
+    setPending,
+    suppressCardClick,
+    submitHermitChamber,
+    chooseStartTurnExhaust,
+    submitHermitSetup,
+    activateCard,
+    onCardPointerDown,
+    onCardPointerMove,
+    finishCardDrag,
+    cancelCardDrag,
+  }
+
+  const handleActivateCard = useCallback((clickedCard: CardInstance) => {
+    actionsRef.current.activateCard(clickedCard)
+  }, [])
+  const handleChamberCardClick = useCallback((clickedCard: CardInstance) => {
+    const current = actionsRef.current
+    const rawCard = current.visibleHand.find((candidate) => candidate.uid === clickedCard.uid) ?? clickedCard
+    if (current.suppressCardClick.current === rawCard.uid) {
+      current.suppressCardClick.current = null
+      return
+    }
+    const p = current.pending
+    const cancelable = Boolean(p?.chamberPlay && p.card.uid === rawCard.uid &&
+      (p.choicePreviewPending || !p.choiceCards || p.choice?.kind === 'recover' || p.choice?.kind === 'recoverExhaust'))
+    if (cancelable) {
+      current.setPending(null)
+      return
+    }
+    current.submitHermitChamber(rawCard)
+  }, [])
+  const handleExhaustChoiceClick = useCallback((clickedCard: CardInstance) => {
+    actionsRef.current.chooseStartTurnExhaust(clickedCard.uid)
+  }, [])
+  const handleHermitSetupClick = useCallback((clickedCard: CardInstance) => {
+    const current = actionsRef.current
+    const rawCard = current.visibleHand.find((candidate) => candidate.uid === clickedCard.uid) ?? clickedCard
+    const setupTarget = current.hermitSetupPending && current.hermitTargetedCurses.has(rawCard.defId)
+      ? livingEnemies(current.state).length === 1 ? livingEnemies(current.state)[0] : undefined
+      : null
+    const setupPlayable = current.hermitSetupPending &&
+      (!current.hermitTargetedCurses.has(rawCard.defId) || Boolean(setupTarget))
+    if (setupPlayable) current.submitHermitSetup(rawCard, setupTarget?.uid ?? null)
+  }, [])
+  const handleHandPointerDown = useCallback((event: PointerEvent<HTMLButtonElement>, playable: boolean, clickedCard: CardInstance) => {
+    const current = actionsRef.current
+    const rawCard = current.visibleHand.find((candidate) => candidate.uid === clickedCard.uid) ?? clickedCard
+    current.onCardPointerDown(rawCard, event, playable, false)
+  }, [])
+  const handleChamberPointerDown = useCallback((event: PointerEvent<HTMLButtonElement>, playable: boolean, clickedCard: CardInstance) => {
+    const current = actionsRef.current
+    const rawCard = current.visibleHand.find((candidate) => candidate.uid === clickedCard.uid) ?? clickedCard
+    current.onCardPointerDown(rawCard, event, playable, true)
+  }, [])
+  const handlePointerMove = useCallback((event: PointerEvent<HTMLElement>) => {
+    actionsRef.current.onCardPointerMove(event)
+  }, [])
+  const handleFinishCardDrag = useCallback((event: PointerEvent<HTMLElement>) => {
+    actionsRef.current.finishCardDrag(event)
+  }, [])
+  const handleCancelCardDrag = useCallback((event: PointerEvent<HTMLElement>) => {
+    actionsRef.current.cancelCardDrag(event)
+  }, [])
+
   return (
     <footer className="hand-area" data-character={viewer.character}
       data-has-chamber={viewer.chamberSlots > 0 || undefined}>
@@ -232,7 +329,7 @@ export function HandArea({
               exhaustChoice && !pendingStartExhaust ? 'card--exhaust-repick' : '',
               // The engine marks only the offered cards that can be played.
               card.playWindowCost !== undefined && !chamberCard ? 'card--play-window' : ''].filter(Boolean).join(' ') || undefined}
-            style={{ '--deal-index': index } as React.CSSProperties}
+            style={dealIndexStyle(index)}
             inspectOnTouch
             fan={fanOf(index, visibleHand.length)}
             liveDamage={chamberCard ? undefined : cardDamage.get(card.uid)}
@@ -262,32 +359,22 @@ export function HandArea({
             selected={pending?.card.uid === card.uid}
             picked={pending?.picked.includes(card.uid) === true || chosenStartExhaustUids.has(card.uid)}
             onClick={chamberCard
-              ? () => {
-                if (suppressCardClick.current === card.uid) {
-                  suppressCardClick.current = null
-                  return
-                }
-                if (chamberCancelable) {
-                  setPending(null)
-                  return
-                }
-                submitHermitChamber(card)
-              }
+              ? handleChamberCardClick
               : exhaustChoice
-              ? () => chooseStartTurnExhaust(card.uid)
+              ? handleExhaustChoiceClick
               : hermitSetupPending
-              ? () => setupPlayable && submitHermitSetup(card, setupTarget?.uid ?? null)
-              : activateCard}
+              ? handleHermitSetupClick
+              : handleActivateCard}
             onPointerDown={handPicksOnly && !chamberCard
               ? undefined
-              : (event, playable) => onCardPointerDown(card, event, playable, chamberCard)}
-            onPointerMove={handPicksOnly && !chamberCard ? undefined : onCardPointerMove}
-            onPointerUp={handPicksOnly && !chamberCard ? undefined : finishCardDrag}
-            onPointerCancel={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}
-            onLostPointerCapture={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}
+              : chamberCard ? handleChamberPointerDown : handleHandPointerDown}
+            onPointerMove={handPicksOnly && !chamberCard ? undefined : handlePointerMove}
+            onPointerUp={handPicksOnly && !chamberCard ? undefined : handleFinishCardDrag}
+            onPointerCancel={handPicksOnly && !chamberCard ? undefined : handleCancelCardDrag}
+            onLostPointerCapture={handPicksOnly && !chamberCard ? undefined : handleCancelCardDrag}
           />
         })}
       </div></div>
     </footer>
   )
-}
+})

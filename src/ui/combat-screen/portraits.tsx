@@ -1,5 +1,5 @@
 // Character attack poses, Guardian stance portrait, slime sprite fallbacks, and flying cards.
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { memo, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { assetPath } from '../../game/assets.ts'
 import type { CombatPresentationEvent } from '../../game/combat.ts'
 import type { VisualId } from '../../game/skins.ts'
@@ -32,7 +32,7 @@ export const slimeFallbackAsset = (defId: string): string => {
   return 'combat/enemies/small_slime.webp'
 }
 
-export function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq, hermitEvent, firing = true }: {
+export const CharacterAttackPose = memo(function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq, hermitEvent, firing = true }: {
   asset?: Blob | true
   assetPath: string
   fallbackAsset: string
@@ -71,10 +71,10 @@ export function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAss
       {loaded && (replayAsset || sourceFallback) && hermitEvent ? <HermitBullets event={hermitEvent} /> : null}
     </span>
   )
-}
+})
 
 // Complete registered drawings share the travel/impact clock, including WebKit.
-export function StagedAttackPose({ visual, spec, ready }: { visual: VisualId; spec: StagedAttackSpec; ready: boolean }) {
+export const StagedAttackPose = memo(function StagedAttackPose({ visual, spec, ready }: { visual: VisualId; spec: StagedAttackSpec; ready: boolean }) {
   return ready ? <>{spec.poses.map(pose => (
     <span key={pose} className={`character-attack__pose character-attack__pose--rig is-loaded character-attack__pose--${visual}-${pose}`}>
       <img src={stagedPoseAsset(visual, pose)} alt="" />
@@ -82,9 +82,9 @@ export function StagedAttackPose({ visual, spec, ready }: { visual: VisualId; sp
   ))}</> : <span className="character-attack__pose character-attack__pose--rig is-loaded is-fallback">
     <CombatAnimation src={stagedIdleAsset(visual)} />
   </span>
-}
+})
 
-export function MonogatariAttackPose({ visual, ready }: { visual: string; ready: boolean }) {
+export const MonogatariAttackPose = memo(function MonogatariAttackPose({ visual, ready }: { visual: string; ready: boolean }) {
   const poses = visual === 'monogatari_ironclad' ? ['ready', 'impact'] : ['charge', 'release']
   return <>
     <span className={`character-attack__pose character-attack__pose--rig is-loaded ${ready ? 'monogatari-pose--idle' : 'is-fallback'}`}>
@@ -94,9 +94,9 @@ export function MonogatariAttackPose({ visual, ready }: { visual: string; ready:
       <img src={monogatariPoseAsset(visual, pose)} alt="" />
     </span>) : null}
   </>
-}
+})
 
-export function MonogatariEvokePose({ event, holdCast }: {
+export const MonogatariEvokePose = memo(function MonogatariEvokePose({ event, holdCast }: {
   event: Extract<CombatPresentationEvent, { kind: 'orb' }>
   holdCast: boolean
 }) {
@@ -124,9 +124,9 @@ export function MonogatariEvokePose({ event, holdCast }: {
       data-evoke-orb={event.orb} data-evoke-orb-phase={phase}
       src={assetPath(`combat/vfx/actions/${event.orb}-channel.webp`)} alt="" />)}
   </span>
-}
+})
 
-export function GuardianPortrait({ mode, animate, restartKey }: {
+export const GuardianPortrait = memo(function GuardianPortrait({ mode, animate, restartKey }: {
   mode: 'attack' | 'defense'
   animate: boolean
   restartKey: number | string
@@ -179,9 +179,9 @@ export function GuardianPortrait({ mode, animate, restartKey }: {
         }}
         onError={(event) => { event.currentTarget.style.display = 'none' }}
       />
-}
+})
 
-export function FlyingCard({ flight, character }: { flight: CardFlight; character: string }) {
+export const FlyingCard = memo(function FlyingCard({ flight, character }: { flight: CardFlight; character: string }) {
   const element = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     if (!element.current) return undefined
@@ -193,4 +193,4 @@ export function FlyingCard({ flight, character }: { flight: CardFlight; characte
   >
     <Card card={flight.card} playable={false} immediateArt />
   </div>
-}
+})

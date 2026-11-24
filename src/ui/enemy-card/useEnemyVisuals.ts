@@ -1,6 +1,55 @@
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
-import type { Enemy } from '../../game/types.ts'
+import type { CardInstance, Enemy } from '../../game/types.ts'
 import { splitAttackAnimationPending } from '../combat-screen/vfx.tsx'
+
+function cardInstanceKey(card: CardInstance): string {
+  const m = card.metamorphosis
+  return `${card.uid}\x1f${card.defId}\x1f${card.upgraded ? 1 : 0}\x1f${card.endTurnProtected ? 1 : 0}\x1f${card.retainedLastTurn ? 1 : 0}\x1f${card.retainThisTurn ? 1 : 0}\x1f${card.mayRetainThisTurn ? 1 : 0}\x1f${card.stasisRetained ? 1 : 0}\x1f${card.counter ?? ''}\x1f${card.freeThisTurn ? 1 : 0}\x1f${card.costReductionThisTurn ?? ''}\x1f${card.scryDamageBonus ?? ''}\x1f${card.attachedGemId ?? ''}\x1f${card.growOnPlay ? 1 : 0}\x1f${card.hermitDeadOn ? 1 : 0}\x1f${card.playWindowCost ?? ''}\x1f${card.xPaid ?? ''}\x1f${m ? `${m.upgraded ? 1 : 0},${m.sourceUid},${m.copiedX ?? ''}` : ''}`
+}
+
+export function enemyVisualSignature(enemy: Enemy): string {
+  let key = `${enemy.uid}\x1f${enemy.defId}\x1f${enemy.row}\x1f${enemy.isBoss ? 1 : 0}\x1f${enemy.actsLast ? 1 : 0}\x1f${enemy.ascension ?? ''}\x1f${enemy.pendingDefId ?? ''}\x1f${enemy.copy ?? ''}\x1f${enemy.hp}\x1f${enemy.maxHp}\x1f${enemy.block}\x1f${enemy.strength}\x1f${enemy.vulnerable}\x1f${enemy.weak}\x1f${enemy.poison}\x1f${enemy.goldReward}\x1f${enemy.cardReward ?? ''}\x1f${enemy.potionReward ? 1 : 0}\x1f${enemy.relicReward ? 1 : 0}\x1f${enemy.actionIndex}\x1f${enemy.phase ?? ''}\x1f${enemy.abilityUsed ? 1 : 0}\x1f${enemy.abilityCubes ?? ''}\x1f${enemy.dead ? 1 : 0}`
+  if (enemy.spentOnceSlots?.length) {
+    key += '\x1eS:'
+    for (let i = 0; i < enemy.spentOnceSlots.length; i += 1) {
+      if (i > 0) key += ','
+      key += enemy.spentOnceSlots[i]
+    }
+  }
+  if (enemy.poisonSources) {
+    const sources = enemy.poisonSources
+    const keys = Object.keys(sources)
+    if (keys.length) {
+      key += '\x1eP:'
+      for (let i = 0; i < keys.length; i += 1) {
+        const k = keys[i]!
+        if (i > 0) key += ','
+        key += `${k}=${sources[k]}`
+      }
+    }
+  }
+  if (enemy.corpseExplosion) {
+    const ce = enemy.corpseExplosion
+    key += `\x1eC:${ce.playerId}\x1f${ce.damage}\x1f${cardInstanceKey(ce.card)}`
+  }
+  if (enemy.hermitBounties?.length) {
+    key += '\x1eH:'
+    for (let i = 0; i < enemy.hermitBounties.length; i += 1) {
+      const b = enemy.hermitBounties[i]!
+      if (i > 0) key += '\x1d'
+      key += `${b.playerId}\x1f${cardInstanceKey(b.card)}`
+    }
+  }
+  if (enemy.slayerAttachments?.length) {
+    key += '\x1eA:'
+    for (let i = 0; i < enemy.slayerAttachments.length; i += 1) {
+      const a = enemy.slayerAttachments[i]!
+      if (i > 0) key += '\x1d'
+      key += `${a.playerId}\x1f${cardInstanceKey(a.card)}`
+    }
+  }
+  return key
+}
 
 export function useEnemyVisuals({
   cardRef,
@@ -38,7 +87,7 @@ export function useEnemyVisuals({
   const [bulletNumbers, setBulletNumbers] = useState<{ id: number; damage: number; x: number; y: number }[]>([])
   const displayBeat = useRef(0)
   const displayedEventSeq = useRef(visualEventSeq)
-  const visualSignature = JSON.stringify(enemy)
+  const visualSignature = enemyVisualSignature(enemy)
   const priorActual = useRef({
     signature: visualSignature, eventSeq: visualEventSeq, resetKey: visualResetKey, hp: enemy.hp,
   })

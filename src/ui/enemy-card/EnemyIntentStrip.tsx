@@ -1,7 +1,8 @@
+import { memo } from 'react'
 import { Icon, IconValue } from '../Icon.tsx'
 import type { IntentPart } from './intent.ts'
 
-export function EnemyIntentStrip({ dead, intent }: { dead: boolean; intent: readonly IntentPart[] }) {
+export const EnemyIntentStrip = memo(function EnemyIntentStrip({ dead, intent }: { dead: boolean; intent: readonly IntentPart[] }) {
   return (
     /* A corpse telegraphing an attack it will never make is worse than no
        intent at all — it is read as a threat while choosing a target.
@@ -26,4 +27,4 @@ export function EnemyIntentStrip({ dead, intent }: { dead: boolean; intent: read
       )}
     </span>
   )
-}
+})

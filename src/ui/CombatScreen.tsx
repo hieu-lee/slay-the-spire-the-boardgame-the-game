@@ -2,7 +2,7 @@
 // delegating chamber animations, item/card/start-turn actions, presentation,
 // motion tracking, layout, drag interactions, prompts, and UI panels to
 // cohesive modules under combat-screen/.
-import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { assetPath } from '../game/assets.ts'
 import { cardDef, faceOf } from '../game/cards.ts'
 import {
@@ -342,9 +342,9 @@ function CombatScreenView({
   })
 
   const rows = useMemo(() => rowsOf(state), [state])
-  const facingEnemies = state.enemies.filter((enemy) =>
-    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'facing'))
-  const liveFacingEnemies = facingEnemies.filter((enemy) => !enemy.dead)
+  const facingEnemies = useMemo(() => state.enemies.filter((enemy) =>
+    enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'facing')), [state.enemies])
+  const liveFacingEnemies = useMemo(() => facingEnemies.filter((enemy) => !enemy.dead), [facingEnemies])
   const savedDiscardKey = savedDiscardOrder?.join('\0')
 
   useEffect(() => {
@@ -393,7 +393,7 @@ function CombatScreenView({
     endTurnRef.current?.focus({ preventScroll: true })
   }, [state.phase])
 
-  const enemyButtonOrder = livingEnemiesInStageOrder(state.enemies)
+  const enemyButtonOrder = useMemo(() => livingEnemiesInStageOrder(state.enemies), [state.enemies])
 
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
   const downfallCharacter = DOWNFALL_CHARACTER_IDS.find((character) => character === viewer.character)
@@ -413,17 +413,28 @@ function CombatScreenView({
   const viewerNeedsDiscardTop = endTurnTopPlayerIds
     ? endTurnTopPlayerIds.includes(viewer.id)
     : discardTopNeedsChoice(viewer)
-  const discardableHand = viewer.hand.filter((card) =>
-    !card.endTurnProtected && !card.retainThisTurn && !cardHasRetain(viewer, card))
+  const discardableHand = useMemo(() => viewer.hand.filter((card) =>
+    !card.endTurnProtected && !card.retainThisTurn && !cardHasRetain(viewer, card)), [viewer])
   const retainAllowance = viewer.retainCardsThisTurn ?? 0
   // Slayer Pack: Master Reality+'s returned card may be kept outside the Retain allowance.
-  const optionalRetainUids = new Set(discardableHand.filter((card) => card.mayRetainThisTurn).map((card) => card.uid))
-  const selectedRetains = (retainedCards[viewer.id] ?? [])
-    .filter((uid) => discardableHand.some((card) => card.uid === uid))
-  const allowanceRetains = selectedRetains.filter((uid) => !optionalRetainUids.has(uid)).slice(0, retainAllowance)
-  const viewerRetainedCards = [...selectedRetains.filter((uid) => optionalRetainUids.has(uid)), ...allowanceRetains]
-  const retainedSet = new Set(viewerRetainedCards)
-  const discardCandidates = discardableHand.filter((card) => !retainedSet.has(card.uid))
+  const optionalRetainUids = useMemo(
+    () => new Set(discardableHand.filter((card) => card.mayRetainThisTurn).map((card) => card.uid)),
+    [discardableHand],
+  )
+  const { allowanceRetains, viewerRetainedCards, retainedSet, discardCandidates } = useMemo(() => {
+    const selectedRetains = (retainedCards[viewer.id] ?? [])
+      .filter((uid) => discardableHand.some((card) => card.uid === uid))
+    const allowance = selectedRetains.filter((uid) => !optionalRetainUids.has(uid)).slice(0, retainAllowance)
+    const retained = [...selectedRetains.filter((uid) => optionalRetainUids.has(uid)), ...allowance]
+    const retainedLookup = new Set(retained)
+    const candidates = discardableHand.filter((card) => !retainedLookup.has(card.uid))
+    return {
+      allowanceRetains: allowance,
+      viewerRetainedCards: retained,
+      retainedSet: retainedLookup,
+      discardCandidates: candidates,
+    }
+  }, [discardableHand, optionalRetainUids, retainAllowance, retainedCards, viewer.id])
   const viewerDiscardTop = discardTops[viewer.id] && discardCandidates.some((card) => card.uid === discardTops[viewer.id])
     ? discardTops[viewer.id]
     : discardCandidates.at(-1)?.uid ?? ''
@@ -628,13 +639,22 @@ function CombatScreenView({
     const picked = drag.cardDrag?.targetUid ?? pointedEnemyUid
     return living.some((enemy) => enemy.uid === picked) ? picked : null
   })()
+  const prevCardDamageRef = useRef<Map<string, CardDamagePreview>>(new Map())
   const cardDamage = useMemo(() => {
     const previews = new Map<string, CardDamagePreview>()
-    if (!cardHints || viewer.dead || state.phase !== 'player') return previews
+    if (!cardHints || viewer.dead || state.phase !== 'player') {
+      prevCardDamageRef.current = previews
+      return previews
+    }
+    const prevMap = prevCardDamageRef.current
     for (const card of viewer.hand) {
       const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction))
-      if (preview) previews.set(card.uid, preview)
+      if (preview) {
+        const prev = prevMap.get(card.uid)
+        previews.set(card.uid, prev && prev.damage === preview.damage && prev.baseline === preview.baseline ? prev : preview)
+      }
     }
+    prevCardDamageRef.current = previews
     return previews
   }, [cardHints, state, viewer, previewEnemyUid, onAction])
 
@@ -980,6 +1000,32 @@ function CombatScreenView({
     }
   }
 
+  const eventHandlersRef = useRef({
+    onEnemyClick,
+    onAllyClick,
+    onRowLaneClick,
+    showSlimeCard,
+    hideSlimeCard,
+    finishTurn,
+    resolveTurnEffectTarget,
+  })
+  eventHandlersRef.current = {
+    onEnemyClick,
+    onAllyClick,
+    onRowLaneClick,
+    showSlimeCard,
+    hideSlimeCard,
+    finishTurn,
+    resolveTurnEffectTarget,
+  }
+  const stableOnEnemyClick = useCallback((enemy: Enemy) => eventHandlersRef.current.onEnemyClick(enemy), [])
+  const stableOnAllyClick = useCallback((ally: Player) => eventHandlersRef.current.onAllyClick(ally), [])
+  const stableOnRowLaneClick = useCallback((row: number) => eventHandlersRef.current.onRowLaneClick(row), [])
+  const stableShowSlimeCard = useCallback((card: CardInstance, target: HTMLElement) => eventHandlersRef.current.showSlimeCard(card, target), [])
+  const stableHideSlimeCard = useCallback(() => eventHandlersRef.current.hideSlimeCard(), [])
+  const stableFinishTurn = useCallback(() => eventHandlersRef.current.finishTurn(), [])
+  const stableResolveTurnEffectTarget = useCallback((abilityId: string, targetUid: string) => eventHandlersRef.current.resolveTurnEffectTarget(abilityId, targetUid), [])
+
   // Shared across every row-target prompt below so "the boss is always
   // folded in regardless of row" reads the same way everywhere.
   const rowHitSuffix = state.enemies.some((enemy) => enemy.isBoss && !enemy.dead) ? ', and the boss' : ''
@@ -1191,7 +1237,7 @@ function CombatScreenView({
         viewerDiscardTop={viewerDiscardTop}
         setDiscardTops={setDiscardTops}
         playWindow={playWindow}
-        finishTurn={finishTurn}
+        finishTurn={stableFinishTurn}
         chamberClosing={chamber.chamberClosing}
         discardOrders={discardOrders}
         confirmedDiscards={confirmedDiscards}
@@ -1442,7 +1488,7 @@ function CombatScreenView({
         endTurnEffectDrag={drag.endTurnEffectDrag}
         endTurnEffectSlimeAsset={endTurnEffectSlimeAsset}
         endTurnOrbChoices={endTurnOrbChoices}
-        resolveTurnEffectTarget={resolveTurnEffectTarget}
+        resolveTurnEffectTarget={stableResolveTurnEffectTarget}
         endTurnSelfExhaustOffered={endTurnSelfExhaustOffered}
         endTurnSelfExhaust={endTurnSelfExhaust}
         setEndTurnSelfExhaust={setEndTurnSelfExhaust}
@@ -1486,8 +1532,8 @@ function CombatScreenView({
         characterAttacks={motions.characterAttacks}
         slimeCommandMotions={motions.slimeCommandMotions}
         setSlimeLayoutVersion={motions.setSlimeLayoutVersion}
-        showSlimeCard={showSlimeCard}
-        hideSlimeCard={hideSlimeCard}
+        showSlimeCard={stableShowSlimeCard}
+        hideSlimeCard={stableHideSlimeCard}
         pendingStartEnemy={startTurn.pendingStartEnemy}
         pendingStartPlayer={startTurn.pendingStartPlayer}
         pendingStartEvoke={startTurn.pendingStartEvoke}
@@ -1506,7 +1552,7 @@ function CombatScreenView({
         isEnemyRowClickTargetable={isEnemyRowClickTargetable}
         isRowLaneClickTargetable={isRowLaneClickTargetable}
         rowLaneClickLabel={rowLaneClickLabel}
-        onRowLaneClick={onRowLaneClick}
+        onRowLaneClick={stableOnRowLaneClick}
         pendingPotion={items.pendingPotion}
         pendingPotionNeedsEnemy={items.pendingPotionNeedsEnemy}
         pendingPotionOverflow={items.pendingPotionOverflow}
@@ -1529,8 +1575,8 @@ function CombatScreenView({
         slayerTargetAllowed={cardPlay.slayerTargetAllowed}
         choiceSatisfied={cardPlay.choiceSatisfied}
         switchChoiceReady={cardPlay.switchChoiceReady}
-        onEnemyClick={onEnemyClick}
-        onAllyClick={onAllyClick}
+        onEnemyClick={stableOnEnemyClick}
+        onAllyClick={stableOnAllyClick}
         onEndTurnOrbPointerDown={drag.onEndTurnOrbPointerDown}
         onEndTurnEffectPointerMove={drag.onEndTurnEffectPointerMove}
         finishEndTurnEffectDrag={drag.finishEndTurnEffectDrag}
@@ -1547,7 +1593,7 @@ function CombatScreenView({
         chooseCreativeAiOrb={items.chooseCreativeAiOrb}
         endTurnTargetForOrb={drag.endTurnTargetForOrb}
         suppressEndTurnOrbClick={drag.suppressEndTurnOrbClick}
-        resolveTurnEffectTarget={resolveTurnEffectTarget}
+        resolveTurnEffectTarget={stableResolveTurnEffectTarget}
       />
 
       <CombatInterruptPanels

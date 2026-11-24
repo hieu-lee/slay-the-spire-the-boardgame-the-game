@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { livingEnemies, type CombatState } from '../../game/combat.ts'
 import { enemyDef } from '../../game/enemies.ts'
 import { STAGE_GAP_REM, displayedEnemies, stageScaleFor } from '../board-signals.ts'
 import { revealViewerRow } from './helpers.ts'
+
+const EMPTY_FALLING_SET: ReadonlySet<string> = new Set()
 
 export function useStageLayout({
   state,
@@ -94,9 +96,12 @@ export function useStageLayout({
   }, [stageAttacksActive, falling.size, state.phase, state.players.length, stageFormationKey,
     stageScale, stageEnemySlots, state.combatId, prefersReducedMotion])
 
-  const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
-  const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
-  const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
+  const visibleEnemies = useMemo(
+    () => displayedEnemies(state.enemies, prefersReducedMotion ? EMPTY_FALLING_SET : falling),
+    [state.enemies, prefersReducedMotion, falling],
+  )
+  const bosses = useMemo(() => visibleEnemies.filter((enemy) => enemy.isBoss), [visibleEnemies])
+  const stageEnemies = useMemo(() => visibleEnemies.filter((enemy) => !enemy.isBoss), [visibleEnemies])
   const stageEnemyCount = visibleEnemies.length
   const stageScaleActors = state.players.length + stageEnemyCount
   // EnemyCard can briefly retain its previous visual during restoration.

@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { memo, type CSSProperties } from 'react'
 import { orbEndTurnAmount } from '../game/combat.ts'
 import type { OrbType, Player } from '../game/types.ts'
 import { StatusIcon } from './Icon.tsx'
@@ -31,7 +31,7 @@ const TOKENS: { key: CountKey; icon: StatusIconName; label: string }[] = [
 ]
 
 /** Shows public combat tokens beside HP. */
-export function TokenRow(props: TokenRowProps) {
+export const TokenRow = memo(function TokenRow(props: TokenRowProps) {
   const present = TOKENS.filter(({ key }) => (props[key] ?? 0) > 0)
   if (present.length === 0) return null
 
@@ -47,7 +47,7 @@ export function TokenRow(props: TokenRowProps) {
       ))}
     </span>
   )
-}
+})
 
 function orbDisplayValue(player: Player, orb: OrbType): number {
   // Slayer Pack: orbEndTurnAmount keeps Biased Cognition's -1 from showing below 0.
@@ -65,10 +65,12 @@ export function orbDisplayText(player: Player, orb: OrbType): string {
     : `${value} damage ${orb === 'dark' ? 'when Evoked' : 'at end of turn'}`
 }
 
+const EMPTY_ORB_SLOTS: readonly number[] = []
+
 /** The original game floats Orb sprites and their current value around the Defect. */
-export function OrbRow({
+export const OrbRow = memo(function OrbRow({
   player,
-  targetableSlots = [],
+  targetableSlots = EMPTY_ORB_SLOTS,
   targetVerb = 'Choose',
   onTarget,
   selectedSlots,
@@ -124,4 +126,4 @@ export function OrbRow({
       })}
     </span>
   )
-}
+})

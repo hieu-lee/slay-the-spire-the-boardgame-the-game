@@ -29,6 +29,48 @@ import { useModalDialog } from './useModalDialog.ts'
 
 const START_TURN_STUCK_MS = 15_000
 
+function nullableStringListKey(list: readonly (string | null)[] | undefined): string {
+  if (list === undefined) return '-'
+  let out = '+'
+  for (let i = 0; i < list.length; i += 1) {
+    if (i > 0) out += '\x1d'
+    const entry = list[i]
+    out += entry === null ? '\x00' : entry
+  }
+  return out
+}
+
+function numberListKey(list: readonly number[] | undefined): string {
+  if (list === undefined) return '-'
+  return `+${list.join(',')}`
+}
+
+export function teammateStartChoicesKey(
+  abilities: readonly StartTurnAbility[],
+  viewerId: string,
+  savedChoices: readonly StartTurnChoice[] | undefined,
+  savedEnemyTargets: Record<string, string> | undefined,
+): string {
+  let key = ''
+  for (let i = 0; i < abilities.length; i += 1) {
+    const ability = abilities[i]!
+    if (ability.playerId === viewerId) continue
+    let choice: StartTurnChoice | undefined
+    if (savedChoices) {
+      for (let j = 0; j < savedChoices.length; j += 1) {
+        if (savedChoices[j]!.id === ability.id) {
+          choice = savedChoices[j]
+          break
+        }
+      }
+    }
+    if (key.length > 0) key += '\x1e'
+    const modeShift = choice?.guardianModeShift === undefined ? '' : choice.guardianModeShift ? '1' : '0'
+    key += `${ability.id}\x1f${savedEnemyTargets?.[ability.id] ?? ''}\x1f${choice?.enemyUid ?? ''}\x1f${choice?.targetPlayerId ?? ''}\x1f${modeShift}\x1f${nullableStringListKey(choice?.shivEnemyUids)}\x1f${numberListKey(choice?.evokeSlots)}\x1f${nullableStringListKey(choice?.evokeEnemyUids)}`
+  }
+  return key
+}
+
 export function useStartTurnActions({
   state,
   viewer,
@@ -227,12 +269,9 @@ export function useStartTurnActions({
   // A teammate's staged picks change what this plan simulates (a Shiv or Evoke can
   // kill an enemy a later ability needs), but they arrive without resetting the
   // viewer's own unsent picks, so refresh only the teammates' drafts.
-  const teammateChoicesKey = onAction ? JSON.stringify(baseStartAbilities
-    .filter((ability) => ability.playerId !== viewerId).map((ability) => {
-      const choice = savedStartTurnChoices?.find((candidate) => candidate.id === ability.id)
-      return [ability.id, savedStartTurnEnemyTargets?.[ability.id], choice?.enemyUid, choice?.targetPlayerId,
-        choice?.guardianModeShift, choice?.shivEnemyUids, choice?.evokeSlots, choice?.evokeEnemyUids]
-    })) : ''
+  const teammateChoicesKey = onAction
+    ? teammateStartChoicesKey(baseStartAbilities, viewerId, savedStartTurnChoices, savedStartTurnEnemyTargets)
+    : ''
   useEffect(() => {
     if (state.phase !== 'start' || !onAction) return
     const teammates = baseStartAbilities.filter((ability) => ability.playerId !== viewerId)

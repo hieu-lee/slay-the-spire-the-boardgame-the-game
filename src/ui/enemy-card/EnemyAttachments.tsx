@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { cardThumbPath } from '../../game/assets.ts'
 import { cardDef, faceOf } from '../../game/cards.ts'
 import type { Enemy } from '../../game/types.ts'
@@ -6,7 +7,7 @@ import { cardSkin, type useCardSkins } from '../skin-context.tsx'
 
 type Skins = ReturnType<typeof useCardSkins>
 
-export function SlayerAttachments({ enemy, skins }: { enemy: Enemy; skins: Skins }) {
+export const SlayerAttachments = memo(function SlayerAttachments({ enemy, skins }: { enemy: Enemy; skins: Skins }) {
   return <>
     {(enemy.slayerAttachments ?? []).map((entry) => (
       <span key={entry.card.uid} className="enemy__attachment" data-slayer-attachment={entry.card.defId}
@@ -19,9 +20,9 @@ export function SlayerAttachments({ enemy, skins }: { enemy: Enemy; skins: Skins
       </span>
     ))}
   </>
-}
+})
 
-export function CorpseExplosionAttachment({ enemy, skins }: { enemy: Enemy; skins: Skins }) {
+export const CorpseExplosionAttachment = memo(function CorpseExplosionAttachment({ enemy, skins }: { enemy: Enemy; skins: Skins }) {
   if (!enemy.corpseExplosion) return null
   return (
     <span className="enemy__attachment" title={`Corpse Explosion · ${enemy.corpseExplosion.damage} row damage on death`}>
@@ -32,4 +33,4 @@ export function CorpseExplosionAttachment({ enemy, skins }: { enemy: Enemy; skin
       <span>Corpse Explosion · {enemy.corpseExplosion.damage}</span>
     </span>
   )
-}
+})

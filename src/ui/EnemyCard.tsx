@@ -4,7 +4,7 @@ import { actionsForEnemy, enemyAbilities, enemyAttackBonus, enemyDef } from '../
 // Aliased: `hitDamage` is also this component's floating hit-VFX number.
 import { attackerModsOfEnemy, hitDamage as swingDamage } from '../game/damage.ts'
 import type { Enemy, Player } from '../game/types.ts'
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Icon } from './Icon.tsx'
 import { TokenRow } from './TokenRow.tsx'
 import { healthBand } from './board-signals.ts'
@@ -44,7 +44,7 @@ import {
 import { EnemyIntentStrip } from './enemy-card/EnemyIntentStrip.tsx'
 import { CorpseExplosionAttachment, SlayerAttachments } from './enemy-card/EnemyAttachments.tsx'
 import { BossHeavyTargets, EnemyAttackEffects, EnemyPortraitEffects } from './enemy-card/EnemyAttackOverlays.tsx'
-import { useEnemyVisuals } from './enemy-card/useEnemyVisuals.ts'
+import { enemyVisualSignature, useEnemyVisuals } from './enemy-card/useEnemyVisuals.ts'
 import { useEnemyGeometry } from './enemy-card/useEnemyGeometry.ts'
 
 type EnemyCardProps = {
@@ -90,7 +90,11 @@ type EnemyCardProps = {
   onClick?: (enemy: Enemy) => void
 }
 
-export function EnemyCard({
+const EMPTY_HIT_BEATS: { beat: number; damage: number; delayMs: number }[] = []
+const EMPTY_SPLIT_EVENTS: { seq: number; damage?: number; weights: readonly number[] }[] = []
+const EMPTY_RANGED_TARGETS: readonly string[] = []
+
+export const EnemyCard = memo(function EnemyCard({
   enemy,
   enemies,
   label,
@@ -100,15 +104,15 @@ export function EnemyCard({
   deferBossAttack = false,
   targeted = false,
   disabled = false,
-  hitBeats = [],
-  splitAttackEvents = [],
+  hitBeats = EMPTY_HIT_BEATS,
+  splitAttackEvents = EMPTY_SPLIT_EVENTS,
   falling = false,
   visualContactMs = 0,
   visualEventSeq = -1,
   visualResetKey = '',
   stageVisualDamage = true,
   vfx,
-  rangedTargetPlayerIds = [],
+  rangedTargetPlayerIds = EMPTY_RANGED_TARGETS,
   stageIndex = 0,
   rowLabel,
   defender,
@@ -150,7 +154,7 @@ export function EnemyCard({
   const def = enemyDef(visibleEnemy.defId, visibleEnemy.ascension)
   const actualName = enemyDef(enemy.defId, enemy.ascension).name
   const visibleLabel = label.startsWith(actualName) ? `${def.name}${label.slice(actualName.length)}` : label
-  const actions = actionsForEnemy(visibleEnemy, die)
+  const actions = useMemo(() => actionsForEnemy(visibleEnemy, die), [visibleEnemy, die])
   const animatedEnemy = Boolean(animateArt && !visibleEnemy.dead)
   const currentBossArtId = def.artId ?? def.id
   const sleeping = !visibleEnemy.dead && currentBossArtId === 'lagavulin' && actions.length > 0 &&
@@ -398,21 +402,27 @@ export function EnemyCard({
     rangedTargetKey,
     onThrowPrepared,
   })
-  const abilities = enemyAbilities(def)
-  const mods = attackerModsOfEnemy(visibleEnemy)
-  const intent = actions.flatMap((action) => intentParts(action, (printed) => swingDamage(
-    printed + (defender ? enemyAttackBonus(enemies, visibleEnemy, action, defender) : 0),
-    mods, { vulnerable: defender?.vulnerable ?? 0 },
-  )))
-  const swing = (printed: number) => swingDamage(printed, mods,
-    { vulnerable: defender?.vulnerable ?? 0 })
-  if ((visibleEnemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
-    intent.push(...intentParts({ kind: 'actsLast' }, swing))
-  }
-  const abilityLabels = abilities.map((ability) => {
-    const text = displayedAbilityText(ability, visibleEnemy, def.id, die)
-    return `${text}${visibleEnemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`
-  })
+  const intent = useMemo(() => {
+    const mods = attackerModsOfEnemy(visibleEnemy)
+    const parts = actions.flatMap((action) => intentParts(action, (printed) => swingDamage(
+      printed + (defender ? enemyAttackBonus(enemies, visibleEnemy, action, defender) : 0),
+      mods, { vulnerable: defender?.vulnerable ?? 0 },
+    )))
+    const swing = (printed: number) => swingDamage(printed, mods,
+      { vulnerable: defender?.vulnerable ?? 0 })
+    if ((visibleEnemy.actsLast || def.actsLast) && !actions.some((action) => action.kind === 'actsLast')) {
+      parts.push(...intentParts({ kind: 'actsLast' }, swing))
+    }
+    return parts
+  }, [actions, def.actsLast, defender, enemies, visibleEnemy])
+  const { abilityLabels, tips } = useMemo(() => {
+    const abilities = enemyAbilities(def)
+    const labels = abilities.map((ability) => {
+      const text = displayedAbilityText(ability, visibleEnemy, def.id, die)
+      return `${text}${visibleEnemy.abilityUsed && ability.kind === 'curlUp' ? ', spent' : ''}`
+    })
+    return { abilityLabels: labels, tips: enemyAbilityTips(visibleEnemy.dead, labels) }
+  }, [def, die, visibleEnemy])
   const hpFraction = visibleEnemy.maxHp === 0 ? 0 : visibleEnemy.hp / visibleEnemy.maxHp
   const sizeOffset = animatedEnemy ? 0 : 2
   // [aspect, top] of the resting art, so an Elite or Boss telegraph can sit on its head.
@@ -430,7 +440,6 @@ export function EnemyCard({
     .filter(Boolean)
     .join(' ')
 
-  const tips = enemyAbilityTips(visibleEnemy.dead, abilityLabels)
   return (
     <CardKeywordHelp extraTips={tips} hover>{(helpProps) => (
     <button
@@ -453,7 +462,7 @@ export function EnemyCard({
       data-heavy-hits={heavy?.hits}
       data-animation={animatedEnemy ? bossAttacking ? 'attack' : restTransition ? 'transition' : 'idle' : 'static'}
       data-sleeping={sleeping || undefined}
-      data-webmcp-pending={stageVisualDamage && visualSignature !== JSON.stringify(visibleEnemy) || undefined}
+      data-webmcp-pending={stageVisualDamage && visibleEnemy !== enemy && visualSignature !== enemyVisualSignature(visibleEnemy) || undefined}
       data-row={enemy.row}
       style={{
         '--stage-index': stageIndex,
@@ -632,4 +641,4 @@ export function EnemyCard({
     </button>
     )}</CardKeywordHelp>
   )
-}
+})

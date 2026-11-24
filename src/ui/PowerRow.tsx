@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type React from 'react'
 import { createPortal } from 'react-dom'
 import { cardDef, faceOf } from '../game/cards.ts'
@@ -70,7 +70,7 @@ export function releaseCardZoom(close: () => void) {
   if (pinnedBy === close) pinnedBy = null
 }
 
-export function PowerRow({ powers }: PowerRowProps) {
+export const PowerRow = memo(function PowerRow({ powers }: PowerRowProps) {
   const skins = useCardSkins()
   const [zoom, setZoom] = useState<Zoom | null>(null)
   // The SAME function object that is registered below, so this row can ask the
@@ -267,7 +267,7 @@ export function PowerRow({ powers }: PowerRowProps) {
         : null}
     </>
   )
-}
+})
 
 type PowerGlyphName = StatusIconName
 
@@ -311,7 +311,7 @@ export function powerGlyph(def: CardDef): PowerGlyphName {
   return 'power'
 }
 
-export function PowerGlyph({ def }: { def: CardDef }) {
+export const PowerGlyph = memo(function PowerGlyph({ def }: { def: CardDef }) {
   const fallback = powerGlyph(def)
   return (
     <img
@@ -328,7 +328,7 @@ export function PowerGlyph({ def }: { def: CardDef }) {
       }}
     />
   )
-}
+})
 
 /** "Metallicize: 1 Block at the end of each turn" — name, effect, and when. */
 function describePower(def: CardDef): string {

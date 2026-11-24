@@ -1,4 +1,4 @@
-import type { Dispatch, PointerEvent, ReactNode, RefObject, SetStateAction } from 'react'
+import { memo, useMemo, type Dispatch, type PointerEvent, type ReactNode, type RefObject, type SetStateAction } from 'react'
 import { assetPath } from '../../game/assets.ts'
 import { cardDef, faceOf, type CardDef } from '../../game/cards.ts'
 import {
@@ -55,7 +55,10 @@ import {
   stagedIdleAsset,
 } from './vfx.tsx'
 
-export function GroundedCombatVfx({
+const EMPTY_SPLIT_ATTACK_EVENTS: { seq: number; damage?: number; weights: readonly number[] }[] = []
+const EMPTY_RANGED_TARGETS: readonly string[] = []
+
+export const GroundedCombatVfx = memo(function GroundedCombatVfx({
   enemies,
   activeVfx,
   orbEndTurnRevealDelayMs,
@@ -64,20 +67,25 @@ export function GroundedCombatVfx({
   activeVfx: readonly ActiveCombatVfx[]
   orbEndTurnRevealDelayMs: ReadonlyMap<number, number>
 }) {
-  return (
-    <>
-      {enemies.flatMap((enemy) => activeVfx
-        .filter(({ event }) => event.enemyIds.includes(enemy.uid) && isEndTurnLightning(event))
-        .map((active) => <CombatVfx
+  const groundedVfx = useMemo(() => {
+    if (activeVfx.length === 0) return null
+    const items: ReactNode[] = []
+    for (const enemy of enemies) {
+      for (const active of activeVfx) {
+        if (!active.event.enemyIds.includes(enemy.uid) || !isEndTurnLightning(active.event)) continue
+        items.push(<CombatVfx
           key={`${enemy.uid}-${active.event.seq}-${active.recipe.asset}`}
           active={active}
           role="target"
           targetEnemyId={enemy.uid}
           revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
-        />))}
-    </>
-  )
-}
+        />)
+      }
+    }
+    return items.length > 0 ? items : null
+  }, [enemies, activeVfx, orbEndTurnRevealDelayMs])
+  return <>{groundedVfx}</>
+})
 
 export type CombatStageProps = {
   state: CombatState
@@ -181,7 +189,7 @@ export type CombatStageProps = {
   resolveTurnEffectTarget: (abilityId: string, targetUid: string) => void
 }
 
-export function CombatStage({
+export const CombatStage = memo(function CombatStage({
   state,
   viewer,
   viewerId,
@@ -308,13 +316,37 @@ export function CombatStage({
     ))) && !enemy.dead
   }
 
-  function splitAttackEventsFor(enemy: Enemy) {
-    return (state.presentationEvents ?? []).flatMap(event => {
-      const weights = event.enemyIds.includes(enemy.uid) && splitAttackWeights(state, event)
-      return weights ? [{ seq: event.seq, weights,
-        damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }] : []
-    })
-  }
+  const splitAttackEventsByEnemy = useMemo(() => {
+    const map = new Map<string, { seq: number; damage?: number; weights: readonly number[] }[]>()
+    const events = state.presentationEvents
+    if (!events?.length) return map
+    for (const event of events) {
+      const weights = splitAttackWeights(state, event)
+      if (!weights) continue
+      for (const enemyUid of event.enemyIds) {
+        let list = map.get(enemyUid)
+        if (!list) {
+          list = []
+          map.set(enemyUid, list)
+        }
+        list.push({
+          seq: event.seq,
+          weights,
+          damage: event.enemyHpLoss ? event.enemyHpLoss[enemyUid] ?? 0 : undefined,
+        })
+      }
+    }
+    return map
+  }, [state])
+
+  const rangedTargetsByEnemy = useMemo(() => {
+    const map = new Map<string, readonly string[]>()
+    for (const enemy of state.enemies) {
+      const targets = enemyAttackTargetPlayerIds(state, enemy)
+      map.set(enemy.uid, targets.length > 0 ? targets : EMPTY_RANGED_TARGETS)
+    }
+    return map
+  }, [state])
 
   return (
     <div
@@ -349,10 +381,10 @@ export function CombatStage({
               visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
               visualResetKey={visualResetKey}
               stageVisualDamage={!prefersReducedMotion}
-              splitAttackEvents={splitAttackEventsFor(enemy)}
+              splitAttackEvents={splitAttackEventsByEnemy.get(enemy.uid) ?? EMPTY_SPLIT_ATTACK_EVENTS}
               hitBeats={hits.get(enemy.uid)}
               vfx={enemyVfxFor(enemy)}
-              rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
+              rangedTargetPlayerIds={rangedTargetsByEnemy.get(enemy.uid) ?? EMPTY_RANGED_TARGETS}
               cancelPendingThrow={state.phase === 'enemy' && enemyAttackArrivalMsFor(enemy.defId) !== undefined && expiredCultistPhase === activeEnemyPhaseKey}
               onThrowPrepared={onCultistThrowPrepared}
               onThrowStart={onCultistThrowStart}
@@ -925,10 +957,10 @@ export function CombatStage({
                     visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
                     visualResetKey={visualResetKey}
                     stageVisualDamage={!prefersReducedMotion}
-                    splitAttackEvents={splitAttackEventsFor(enemy)}
+                    splitAttackEvents={splitAttackEventsByEnemy.get(enemy.uid) ?? EMPTY_SPLIT_ATTACK_EVENTS}
                     hitBeats={hits.get(enemy.uid)}
                     vfx={enemyVfxFor(enemy)}
-                    rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
+                    rangedTargetPlayerIds={rangedTargetsByEnemy.get(enemy.uid) ?? EMPTY_RANGED_TARGETS}
                     cancelPendingThrow={state.phase === 'enemy' && enemyAttackArrivalMsFor(enemy.defId) !== undefined && expiredCultistPhase === activeEnemyPhaseKey}
                     onThrowPrepared={onCultistThrowPrepared}
                     onThrowStart={onCultistThrowStart}
@@ -951,4 +983,4 @@ export function CombatStage({
       })}
     </div>
   )
-}
+})

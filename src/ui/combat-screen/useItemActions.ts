@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Dispatch, RefObject, SetStateAction } from 'react'
 import { cardDef, faceOf } from '../../game/cards.ts'
 import {
@@ -36,6 +36,7 @@ import type {
   PotionContext,
   PowerContext,
   RelicContext,
+  StartTurnChoice,
 } from '../../game/combat.ts'
 import { chosenDieRelicAbilities, potionDef, relicDef } from '../../game/relics.ts'
 import type { CardInstance, Player } from '../../game/types.ts'
@@ -52,6 +53,16 @@ import { unknownPowerRefreshDecision } from './unknown-power.ts'
 import { useModalDialog } from './useModalDialog.ts'
 
 export const HERMIT_TARGETED_CURSES = new Set(['hermit_grudge', 'hermit_malice', 'hermit_horror'])
+
+function stringListKey(list: readonly string[] | undefined): string {
+  if (list === undefined) return '-'
+  return `+${list.join('\x1d')}`
+}
+
+export function stagedTriggerChoiceKey(choice: StartTurnChoice['trigger'] | undefined): string {
+  if (!choice) return ''
+  return `${choice.enemyRow ?? ''}\x1f${choice.enemyUid ?? ''}\x1f${choice.targetPlayerId ?? ''}\x1f${stringListKey(choice.loadUids)}\x1f${stringListKey(choice.chamberUids)}\x1f${stringListKey(choice.hermitEnemyUids)}\x1f${stringListKey(choice.slimeUids)}\x1f${stringListKey(choice.slimeEnemyUids)}`
+}
 
 export function useItemActions({
   state,
@@ -286,14 +297,16 @@ export function useItemActions({
     : undefined
   // Online snapshots rebuild these arrays on every publish; key on their content so
   // an unrelated room update does not wipe picks the player is still making.
-  const editingStagedChoiceKey = JSON.stringify(editingStagedChoice ?? null)
+  const editingStagedChoiceRef = useRef(editingStagedChoice)
+  editingStagedChoiceRef.current = editingStagedChoice
+  const editingStagedChoiceKey = stagedTriggerChoiceKey(editingStagedChoice)
   useEffect(() => {
-    const staged = JSON.parse(editingStagedChoiceKey) as typeof editingStagedChoice | null
-    setTriggerHermitLoadUids(staged?.loadUids ?? [])
-    setTriggerHermitChamberUids(staged?.chamberUids ?? [])
+    const staged = editingStagedChoiceRef.current
+    setTriggerHermitLoadUids(staged?.loadUids ? [...staged.loadUids] : [])
+    setTriggerHermitChamberUids(staged?.chamberUids ? [...staged.chamberUids] : [])
     setTriggerHermitStep('cards')
-    setTriggerSlimeUids(staged?.slimeUids ?? [])
-    setTriggerSlimeEnemyUids(staged?.slimeEnemyUids ?? [])
+    setTriggerSlimeUids(staged?.slimeUids ? [...staged.slimeUids] : [])
+    setTriggerSlimeEnemyUids(staged?.slimeEnemyUids ? [...staged.slimeEnemyUids] : [])
   }, [pendingTrigger?.id, editingStagedStartTurnTrigger, editingStagedChoiceKey])
 
   useEffect(() => {
@@ -467,7 +480,7 @@ export function useItemActions({
     setUsingPotion(false)
   }, [onAction, state])
 
-  const livingPlayers = state.players.filter((player) => !player.dead)
+  const livingPlayers = useMemo(() => state.players.filter((player) => !player.dead), [state.players])
   const pendingPotionDef = pendingPotion ? potionDef(pendingPotion) : null
   const pendingPotionNeedsEnemy = pendingPotionDef?.target === 'enemy' ||
     pendingPotion === 'mystery_potion' && state.die <= 2

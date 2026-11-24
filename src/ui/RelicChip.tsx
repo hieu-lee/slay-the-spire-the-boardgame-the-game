@@ -11,7 +11,7 @@
 // positioned further up the tree. `relicOptionLabel` is also exported: a pure
 // formatter, no DOM. `RelicOptionText` is the prose those option buttons print
 // on a device that cannot open a `title`.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { relicDef } from '../game/relics.ts'
 import type { RelicDef } from '../game/relics.ts'
@@ -185,7 +185,7 @@ export function RelicOptionText({ id, withCost = false, note }: { id: string; wi
  * prohibited and several screen readers drop it, so the relic would have
  * announced nothing at all.
  */
-function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped, die }: {
+const RelicChip = memo(function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped, die }: {
   relic: RelicInstance
   chipKey: string
   tapOpen: boolean
@@ -320,7 +320,7 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped, die }: {
       <RelicTooltip id={relic.defId} note={note} die={die} />
     </span>
   )
-}
+})
 
 /**
  * The whole held-relic row. Empty renders nothing rather than an empty frame.
@@ -333,7 +333,7 @@ function RelicChip({ relic, chipKey, tapOpen, onTapOpen, unclipped, die }: {
  * the row ("Ironclad's relics"), and in multiplayer a bare "Relics" would leave
  * a screen-reader user unable to tell whose row they had landed on.
  */
-export function RelicBar({ relics, label, unclipped, die }: { relics: readonly RelicInstance[]; label: string; unclipped?: boolean; die?: number }) {
+export const RelicBar = memo(function RelicBar({ relics, label, unclipped, die }: { relics: readonly RelicInstance[]; label: string; unclipped?: boolean; die?: number }) {
   // Deliberately NOT guarded against an id `relicDef` does not know. CombatScreen
   // and RoomScreen read this same array unguarded, and the engine reads it in a
   // dozen more places — so skipping unknown relics here would not save the run,
@@ -378,4 +378,4 @@ export function RelicBar({ relics, label, unclipped, die }: { relics: readonly R
       })}
     </span>
   )
-}
+})

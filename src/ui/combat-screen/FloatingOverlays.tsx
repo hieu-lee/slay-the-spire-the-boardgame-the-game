@@ -1,4 +1,4 @@
-import type { RefObject } from 'react'
+import { memo, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { relicIconPath } from '../../game/assets.ts'
 import type { CardInstance } from '../../game/types.ts'
@@ -33,7 +33,7 @@ export type FloatingOverlaysProps = {
   cardFlights: readonly CardFlight[]
 }
 
-export function FloatingOverlays({
+export const FloatingOverlays = memo(function FloatingOverlays({
   viewerCharacter,
   stanceChangedThisTurn,
   slimeCardZoom,
@@ -151,4 +151,4 @@ export function FloatingOverlays({
       ))}
     </>
   )
-}
+})
