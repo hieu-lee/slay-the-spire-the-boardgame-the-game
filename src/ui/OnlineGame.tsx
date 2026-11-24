@@ -7,10 +7,7 @@ import { assetPath, preloadImages, releasePreloadedImages } from '../game/assets
 import type { CombatState } from '../game/combat.ts'
 import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTerminal } from '../game/run.ts'
 import { relicDef } from '../game/relics.ts'
-import type { Room } from '../game/map.ts'
-import type { CharacterId, Player } from '../game/types.ts'
 import { useRoomSession } from '../multiplayer/useRoomSession.ts'
-import type { PublicSeat, VisibleCombat, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
 import { useVoiceChat } from '../multiplayer/useVoiceChat.ts'
 import { CombatScreen } from './CombatScreen.tsx'
 import { IconValue } from './Icon.tsx'
@@ -26,7 +23,6 @@ import { RelicBar } from './RelicChip.tsx'
 import { RunSummary } from './RunSummary.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
-import type { SummarySeat } from './RunSummary.tsx'
 import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { wingBootUses } from './wing-boots.ts'
 import { CourierPanel, CourierPeek, courierPeekPhase } from './CourierPanel.tsx'
@@ -34,8 +30,7 @@ import { RoomScreen } from './RoomScreen.tsx'
 import { ACT_IV_UNLOCK_BOXES } from '../game/campaign.ts'
 import { NeowScreen } from './NeowScreen.tsx'
 import { QuickSetupScreen } from './QuickSetupScreen.tsx'
-import { currentQuickSetupStep } from '../game/meta.ts'
-import { DAILY_MODIFIERS } from '../game/meta.ts'
+import { currentQuickSetupStep, DAILY_MODIFIERS } from '../game/meta.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
 import { CompendiumScreen } from './CompendiumScreen.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
@@ -51,242 +46,27 @@ import { eventCanStartCombat } from '../game/events.ts'
 import { SettingsDialog } from './SettingsDialog.tsx'
 import type { GameSettings } from './game-settings.ts'
 import { catchUpAwardIndex, coinsOwed } from '../game/coins.ts'
-import { CARD_PACKS } from '../game/packs.ts'
-import type { CardPackId } from '../game/packs.ts'
 import { onlineRunKey } from '../wallet.ts'
 import { browserPaidAll, creditRunCoins } from '../wallet-storage.ts'
 import { CoinGainToast, type CoinGain } from './Coins.tsx'
-import { visualId } from '../game/skins.ts'
-import { preferredSkin } from '../skin-preference.ts'
 import { SkinProvider } from './skin-context.tsx'
+import { CHARACTERS, CharacterRoster, ForeignSeatNotice, LobbyPacks, Seat } from './online/LobbyWidgets.tsx'
+import { VoiceControls } from './online/VoiceControls.tsx'
+import {
+  choices,
+  combatForUi,
+  onlineSummarySeat,
+  pendingCardCopyLabel,
+  playerForUi,
+  wingChoices,
+} from './online/adapters.ts'
 
-const CHARACTERS = [
-  ['ironclad', 'Ironclad'],
-  ['silent', 'Silent'],
-  ['defect', 'Defect'],
-  ['watcher', 'Watcher'],
-  ['slime_boss', 'Slime Boss'],
-  ['guardian', 'Guardian'],
-  ['hexaghost', 'Hexaghost'],
-  ['hermit', 'Hermit'],
-] as const
-
-/** Why a seat's boss coins were withheld; leaves on its own or when dismissed. */
-function ForeignSeatNotice({ onDone }: { onDone: () => void }) {
-  useEffect(() => {
-    const timer = window.setTimeout(onDone, 9_000)
-    return () => clearTimeout(timer)
-  }, [onDone])
-  return <p className="coin-gain__notice" role="status">
-    Another account signed in after this seat was taken, so its boss coins were not paid here.
-    <button type="button" className="coin-gain__dismiss" aria-label="Dismiss" onClick={onDone}>×</button>
-  </p>
-}
-
-/** "Ann Bo" → "AB", "Wanderer" → "WA": two letters that always fit a chip. */
-const ownerInitials = (name: string): string => {
-  const words = name.trim().split(/\s+/).filter(Boolean)
-  return (words.length > 1 ? words.slice(0, 2).map((word) => word[0]).join('') : (words[0] ?? '?').slice(0, 2)).toUpperCase()
-}
-
-/**
- * The Shop packs the next run will shuffle in: every pack somebody at the table
- * bought. One short chip per pack keeps the strip to a single line however many
- * players and names there are; whose each pack is lives in its tooltip and label.
- */
-function LobbyPacks({ packs, seats, you }: { packs: readonly CardPackId[]; seats: readonly PublicSeat[]; you: string }) {
-  return <section className="online-lobby__packs" aria-labelledby="online-lobby-packs-title">
-    <h2 id="online-lobby-packs-title">Slayer packs in play</h2>
-    <ul>
-      {packs.map((id) => {
-        const owners = seats.filter((seat) => seat.cardPacks?.includes(id))
-          .map((seat) => seat.playerId === you ? 'you' : seat.name)
-        const label = `${CARD_PACKS[id].name}, from ${owners.join(', ')}`
-        // Every chip carries the same compact marker, never a truncated name: "you",
-        // one owner's initials, or a count. Full names are in the label and tooltip.
-        const marker = owners.length > 1 ? `×${owners.length}` : owners[0] === 'you' ? 'you' : ownerInitials(owners[0] ?? '')
-        return <li key={id} data-pack={id} title={label} aria-label={label}>
-          <strong aria-hidden="true">{CARD_PACKS[id].name.replace(' Slayer Pack', '')}</strong>
-          <small aria-hidden="true">{marker}</small>
-        </li>
-      })}
-    </ul>
-  </section>
-}
+export { pendingCardCopyLabel } from './online/adapters.ts'
 
 type Props = {
   onLocal: () => void
   settings: GameSettings
   onSettings: (settings: GameSettings) => void
-}
-
-function playerForUi(player: VisiblePlayer): Player {
-  return {
-    ...player,
-    deck: player.deck ?? [],
-    draw: player.draw ?? [],
-    hand: player.hand ?? [],
-    chamber: player.chamber ?? [],
-    cardRewards: [],
-    rareRewards: [],
-  }
-}
-
-/**
- * A seat for the end-of-run summary.
- *
- * `deck` is left undefined rather than defaulted to `[]`: the server sends only
- * the local seat's deck, and an empty array would render every teammate as
- * "0 cards" with no build — a confident lie. Undefined makes the summary omit
- * those lines for seats it cannot see.
- */
-function onlineSummarySeat(player: VisiblePlayer): SummarySeat {
-  return {
-    id: player.id,
-    name: player.name,
-    character: player.character,
-    hp: player.hp,
-    maxHp: player.maxHp,
-    gold: player.gold,
-    dead: player.dead,
-    relics: player.relics,
-    damageStats: player.damageStats,
-    deck: player.deck ?? undefined,
-  }
-}
-
-export function pendingCardCopyLabel(copy: NonNullable<VisibleCombat['pendingCardCopy']>): string {
-  const name = cardDef(copy.card.defId).name
-  const source = copy.sourceNames[0]
-  return copy.sourceNames.length > 1
-    ? `a ${name} copy (${source})`
-    : copy.card.scryDamageBonus !== undefined
-      ? `Scry-played ${name}`
-      : copy.virtualOnly
-        ? `a ${name} copy (${source})`
-        : `the original ${name} after a ${source} copy`
-}
-
-function choices(map: { position: string | null; rows: string[][]; rooms: Record<string, Room> }): Room[] {
-  if (map.position === null) {
-    const id = map.rows[0]?.[0]
-    return id && map.rooms[id] ? [map.rooms[id]] : []
-  }
-  return map.rooms[map.position]?.exits
-    .map((id) => map.rooms[id])
-    .filter((room): room is Room => room !== undefined) ?? []
-}
-
-function wingChoices(map: { position: string | null; rows: string[][]; rooms: Record<string, Room> }, player?: VisiblePlayer): Room[] {
-  if (!player?.relics.some((relic) => relic.defId === 'wing_boots' && (relic.uses ?? 0) > 0) || map.position === null) return []
-  const current = map.rooms[map.position]
-  if (!current) return []
-  const normal = new Set(current.exits)
-  return (map.rows[current.row + 1] ?? []).filter((id) => !normal.has(id)).map((id) => map.rooms[id])
-    .filter((room): room is Room => room !== undefined)
-}
-
-/**
- * One place at the table.
- *
- * The character's own portrait rather than its name in small caps: four seats
- * spelling out "Ironclad · online" four times was most of the wall of text this
- * screen used to be, and the art says which class it is at a glance — the same
- * portrait the player will look at all run.
- */
-function Seat({ seat, you }: { seat?: PublicSeat; you?: boolean }) {
-  const character = seat ? CHARACTERS.find(([id]) => id === seat.character) : undefined
-  return (
-    <div
-      className={['online-seat', seat ? '' : 'online-seat--empty', you ? 'online-seat--you' : '']
-        .filter(Boolean).join(' ')}
-      // A bare div resolves to role=generic, where `aria-label` is prohibited
-      // and silently dropped — the same trap `RelicChip` documents. The label is
-      // the whole accessible content of the seat, so it has to survive.
-      role="group"
-      aria-label={seat
-        ? `${seat.name}, ${character?.[1] ?? seat.character}${you ? ', you' : ''}, ${seat.connected ? 'online' : 'away'}`
-        : 'Open seat'}
-    >
-      {seat ? (
-        <>
-          <span className="online-seat__portrait" aria-hidden="true">
-            <img src={assetPath(`combat/characters/${visualId(seat.character, seat.skin)}.webp`)} alt=""
-              onError={(event) => { event.currentTarget.style.display = 'none' }} />
-          </span>
-          <span className="online-seat__name" aria-hidden="true" title={seat.name}>{seat.name}</span>
-          {seat.connected ? null : <span className="online-seat__class" aria-hidden="true"><em>away</em></span>}
-        </>
-      ) : <span className="online-seat__open" aria-hidden="true">+</span>}
-    </div>
-  )
-}
-
-/** The same close-cropped hero strip used by the polished solo screen. */
-function CharacterRoster({ character, onChoose, taken, disabled = false }: {
-  character: CharacterId
-  onChoose: (character: (typeof CHARACTERS)[number][0]) => void
-  taken?: ReadonlySet<string>
-  disabled?: boolean
-}) {
-  return (
-    <div className="online-character-roster" role="group" aria-label="Choose your character">
-      {CHARACTERS.map(([id, label]) => {
-        const unavailable = Boolean(taken?.has(id) && id !== character)
-        return <button type="button" className="online-character-roster__portrait" key={id} aria-label={label} aria-pressed={id === character}
-          disabled={disabled || unavailable} onClick={() => onChoose(id)}>
-          <img src={assetPath(`menu/character-select/portrait-${visualId(id, preferredSkin(id))}.png`)} alt="" />
-        </button>
-      })}
-    </div>
-  )
-}
-
-function RemoteAudio({ stream, volume }: { stream: MediaStream; volume: number }) {
-  const audio = useRef<HTMLAudioElement>(null)
-  useEffect(() => {
-    if (audio.current) {
-      audio.current.srcObject = stream
-      audio.current.volume = volume / 100
-    }
-  }, [stream, volume])
-  return <audio ref={audio} autoPlay playsInline />
-}
-
-function VoiceControls({ voice, seats, connected, volume, compact = false, showError = true }: {
-  voice: ReturnType<typeof useVoiceChat>
-  seats: PublicSeat[]
-  connected: boolean
-  volume: number
-  compact?: boolean
-  showError?: boolean
-}) {
-  if (!voice.available) return compact ? null
-    : <span className="voice voice--unavailable" data-webmcp-passive>Voice unavailable</span>
-  if (!voice.enabled) {
-    return (
-      <div className={`voice${compact ? ' voice--compact' : ''}`} data-webmcp-passive>
-        <button type="button" disabled={!connected || voice.starting} onClick={voice.start}>
-          {voice.starting ? 'Opening microphone…' : 'Join voice'}
-        </button>
-        {showError && voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
-      </div>
-    )
-  }
-  const connectedPeers = Object.values(voice.peerStates).filter((state) => state === 'connected').length
-  return (
-    <div className={`voice${compact ? ' voice--compact' : ''}`} aria-label="Party voice" data-webmcp-passive>
-      {/* The peer count rides the Leave button rather than sitting beside it as
-          a third element: it is a fact ABOUT the voice channel, and three
-          separate controls in a row was what crowded this corner. */}
-      <button type="button" aria-label={`Leave voice, ${connectedPeers} of ${Math.max(0, seats.length - 1)} peers connected`} onClick={voice.stop}>
-        Leave voice <span className="voice__status">{connectedPeers}/{Math.max(0, seats.length - 1)}</span>
-      </button>
-      <button type="button" aria-pressed={voice.muted} onClick={voice.toggleMute}>{voice.muted ? 'Unmute' : 'Mute'}</button>
-      {showError && voice.error ? <span className="online-error" role="alert">{voice.error}</span> : null}
-      {Object.entries(voice.remoteStreams).map(([peerId, stream]) => <RemoteAudio key={peerId} stream={stream} volume={volume} />)}
-    </div>
-  )
 }
 
 export function OnlineGame({ onLocal, settings, onSettings }: Props) {
@@ -509,66 +289,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
   const visibleCombat = snapshot?.run?.combat
   const asyncPlayerTurn = visibleCombat?.phase === 'player' ||
     visibleCombat?.phase === 'copy' && visibleCombat.pendingCardCopy?.resumePhase === 'player'
-  const combat = useMemo(() => {
-    if (!visibleCombat) return null
-    const viewerId = snapshot?.you.playerId
-    const visibleProgress = visibleCombat.startTurnProgress
-    return {
-      ...visibleCombat,
-      startTurnProgress: visibleProgress ? {
-        ...visibleProgress,
-        forcedCard: asyncPlayerTurn && visibleProgress.forcedCard?.playerId !== viewerId
-          ? undefined : visibleProgress.forcedCard,
-      } : undefined,
-      pendingCardCopy: asyncPlayerTurn && visibleCombat.pendingCardCopy?.playerId !== viewerId
-        ? undefined : visibleCombat.pendingCardCopy,
-      pendingTriggers: asyncPlayerTurn || visibleCombat.phase === 'start'
-        ? visibleCombat.pendingTriggers.filter((trigger) => trigger.playerId === viewerId)
-        : visibleCombat.pendingTriggers,
-      pendingPlunderSwitches: asyncPlayerTurn
-        ? visibleCombat.pendingPlunderSwitches?.filter((choice) => choice.playerId === viewerId)
-        : visibleCombat.pendingPlunderSwitches,
-      pendingDieRelicChoices: asyncPlayerTurn
-        ? visibleCombat.pendingDieRelicChoices?.filter((choice) => choice.playerId === viewerId)
-        : visibleCombat.pendingDieRelicChoices,
-      pendingHermitSetupLoads: asyncPlayerTurn
-        ? visibleCombat.pendingHermitSetupLoads?.filter((choice) => choice.playerId === viewerId)
-        : visibleCombat.pendingHermitSetupLoads,
-      pendingHermitChamberPlays: asyncPlayerTurn
-        ? visibleCombat.pendingHermitChamberPlays?.filter((choice) => choice.playerId === viewerId)
-        : visibleCombat.pendingHermitChamberPlays,
-      pendingHermitStrengthRewards: asyncPlayerTurn
-        ? visibleCombat.pendingHermitStrengthRewards?.filter((choice) => choice.playerId === viewerId)
-        : visibleCombat.pendingHermitStrengthRewards,
-      // Slayer Pack: another seat's card choice never blocks this seat's Player Turn.
-      pendingPlayerChoices: asyncPlayerTurn
-        ? visibleCombat.pendingPlayerChoices?.filter((choice) => choice.playerId === viewerId)
-        : visibleCombat.pendingPlayerChoices,
-      pendingSlayerChoices: asyncPlayerTurn
-        ? visibleCombat.pendingSlayerChoices?.filter((choice) => choice.playerId === viewerId)
-        : visibleCombat.pendingSlayerChoices,
-      rng: { seed: 0, calls: 0 },
-      discardedThisTurn: [],
-      stanceChangedThisTurn: [],
-      playedCardsThisTurn: visibleCombat.playedCardsThisTurn ?? [],
-      potionDeck: [],
-      potionLimit: visibleCombat.potionLimit,
-      lastStand: visibleCombat.lastStand,
-      summonSupply: {},
-      pendingSummons: visibleCombat.pendingSummons ?? [],
-      pendingDistilled: visibleCombat.pendingDistilled &&
-      (!asyncPlayerTurn || visibleCombat.pendingDistilled.playerId === viewerId) ? {
-        ...visibleCombat.pendingDistilled,
-        cards: visibleCombat.pendingDistilled.cards ?? [],
-      } : undefined,
-      pendingRelicScry: visibleCombat.pendingRelicScry &&
-      (!asyncPlayerTurn || visibleCombat.pendingRelicScry.playerId === viewerId) ? {
-        ...visibleCombat.pendingRelicScry,
-        cards: visibleCombat.pendingRelicScry.cards ?? [],
-      } : undefined,
-      players: visibleCombat.players.map(playerForUi),
-    } satisfies CombatState
-  }, [asyncPlayerTurn, visibleCombat, snapshot?.you.playerId])
+  const combat = useMemo<CombatState | null>(
+    () => (visibleCombat ? combatForUi(visibleCombat, snapshot?.you.playerId, asyncPlayerTurn) : null),
+    [asyncPlayerTurn, visibleCombat, snapshot?.you.playerId],
+  )
 
   if (!snapshot && room.activeCode) {
     return (
