@@ -1,0 +1,1171 @@
+import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
+import { CAMPAIGN_EVENT, campaignKey, savedCampaign, saveCampaign } from '../../campaign-storage.ts'
+import { assetPath, preloadImages, releasePreloadedImages } from '../../game/assets.ts'
+import { allocateSharedMarks, canEnterActIV, isActIVUnlocked } from '../../game/campaign.ts'
+import { cardDef, faceOf } from '../../game/cards.ts'
+import { coinsOwed } from '../../game/coins.ts'
+import { orderStartTurnScries, resolveHermitSetupLoad, resolveStartTurnScry, type CombatState } from '../../game/combat.ts'
+import { dailySeedText } from '../../game/daily.ts'
+import { eventCanStartCombat } from '../../game/events.ts'
+import { currentQuickSetupStep, DAILY_MODIFIERS, rollDailyModifiers, type DailyModifierId, type RunMetaOptions, type RunMode } from '../../game/meta.ts'
+import { refreshCombatRelic, relicDef } from '../../game/relics.ts'
+import { createRng, seedFromString } from '../../game/rng.ts'
+import {
+  advanceAct,
+  advanceQuickSetup,
+  canGiveUpRun,
+  canRerollDownfallSelfBoss,
+  canSkipEvent,
+  chooseEvent,
+  chooseNeow,
+  choosePendingRelicReward,
+  chooseRelicReward,
+  decideCourier,
+  enterRoom,
+  finishMerchant,
+  finishRewardsIfComplete,
+  finishRun,
+  giveUpRun,
+  hasPendingRelicAcquisition,
+  leaveRoom,
+  neowPreview,
+  pendingRelicPreview,
+  purchaseAtMerchant,
+  removeAtCurrentMerchant,
+  rerollDownfallSelfBoss,
+  resolveBossRelicReward,
+  resolveCampfire,
+  resolveCardRewards,
+  resolveCombat,
+  resolveGoldReward,
+  resolveGuardianSocket,
+  resolveNeowEffect,
+  resolveNeowReward,
+  resolvePendingRelic,
+  resolvePotionReward,
+  resolveRelicReward,
+  resolveTransformReward,
+  revealCardReward,
+  revealCourier,
+  revealNeowReward,
+  roomChoices,
+  skipEvent,
+  startPendingBoss,
+  switchBetweenCombatRow,
+  tradePotion,
+  unavailableEventOptionIds,
+  usePotionOutsideCombat,
+  victoryIsTerminal,
+  visibleMap,
+  wingBootChoices,
+  type RunState,
+} from '../../game/run.ts'
+import { visualId } from '../../game/skins.ts'
+import type { CharacterId } from '../../game/types.ts'
+import { flushLeaderboardOutbox, queueFinishedSoloRun } from '../../leaderboard.ts'
+import { selectedCardPacks } from '../../pack-preference.ts'
+import { isRestricted, onProfileChange, PROFILE_KEY, savedProfile, SPIRE_REJECTION } from '../../profile.ts'
+import { preferredSkin } from '../../skin-preference.ts'
+import { soloRunKey } from '../../wallet.ts'
+import { ACCOUNT_WALLETS, creditRunCoins, currentWalletKey, savedWallet, syncAccountWallet } from '../../wallet-storage.ts'
+import { CampfireScreen } from '../CampfireScreen.tsx'
+import { CardCollectionOverlay } from '../CardCollectionOverlay.tsx'
+import { CardMorph, CardMorphAnnouncement } from '../CardMorph.tsx'
+import { CoinGainToast, type CoinGain } from '../Coins.tsx'
+import { usePrefersReducedMotion } from '../combat-screen/hooks.ts'
+import {
+  COMBAT_OUTCOME_DELAY_MS,
+  COMBAT_OUTCOME_SOUND_DELAY_MS,
+  combatOutcomeAnimationActive,
+} from '../combat-screen/vfx.tsx'
+import { CourierPanel, CourierPeek, courierPeekPhase } from '../CourierPanel.tsx'
+import type { GameSettings } from '../game-settings.ts'
+import { GiveUpPanel } from '../GiveUpPanel.tsx'
+import { IconValue } from '../Icon.tsx'
+import { LeaderboardScreen } from '../LeaderboardScreen.tsx'
+import { MapOverlay } from '../MapOverlay.tsx'
+import { MapScreen } from '../MapScreen.tsx'
+import { NeowScreen } from '../NeowScreen.tsx'
+import { OutsidePotionBar } from '../OutsidePotionBar.tsx'
+import { PlayerTitle } from '../PlayerTitle.tsx'
+import { PotionSlots } from '../PotionSlots.tsx'
+import { ProfileScreen } from '../ProfileScreen.tsx'
+import { QuickSetupScreen } from '../QuickSetupScreen.tsx'
+import { RelicBar } from '../RelicChip.tsx'
+import { GuardianSocketPanel, RelicResolvePanel } from '../RelicResolvePanel.tsx'
+import { ReplayBar } from '../ReplayBar.tsx'
+import { RewardScreen } from '../RewardScreen.tsx'
+import { RoomScreen } from '../RoomScreen.tsx'
+import {
+  discardRunLog,
+  downloadRunLog,
+  playRunLog,
+  startRunLog,
+  useRunLog,
+  type RunLog,
+} from '../run-log.ts'
+import { ReplaySession } from '../run-replay.ts'
+import { RunSummary, summarySeat } from '../RunSummary.tsx'
+import { SettingsDialog } from '../SettingsDialog.tsx'
+import { playSoundEffect, useCombatMusic, useRunOutcomeSound, useVictoryMusic } from '../sfx.ts'
+import { SkinProvider } from '../skin-context.tsx'
+import { StartMenu } from '../StartMenu.tsx'
+import { StatsScreen } from '../StatsScreen.tsx'
+import { TreasureEffects } from '../TreasureEffects.tsx'
+import { tutorialChapters, tutorialSeed } from '../tutorial/index.ts'
+import { createTutorialRun, enterTutorialRoom } from '../tutorial/run.ts'
+import { TutorialCoach } from '../TutorialCoach.tsx'
+import { useCardMorphs } from '../useCardMorphs.ts'
+import { useUtcDay } from '../useUtcDay.ts'
+import { wingBootUses } from '../wing-boots.ts'
+import {
+  campaignBeforeCurrentRun,
+  campaignBeforePendingRun,
+  DEFAULT_CHARACTERS,
+  legalCharacters,
+  newRun,
+  ownsRun,
+  ROSTER,
+  savedSoloRun,
+  SOLO_RUN_KEY,
+  type BuiltRun,
+  type SoloRunSave,
+} from './solo-save.ts'
+
+const CombatScreen = lazy(() => import('../CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
+const CompendiumScreen = lazy(() => import('../CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
+const ShopScreen = lazy(() => import('../ShopScreen.tsx').then((module) => ({ default: module.ShopScreen })))
+
+type StsDebugBridge = {
+  getRun: () => RunState
+  /** The combat state, or null outside a fight. */
+  getState: () => CombatState | null
+  setRun: (next: RunState) => void
+  reset: (count: number, seed: string, nextAscension?: number) => void
+  setViewer: (id: string) => void
+  playUiSound: () => void
+  getSettings: () => GameSettings
+}
+
+interface WindowWithStsDebug extends Window {
+  __STS_DEBUG__?: StsDebugBridge
+}
+
+export function LocalGame({ onOnline, settings, onSettings, active, seedText, setSeedText }: {
+  onOnline?: () => void
+  settings: GameSettings
+  onSettings: (settings: GameSettings) => void
+  active: boolean
+  seedText: string
+  setSeedText: (seed: string) => void
+}) {
+  // A remount must return to the menu, not autosave an unstarted replacement run.
+  const [open, setOpen] = useState(false)
+  const onOpen = () => setOpen(true)
+  const onClose = () => setOpen(false)
+  const [ascension, setAscension] = useState(0)
+  const [characters, setCharacters] = useState<CharacterId[]>(() => [...DEFAULT_CHARACTERS])
+  const [chooseYourRelic, setChooseYourRelic] = useState(false)
+  const [lastStand, setLastStand] = useState(false)
+  const [mode, setMode] = useState<RunMode>('standard')
+  const [customModifierIds, setCustomModifierIds] = useState<DailyModifierId[]>([])
+  const [quickStartAct, setQuickStartAct] = useState<1 | 2 | 3 | 4>(1)
+  const [run, setRun] = useState<RunState>(() => newRun(1, crypto.randomUUID()))
+  const [journalAscension, setJournalAscension] = useState(() => savedCampaign().highestAscension)
+  const [resume, setResume] = useState<SoloRunSave | null>(savedSoloRun)
+  // Play in progress belongs to the account that started it: profile.ts clears the
+  // saved run on an account change, so the Resume offered here follows the save.
+  const ownership = useRef<{ open: boolean; built: Pick<BuiltRun, 'owner'>; playing: boolean }>({ open, built: {}, playing: false })
+  useEffect(() => {
+    const refresh = () => {
+      setResume(savedSoloRun())
+      // A run left open in this tab belongs to the account that started it: leave it
+      // when another account signs in (here or in another tab).
+      const current = ownership.current
+      if (current.open && current.playing && !ownsRun(current.built)) onClose()
+    }
+    const storage = (event: StorageEvent) => { if (event.key === null || event.key === PROFILE_KEY || event.key === SOLO_RUN_KEY) refresh() }
+    const stop = onProfileChange(refresh)
+    window.addEventListener('storage', storage)
+    return () => { stop(); window.removeEventListener('storage', storage) }
+  }, [])
+  const [choosingNextCharacter, setChoosingNextCharacter] = useState(false)
+  const prefersReducedMotion = usePrefersReducedMotion()
+  const updateCombat = useCallback((next: CombatState) => {
+    setRun((current) => ({ ...current, combat: next }))
+  }, [])
+  useRunOutcomeSound(run, undefined, true,
+    settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_SOUND_DELAY_MS)
+  useCombatMusic(run, active && open && settings.bgmVolume > 0, settings.bgmVolume)
+  useVictoryMusic(!run.campaign.finalized && victoryIsTerminal(run, run.campaignProgress), active && open && settings.bgmVolume > 0, settings.bgmVolume)
+  const [viewerId, setViewerId] = useState('p1')
+  const revealLocalCourier = useCallback((kind: 'relic' | 'potion') => setRun((current) => revealCourier(current, viewerId, kind)), [viewerId])
+  const [compendium, setCompendium] = useState(false)
+  const [leaderboard, setLeaderboard] = useState(false)
+  const [stats, setStats] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [shop, setShop] = useState<false | 'packs' | 'skins'>(false)
+  const [coinGain, setCoinGain] = useState<CoinGain | null>(null)
+  const clearCoinGain = useCallback(() => setCoinGain(null), [])
+  const [giveUpOpen, setGiveUpOpen] = useState(false)
+  const [pauseOpen, setPauseOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [settingsReturnToPause, setSettingsReturnToPause] = useState(false)
+  const [mapSelectionPending, setMapSelectionPending] = useState(false)
+  const pauseDialog = useRef<HTMLDialogElement>(null)
+  const runShell = useRef<HTMLElement>(null)
+  const queuedLeaderboardRun = useRef<string | null>(null)
+  const leaderboardSubmission = useRef<{ id: string; owner: string } | null>(null)
+  const [leaderboardStatus, setLeaderboardStatus] = useState<'pending' | 'recorded' | 'queued' | 'rejected' | null>(null)
+  const [recordRunId, setRecordRunId] = useState<string | null>(null)
+  const [runLogExtractedRunId, setRunLogExtractedRunId] = useState<string | null>(null)
+  const [runLogMessage, setRunLogMessage] = useState<string | null>(null)
+  const [extractingRunLog, setExtractingRunLog] = useState(false)
+  const [replayLog, setReplayLog] = useState<RunLog | null>(null)
+  const [replayFinished, setReplayFinished] = useState(false)
+  // Bumped by each seek so the screens start clean instead of carrying half-finished picks from the old position.
+  const [replayEpoch, setReplayEpoch] = useState(0)
+  const [replaySession, setReplaySession] = useState<ReplaySession | null>(null)
+  const replayRunner = useRef<{ log: RunLog; controller: AbortController; removeCursor?: () => void; stop?: number } | null>(null)
+  const replayReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
+  const terminalRun = useRef<RunState | null>(null)
+  // The guided tutorial is a throwaway Act I run. The run it interrupted is
+  // parked here and restored on exit, and while it lasts nothing is written to
+  // the solo checkpoint, the campaign journal, the run log or the leaderboard.
+  // `attempt` restarts the coach when the same hero's tutorial is tried again.
+  const [tutorial, setTutorial] = useState<{ character: CharacterId; seed: string; attempt: number } | null>(null)
+  const [tutorialTipsHidden, setTutorialTipsHidden] = useState(false)
+  const tutorialReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
+  const tutorialCharacter = tutorial?.character
+  const tutorialChapterList = useMemo(() => tutorialCharacter ? tutorialChapters(tutorialCharacter) : [], [tutorialCharacter])
+  const { available: runLogAvailable, discard: discardLog, load: loadRunLog } = useRunLog(
+    run, active && open && !replayLog && !tutorial, viewerId,
+  )
+  const [today, refreshToday] = useUtcDay()
+  const dailyModifiers = useMemo(() => rollDailyModifiers(createRng(seedFromString(dailySeedText(today)))).modifiers, [today])
+  // Set when Embark found the UTC day had turned since the menu was drawn.
+  const [dailyTurned, setDailyTurned] = useState(false)
+  // For a Daily Climb this reads the stored journal, which only the persist effect writes, from `run`.
+  const playerProgress = useMemo(() => campaignBeforeCurrentRun(run), [run.campaignProgress, run.campaign.finalized, run.meta.dailyDate, active, journalAscension])
+  // The engine fixes a Daily Climb's seed, Ascension and setup from its day.
+  const metaOptions: RunMetaOptions = mode === 'daily' ? { mode, dailyDate: today } : { mode, modifiers: customModifierIds, quickStartAct }
+  const canGiveUp = canGiveUpRun(run, run.campaignProgress)
+  // The Spire turns a restricted account's runs away: each one is lost the moment it is open.
+  const [restricted, setRestricted] = useState(isRestricted)
+  useEffect(() => onProfileChange(() => setRestricted(isRestricted())), [])
+  const lostToSpire = restricted && !replayLog
+  useLayoutEffect(() => {
+    if (restricted && open && !tutorial && !replayLog && canGiveUp) setRun(giveUpRun)
+  }, [restricted, open, tutorial, replayLog, canGiveUp])
+
+  /** The settings the run in progress was actually built from. */
+  const [built, setBuilt] = useState<BuiltRun>({ count: 1, seed: seedText, ascension: 0, chooseYourRelic: false, lastStand: false, characters: [...DEFAULT_CHARACTERS], meta: {} })
+  const coinKey = built.coinKey ?? soloRunKey(run.campaign.runId, run.seed)
+
+  const discardSoloRun = () => {
+    try { localStorage.removeItem(SOLO_RUN_KEY) } catch { /* Storage is unavailable. */ }
+    setResume(null)
+  }
+
+  const resumeSoloRun = () => {
+    if (!resume) return
+    // A Daily Climb's seed, Ascension and setup are fixed, not the player's menu choices.
+    if (resume.built.meta.dailyDate === undefined) {
+      setSeedText(resume.built.seed)
+      setAscension(resume.built.ascension)
+      setCustomModifierIds([...(resume.built.meta.modifiers ?? [])])
+      setQuickStartAct(resume.built.meta.quickStartAct ?? 1)
+    }
+    setCharacters(resume.built.characters)
+    setChooseYourRelic(resume.built.chooseYourRelic)
+    setLastStand(resume.built.lastStand)
+    setMode(resume.built.meta.mode ?? 'standard')
+    setBuilt(resume.built)
+    setRun(resume.run.phase === 'combat' ? resume.run : {
+      ...resume.run,
+      players: resume.run.players.map(player => ({ ...player, relics: player.relics.map(refreshCombatRelic) })),
+    })
+    terminalRun.current = resume.terminalRun ? structuredClone(resume.terminalRun) : null
+    setRecordRunId(resume.recordRunId ?? null)
+    setRunLogExtractedRunId(resume.runLogExtractedRunId ?? null)
+    setRunLogMessage(null)
+    setViewerId('p1')
+    setChoosingNextCharacter(false)
+    onOpen()
+  }
+
+  const flushQueuedRun = () => void flushLeaderboardOutbox().then(({ recorded, rejected }) => {
+    const submission = leaderboardSubmission.current
+    if (!submission) return
+    const { id, owner } = submission
+    if (recorded.includes(id) || rejected.includes(id)) leaderboardSubmission.current = null
+    setLeaderboardStatus(recorded.includes(id) ? 'recorded' : rejected.includes(id) ? 'rejected' : 'queued')
+    if (recorded.includes(id) && currentWalletKey() === owner) {
+      const before = savedWallet().coins
+      // An in-flight refresh may predate this payout. Wait for it, then read again.
+      void syncAccountWallet().then(() => syncAccountWallet()).then(({ wallet }) => {
+        const coins = wallet.coins - before
+        if (coins > 0 && currentWalletKey() === owner) setCoinGain((current) => ({ coins, total: wallet.coins, id: (current?.id ?? 0) + 1 }))
+      }).catch(() => {})
+    }
+  })
+
+  useEffect(() => {
+    if (replayLog) return
+    flushQueuedRun()
+    const retry = window.setInterval(flushQueuedRun, 60_000)
+    const online = flushQueuedRun
+    window.addEventListener('online', online)
+    return () => { clearInterval(retry); window.removeEventListener('online', online) }
+  }, [replayLog])
+
+  useEffect(() => {
+    const dialog = pauseDialog.current
+    if (!dialog) return
+    if (!active && pauseOpen) {
+      setPauseOpen(false)
+      return
+    }
+    if (pauseOpen && !dialog.open) dialog.showModal()
+    else if (!pauseOpen && dialog.open) dialog.close()
+  }, [active, pauseOpen])
+
+  useEffect(() => {
+    if (!active || !open || compendium || giveUpOpen) return undefined
+    let timer: number | undefined
+    const pause = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || pauseDialog.current?.open || document.querySelector('dialog[open]')) return
+      if (event.target instanceof Element && event.target.closest('.powers, .potion-chip, .relic-chip')) return
+      if (document.querySelector('.power__zoom, .potion-tip, .relic-chip:hover > .relic-tip, .relic-chip:focus-within > .relic-tip')) return
+      timer = window.setTimeout(() => {
+        if (!event.defaultPrevented && !document.querySelector('dialog[open]')) setPauseOpen(true)
+      })
+    }
+    document.addEventListener('keydown', pause)
+    return () => {
+      document.removeEventListener('keydown', pause)
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }, [active, compendium, giveUpOpen, open])
+
+  useEffect(() => {
+    if (giveUpOpen && !canGiveUp) setGiveUpOpen(false)
+  }, [canGiveUp, giveUpOpen])
+
+  function restart(count: number, seed: string, nextAscension = 0, nextChooseYourRelic = chooseYourRelic, nextLastStand = lastStand, selected = characters, nextMeta: RunMetaOptions = metaOptions) {
+    const nextCharacters = legalCharacters(selected)
+    const journal = open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run)
+    // Every climb shares the day's seed, so its run number alone keeps it distinct on the
+    // leaderboard; another tab may already have used this tab's next number.
+    const progress = nextMeta.mode === 'daily'
+      ? { ...journal, nextRunNumber: Math.max(journal.nextRunNumber, savedCampaign().nextRunNumber) }
+      : journal
+    const legalAscension = Math.min(nextAscension, progress.highestAscension)
+    // The public day seed must never become the random seed of a later Standard run.
+    if (nextMeta.mode !== 'daily') setSeedText(seed)
+    setAscension(legalAscension)
+    setCharacters(nextCharacters)
+    setChooseYourRelic(nextChooseYourRelic)
+    setLastStand(nextLastStand)
+    setViewerId('p1')
+    setRecordRunId(null)
+    setRunLogExtractedRunId(null)
+    setRunLogMessage(null)
+    setCoinGain(null)
+    setReplayLog(null)
+    setReplaySession(null)
+    setTutorial(null)
+    tutorialReturn.current = null
+    terminalRun.current = null
+    // Bought Shop packs join every new run except a Daily Climb, whose pools everyone shares.
+    const packs = nextMeta.mode === 'daily' ? [] : selectedCardPacks()
+    const meta: RunMetaOptions = packs.length > 0 ? { ...nextMeta, cardPacks: packs } : nextMeta
+    const next = newRun(count, seed, legalAscension, progress, nextChooseYourRelic, nextLastStand, nextCharacters, meta)
+    // A Daily Climb's engine overrides the requested Ascension; record what was built.
+    setBuilt({ count, seed, ascension: next.ascension, chooseYourRelic: nextChooseYourRelic, lastStand: nextLastStand, characters: nextCharacters, meta,
+      coinKey: soloRunKey(next.campaign.runId, next.seed, crypto.randomUUID()), owner: currentWalletKey() })
+    void startRunLog(next)
+    setRun(next)
+  }
+
+  const startTutorial = (character: CharacterId) => {
+    if (!tutorialReturn.current) tutorialReturn.current = { run, viewerId }
+    setViewerId('p1')
+    setPauseOpen(false)
+    setGiveUpOpen(false)
+    setTutorialTipsHidden(false)
+    const seed = tutorialSeed(character)
+    setTutorial((current) => ({ character, seed, attempt: (current?.attempt ?? 0) + 1 }))
+    setRun(createTutorialRun(character, ROSTER.find((entry) => entry.character === character)!.name, seed))
+    onOpen()
+  }
+
+  const exitTutorial = () => {
+    const previous = tutorialReturn.current
+    tutorialReturn.current = null
+    if (previous) {
+      setRun(previous.run)
+      setViewerId(previous.viewerId)
+    }
+    setTutorial(null)
+    setPauseOpen(false)
+    onClose()
+  }
+
+  const recordRunResult = () => {
+    // Recording the result is what pays the run's boss coins, once: the ledger
+    // refuses a second payment however often this is reached for the same run.
+    if (!replayLog && !tutorial) {
+      if (!ownsRun(built)) {
+        // Another account signed in since this run began (possibly in another tab): its coins are not theirs.
+        if (coinsOwed(run.campaign.bossCoins) > 0) setRunLogMessage('This run was started by another account, so its coins were not paid. Sign in to that account to play its runs.')
+      } else if (!(run.meta.dailyDate !== undefined && ACCOUNT_WALLETS && savedProfile())) {
+        const { coins, total } = creditRunCoins(coinKey, run.campaign.bossCoins)
+        if (coins > 0) setCoinGain((current) => ({ coins, total, id: (current?.id ?? 0) + 1 }))
+      }
+    }
+    setRecordRunId(run.campaign.runId)
+    // The pre-record snapshot of this run must never be offered again.
+    setResume(null)
+    setRun((current) => {
+      if (current.campaign.finalized) return current
+      terminalRun.current = structuredClone(current)
+      return finishRun(current)
+    })
+  }
+
+  const extractRunLog = async () => {
+    if (extractingRunLog) return
+    setExtractingRunLog(true)
+    try {
+      const log = await loadRunLog()
+      if (!log) return setRunLogMessage('This run log could not be loaded.')
+      downloadRunLog(log)
+      setRunLogExtractedRunId(log.runId)
+      setRunLogMessage('Run log downloaded.')
+    } catch (error) {
+      setRunLogMessage(error instanceof Error ? error.message : 'Run log extraction failed.')
+    } finally { setExtractingRunLog(false) }
+  }
+
+  const prepareNextRun = () => {
+    discardLog()
+    discardSoloRun()
+    setSeedText(crypto.randomUUID())
+    if (run.meta.mode === 'daily') setMode('standard')
+    setChoosingNextCharacter(true)
+    onClose()
+  }
+
+  const stopReplay = () => {
+    const runner = replayRunner.current
+    replayRunner.current = null
+    if (!runner) return
+    clearTimeout(runner.stop)
+    runner.controller.abort()
+    runner.removeCursor?.()
+  }
+
+  const leaveReplay = () => {
+    stopReplay()
+    const previous = replayReturn.current
+    replayReturn.current = null
+    if (previous) {
+      setRun(previous.run)
+      setViewerId(previous.viewerId)
+    }
+    setReplayLog(null)
+    setReplaySession(null)
+    setReplayFinished(false)
+    setRunLogMessage(null)
+  }
+
+  const startReplay = (log: RunLog) => {
+    stopReplay()
+    setReplayFinished(false)
+    replayReturn.current = { run: structuredClone(run), viewerId }
+    setRunLogMessage(null)
+    setReplayLog(log)
+    setReplaySession(new ReplaySession(log))
+    setRun(structuredClone(log.initial))
+    setViewerId(log.initial.players[0]!.id)
+    setCompendium(false)
+    setPauseOpen(false)
+    setSettingsOpen(false)
+    onOpen()
+  }
+
+  const launchReplay = (log: RunLog, session: ReplaySession, start?: { position: number; state: RunState }) => {
+    const started = { log, controller: new AbortController() } as NonNullable<typeof replayRunner.current>
+    replayRunner.current = started
+    session.update({ finished: false })
+    void playRunLog(log, {
+      setRun,
+      setViewer: setViewerId,
+      reducedMotion: settings.reducedMotion || prefersReducedMotion,
+      signal: started.controller.signal,
+      pause: () => setPauseOpen(true),
+      pace: session,
+      start,
+      onPosition: (position) => session.update({ position }),
+    }).then((removeCursor) => {
+      if (started.controller.signal.aborted) removeCursor()
+      else {
+        started.removeCursor = removeCursor
+        session.update({ finished: true, paused: false, position: session.timeline.total })
+        setReplayFinished(true)
+      }
+    }).catch((error) => {
+      if (started.controller.signal.aborted) return
+      session.update({ finished: true })
+      setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
+    })
+  }
+
+  // Jumping restarts playback from the chosen move; the run state there is rebuilt from the log.
+  const seekReplay = (position: number) => {
+    const runner = replayRunner.current
+    if (!replayLog || !replaySession || !runner) return
+    const target = Math.min(Math.max(Math.trunc(position), 0), replaySession.timeline.total)
+    let state: RunState
+    try { state = replaySession.timeline.stateAt(target) } catch (error) {
+      setRunLogMessage(error instanceof Error ? error.message : 'Replay stopped.')
+      return
+    }
+    clearTimeout(runner.stop)
+    runner.controller.abort()
+    runner.removeCursor?.()
+    setReplayFinished(false)
+    setRunLogMessage(null)
+    // The remount below replaces the game menu's dialog, so an open menu is closed with it.
+    setPauseOpen(false)
+    setReplayEpoch((epoch) => epoch + 1)
+    launchReplay(replayLog, replaySession, { position: target, state })
+  }
+
+  useEffect(() => {
+    if (!replayLog || !replaySession || !open || !active) return
+    // StrictMode reruns this effect at once with nothing changed (also when a Suspense boundary
+    // reappears); the replay already under way keeps going instead of restarting from its first event.
+    if (replayRunner.current?.log === replayLog) clearTimeout(replayRunner.current.stop)
+    else {
+      stopReplay()
+      setReplayFinished(false)
+      setRunLogMessage(null)
+      // Coming back to a replay that was already under way picks up where it stopped.
+      const position = replaySession.position
+      let start: { position: number; state: RunState } | undefined
+      try { if (position > 0) start = { position, state: replaySession.timeline.stateAt(position) } } catch {}
+      launchReplay(replayLog, replaySession, start)
+    }
+    return () => {
+      // A seek replaces the runner, so the one to stop is whichever is current when the effect ends.
+      const runner = replayRunner.current
+      if (runner) runner.stop = window.setTimeout(() => { if (replayRunner.current === runner) stopReplay() })
+    }
+  }, [active, open, replayLog])
+
+  useEffect(() => {
+    replaySession?.timeline.index()
+    return () => replaySession?.timeline.stopIndexing()
+  }, [replaySession])
+
+  // A debug bridge for the Playwright suite: drive real clicks, assert real
+  // state. Screenshots are for review; assertions read from here.
+  useLayoutEffect(() => {
+    const bridge: StsDebugBridge = {
+      getRun: () => run,
+      /** The combat state, or null outside a fight. */
+      getState: () => run.combat,
+      setRun: (next: RunState) => flushSync(() => setRun(next)),
+      reset: (count: number, seed: string, nextAscension = 0) => restart(count, seed, nextAscension, chooseYourRelic, lastStand, DEFAULT_CHARACTERS, mode === 'daily' ? {} : metaOptions),
+      setViewer: (id: string) => flushSync(() => setViewerId(id)),
+      playUiSound: () => playSoundEffect('ui'),
+      getSettings: () => settings,
+    }
+    ;(window as WindowWithStsDebug).__STS_DEBUG__ = bridge
+  }, [run, settings, mode])
+
+  useEffect(() => {
+    if (!replayLog) setAscension((current) => Math.min(current, playerProgress.highestAscension))
+  }, [replayLog, playerProgress.highestAscension])
+
+  useEffect(() => {
+    if (!replayLog && !tutorial) saveCampaign(open ? campaignBeforePendingRun(run) : campaignBeforeCurrentRun(run))
+  }, [open, replayLog, run.campaignProgress, run.campaign.finalized, tutorial])
+
+  useEffect(() => {
+    const refresh = () => setJournalAscension(savedCampaign().highestAscension)
+    const storage = (event: StorageEvent) => { if (event.key === campaignKey() || event.key === null) refresh() }
+    window.addEventListener(CAMPAIGN_EVENT, refresh)
+    window.addEventListener('storage', storage)
+    refresh()
+    return () => { window.removeEventListener(CAMPAIGN_EVENT, refresh); window.removeEventListener('storage', storage) }
+  }, [])
+
+  ownership.current = { open, built, playing: !tutorial && !replayLog }
+  // A bounty toast belongs to the screen it was raised on; leaving the run drops it.
+  useEffect(() => { if (!open) setCoinGain(null) }, [open])
+
+  // A fallen boss only promises its coins: they reach the wallet when the run's
+  // result is recorded (`recordRunResult`). This announces each new award as
+  // pending; a resume or reload announces nothing, and a replay or the tutorial
+  // plays somebody's — or nobody's — finished boss again.
+  const announcedAwards = useRef<{ key: string; count: number } | null>(null)
+  useEffect(() => {
+    // A tutorial or replay is not the parked run: leave its count alone, so returning announces nothing.
+    if (replayLog || tutorial) return
+    const count = run.campaign.bossCoins?.length ?? 0
+    const key = `${coinKey}|${run.campaign.runId}`
+    const previous = announcedAwards.current
+    announcedAwards.current = { key, count }
+    if (previous?.key !== key || count <= previous.count) return
+    const coins = coinsOwed(run.campaign.bossCoins?.slice(previous.count))
+    if (coins > 0) setCoinGain((current) => ({ coins, total: coinsOwed(run.campaign.bossCoins), pending: true, id: (current?.id ?? 0) + 1 }))
+  }, [coinKey, replayLog, run.campaign.bossCoins, tutorial])
+
+  useLayoutEffect(() => {
+    if (!open || replayLog || tutorial) return
+    if (run.campaign.finalized) {
+      if (terminalRun.current?.campaign.runId !== run.campaign.runId) return discardSoloRun()
+      if (recordRunId === run.campaign.runId && queuedLeaderboardRun.current !== run.campaign.runId && ownsRun(built)) {
+        queuedLeaderboardRun.current = run.campaign.runId
+        const id = queueFinishedSoloRun(run)
+        leaderboardSubmission.current = id ? { id, owner: currentWalletKey() } : null
+        if (leaderboardSubmission.current) {
+          setLeaderboardStatus('pending')
+          flushQueuedRun()
+        } else setLeaderboardStatus(null)
+      }
+    }
+    // A run that belongs to another account is never saved for the one signed in now.
+    if (!ownsRun(built)) return
+    const saved: SoloRunSave = {
+      version: 1, run, built,
+      terminalRun: terminalRun.current?.campaign.runId === run.campaign.runId ? terminalRun.current : null,
+      recordRunId,
+      runLogExtractedRunId,
+    }
+    try {
+      localStorage.setItem(SOLO_RUN_KEY, JSON.stringify(saved))
+    } catch {
+      // Keep the last atomic checkpoint; the run continues in memory.
+    }
+  }, [built, open, recordRunId, replayLog, run, runLogExtractedRunId, tutorial])
+
+  // A finished combat folds back into the run on its own; the player should not
+  // have to click through a screen that only says "you won".
+  useEffect(() => {
+    if (!replayLog && open && !compendium && !pauseOpen && !settingsOpen && run.combat && (run.combat.phase === 'won' || run.combat.phase === 'lost')) {
+      let timer: number
+      const resolveWhenAnimationsFinish = () => {
+        if (combatOutcomeAnimationActive()) {
+          timer = window.setTimeout(resolveWhenAnimationsFinish, 100)
+          return
+        }
+        setRun((current) => resolveCombat(current))
+      }
+      timer = window.setTimeout(resolveWhenAnimationsFinish, run.combat.phase === 'won'
+        ? settings.reducedMotion || prefersReducedMotion ? 0 : COMBAT_OUTCOME_DELAY_MS
+        : 900)
+      return () => clearTimeout(timer)
+    }
+    return undefined
+  }, [compendium, open, pauseOpen, prefersReducedMotion, replayLog, run.combat, settings.reducedMotion, settingsOpen])
+
+  const viewer = run.players.find((player) => player.id === viewerId) ?? run.players[0]
+  const headerViewer = run.phase === 'combat'
+    ? run.combat?.players.find((player) => player.id === viewerId) ?? viewer
+    : viewer
+  // Fires wherever a card changed — campfire, event, reward, Neow, a relic —
+  // because it watches the deck rather than each of those call sites.
+  const morph = useCardMorphs(viewer?.deck, open ? run.campaign.runId : undefined, run.phase, viewerId)
+  // The map is regenerated per act, so this counts the CURRENT act's climb, not
+  // the run's. The summary labels it "Rooms this act" to match.
+  const roomsCleared = useMemo(
+    () => Object.values(run.map.rooms).filter((room) => room.visited).length,
+    [run.map.rooms],
+  )
+  const pendingSocket = run.pendingGuardianSockets?.find((pending) =>
+    run.phase !== 'reward' || pending.playerId === viewerId)
+  const pendingSocketOwner = run.players.find((player) => player.id === pendingSocket?.playerId)
+  const pendingAcquisition = hasPendingRelicAcquisition(run, run.phase === 'reward' ? viewerId : undefined)
+  // Derived once per render: `visibleMap` rebuilds the room table (and clones
+  // every room under Uncertain Future), and the map phase asked for it four
+  // times — twice in one `MapScreen` line, then again per Wing Boots option.
+  const seenMap = useMemo(() => visibleMap(run), [run])
+  const wingChoices = useMemo(() => wingBootChoices(run, viewerId), [run, viewerId])
+  const pendingPreview = useMemo(() => pendingRelicPreview(run, viewerId), [run, viewerId])
+  const canSwitchRowsHere = run.phase === 'map' || run.phase === 'room' &&
+    run.roomState?.kind === 'event' && eventCanStartCombat(run.roomState.card)
+  const pendingOwner = run.players.find((player) => player.relics.some((relic) => relic.pending))
+  const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
+  const roomKind = run.map.position ? run.map.rooms[run.map.position]?.kind : undefined
+  // A restricted account's lost run shows the Spire's notice, not marks it cannot earn.
+  const allocatingCampaignMarks = run.campaign.finalized || (run.campaignProgress.unspentMarks > 0 && !lostToSpire)
+  const resultRecorded = recordRunId === run.campaign.runId
+  const runLogExtracted = runLogExtractedRunId === run.campaign.runId
+  useEffect(() => {
+    if (!allocatingCampaignMarks) return
+    // The campaign journal precedes the direct character-selection route.
+    // Warm its selected hero and the following campaign choice while players
+    // assign marks or review their result.
+    const campaignArt = ['menu/campaign-standard-menu.webp', 'menu/campaign-downfall-menu.webp']
+    const first = characters[0] ?? 'ironclad'
+    const characterArt = `menu/character-select/character-${visualId(first, preferredSkin(first))}-wallpaper.webp`
+    void preloadImages(campaignArt, { decode: true, fetchPriority: 'high' })
+    void preloadImages([characterArt], { decode: true, fetchPriority: 'high' })
+    return () => releasePreloadedImages([...campaignArt, characterArt])
+  }, [allocatingCampaignMarks, characters])
+  function allocateCampaignMark(colorless: number, actIV: number) {
+    setRun((current) => {
+      const progress = allocateSharedMarks(current.campaignProgress, colorless, actIV)
+      if (current.campaign.finalized) return { ...current, campaignProgress: progress }
+      return newRun(built.count, built.seed, built.ascension, { ...progress, nextRunNumber: progress.nextRunNumber - 1 }, built.chooseYourRelic, built.lastStand, built.characters, built.meta)
+    })
+  }
+
+  if (!open) {
+    if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
+    if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
+    if (stats) return <StatsScreen onBack={() => setStats(false)} />
+    if (profileOpen) return <ProfileScreen onBack={() => setProfileOpen(false)} onShop={() => { setProfileOpen(false); setShop('skins') }} />
+    if (shop) return <ShopScreen initialTab={shop} onBack={() => setShop(false)} />
+    return <StartMenu
+      characters={characters}
+      ascension={ascension}
+      maxAscension={playerProgress.highestAscension}
+      mode={mode}
+      dailyModifiers={dailyModifiers}
+      customModifierIds={customModifierIds}
+      quickStartAct={quickStartAct}
+      actIVUnlocked={isActIVUnlocked(playerProgress)}
+      dailyTurned={dailyTurned}
+      onCharacter={(seat, character) => setCharacters((current) => {
+        const next = [...current]
+        const previous = next[seat]
+        if (!previous) return current
+        const otherSeat = next.indexOf(character)
+        if (otherSeat >= 0) next[otherSeat] = previous
+        next[seat] = character
+        return next
+      })}
+      onAscension={setAscension}
+      onMode={setMode}
+      onCustomModifier={(id, enabled) => setCustomModifierIds((current) => enabled
+        ? current.includes(id) ? current : [...current, id]
+        : current.filter((candidate) => candidate !== id))}
+      onQuickStartAct={setQuickStartAct}
+      onStart={(campaign) => {
+        // Read the day fresh: past midnight the menu previewed yesterday's modifiers, so show today's before starting.
+        const day = refreshToday()
+        setDailyTurned(false)
+        if (mode === 'daily' && day !== today) return setDailyTurned(true)
+        discardSoloRun()
+        discardRunLog(resume?.run.campaign.runId ?? run.campaign.runId)
+        setChoosingNextCharacter(false)
+        if (mode === 'daily') restart(1, dailySeedText(day), ascension, false, false, characters, { mode, dailyDate: day })
+        else restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
+        onOpen()
+      }}
+      onTutorial={() => startTutorial(characters[0] ?? 'ironclad')}
+      onResume={resume ? resumeSoloRun : undefined}
+      onOnline={onOnline}
+      onLeaderboard={() => setLeaderboard(true)}
+      onStats={() => setStats(true)}
+      onProfile={() => setProfileOpen(true)}
+      onCompendium={() => setCompendium(true)}
+      onShop={() => setShop('packs')}
+      onReplay={startReplay}
+      onCharacterBack={() => { setChoosingNextCharacter(false); setDailyTurned(false) }}
+      settings={settings}
+      onSettings={onSettings}
+      initiallyChoosingCharacter={choosingNextCharacter}
+    />
+  }
+
+  return (
+    <>
+    <SkinProvider seats={run.players}>
+    <main key={replayEpoch} ref={runShell} tabIndex={-1} inert={compendium || undefined} aria-hidden={compendium || undefined} className={`app-shell sts-scope${run.phase === 'combat' ? ' app-shell--combat' : ''}${run.phase === 'neow' ? ' app-shell--neow' : ''}${run.roomState?.kind === 'event' ? ' app-shell--event' : ''}${compendium ? ' app-shell--compendium-open' : ''}`}>
+      <header className="app-shell__header">
+        <PlayerTitle character={headerViewer?.character} />
+        <div className="run-status">
+          {tutorial ? <button type="button" className="pip pip--tutorial" aria-pressed={!tutorialTipsHidden}
+            title={tutorialTipsHidden ? 'Show tutorial tips' : 'Hide tutorial tips'}
+            onClick={() => setTutorialTipsHidden((current) => !current)}>Tutorial</button> : null}
+          <span className="pip">Act {run.act}</span>
+          {run.ascension > 0 ? <span className="pip">Ascension {run.ascension}</span> : null}
+          {headerViewer ? (
+            <>
+              {/* HP rides the header on every screen, not only in combat. It is
+                  the number the whole run is steered by — whether to take the
+                  elite, whether to rest or upgrade — and the digital game pins
+                  it top-left everywhere for exactly that reason. */}
+              <span className="pip pip--hp" role="img" aria-label={`Health ${headerViewer.hp} of ${headerViewer.maxHp}`}>
+                {headerViewer.hp}/{headerViewer.maxHp}
+              </span>
+              <span className="pip" title="Gold">
+                <IconValue name="gold" value={headerViewer.gold} size={20} />
+              </span>
+              {!allocatingCampaignMarks && run.phase !== 'combat' && run.phase !== 'defeat' && run.phase !== 'neow' &&
+              !victoryIsTerminal(run, run.campaignProgress) && !pendingAcquisition ? (
+                <OutsidePotionBar players={run.players} viewerId={viewerId}
+                  ascension={run.ascension}
+                  ruleset={run.meta.ruleset ?? 'base'}
+                  onTrade={(potionId, playerId) => setRun((current) => tradePotion(current, viewerId, playerId, potionId))}
+                  onUse={(potionId, replacePotionId) => setRun((current) =>
+                    usePotionOutsideCombat(current, viewerId, potionId, replacePotionId))} />
+              ) : <PotionSlots player={headerViewer} ascension={run.ascension} />}
+              {run.phase === 'combat' && run.combat ? <CourierPeek placement="header" active={!run.courier.offer && courierPeekPhase(run.combat)}
+                players={run.combat.players} viewerId={viewerId} usedBy={run.courier.usedBy} onReveal={revealLocalCourier} /> : null}
+              <RelicBar relics={headerViewer.relics} label={`${headerViewer.name}'s relics`}
+                die={run.phase === 'combat' ? run.combat?.die : undefined} />
+            </>
+          ) : null}
+        </div>
+        <div className="app-shell__header-actions">
+          {viewer ? (
+            <CardCollectionOverlay cards={viewer.deck} label="Current deck" triggerClassName="deck-peek__open" inspectable
+              stanceChangedThisTurn={run.phase === 'combat' ? run.combat?.stanceChangedThisTurn.includes(viewerId) : undefined}>
+              <img src={assetPath('menu/current-deck.webp')} alt="" />
+              <span aria-hidden="true">{viewer.deck.length}</span>
+            </CardCollectionOverlay>
+          ) : null}
+          {run.phase !== 'map' && run.phase !== 'setup' ? (
+            <MapOverlay map={seenMap} act={run.act} bossDefId={run.actBossDefId} />
+          ) : null}
+          <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
+            onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
+            <img src={assetPath('menu/settings-cog.png')} alt="" />
+          </button>
+        </div>
+      </header>
+
+      <SettingsDialog open={settingsOpen} settings={settings} onChange={onSettings}
+        onClose={() => { setSettingsOpen(false); if (settingsReturnToPause) setPauseOpen(true) }}
+        generalChildren={run.meta.modifierIds.length > 0 || run.players.length > 1 ? <>
+          {run.meta.modifierIds.length > 0 ? <details className="ascension-rules run-modifiers">
+            <summary>{run.meta.mode === 'daily' ? 'Daily Climb' : 'Custom Run'} · {run.meta.modifierIds.length} modifiers</summary>
+            <ul>{run.meta.modifierIds.map((id) => {
+              const modifier = DAILY_MODIFIERS.find((candidate) => candidate.id === id)!
+              return <li key={id}><strong>{modifier.name}</strong> — {modifier.rule}</li>
+            })}</ul>
+          </details> : null}
+          {run.players.length > 1 ? <label className="settings-select">Seat
+            <select value={viewerId} onChange={(event) => setViewerId(event.target.value)}>
+              {run.players.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
+            </select>
+          </label> : null}
+        </> : undefined} />
+
+      {giveUpOpen && canGiveUp ? <GiveUpPanel
+        players={run.players} playerId={viewerId}
+        onVote={(yes) => {
+          setGiveUpOpen(false)
+          if (yes) setRun((current) => giveUpRun(current))
+        }}
+        onCancel={() => setGiveUpOpen(false)}
+      /> : null}
+
+      <dialog ref={pauseDialog} className="choice-modal pause-menu" aria-labelledby="pause-menu-title"
+        onCancel={(event) => { event.preventDefault(); setPauseOpen(false) }}>
+        <section className="choice-modal__panel">
+          <p>Game paused</p>
+          <h2 id="pause-menu-title">Slay the Spire</h2>
+          <button type="button" className="is-chosen" onClick={() => setPauseOpen(false)}>Resume</button>
+          <button type="button" onClick={() => { setPauseOpen(false); setSettingsReturnToPause(true); setSettingsOpen(true) }}>Settings</button>
+          <button type="button" onClick={() => { setPauseOpen(false); setCompendium(true) }}>Compendium</button>
+          {!replayLog && !tutorial && canGiveUp ? <button type="button" onClick={() => { setPauseOpen(false); setGiveUpOpen(true) }}>Give up</button> : null}
+          <button type="button" onClick={() => {
+            setPauseOpen(false)
+            if (tutorial) exitTutorial()
+            else if (replayLog) leaveReplay()
+            // A recorded run resumes from its save (the campaign journal), never from the
+            // victory it was recorded from.
+            else setResume(run.campaign.finalized ? savedSoloRun() : { version: 1, run, built })
+            onClose()
+          }}>{tutorial ? 'Leave tutorial' : 'Return to main menu'}</button>
+        </section>
+      </dialog>
+
+      {!allocatingCampaignMarks && run.phase === 'combat' && run.combat ? (
+        <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
+          state={run.combat}
+          act={run.act}
+          viewerId={viewerId}
+          animateOpeningHand
+          autoAdvance={!replayLog && !compendium && !pauseOpen && !settingsOpen && !giveUpOpen && !run.courier.offer}
+          // The tutorial teaches ending the turn, and a turn that ends by
+          // itself would cut the coach off mid-sentence.
+          autoEndTurn={!tutorial}
+          courierUsedBy={run.courier.usedBy}
+          onCourierReveal={run.courier.offer ? undefined : revealLocalCourier}
+          mutationsEnabled={!run.courier.offer}
+          onChange={updateCombat}
+        /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} offer={run.courier.offer} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
+      ) : null}
+      {pendingPreview ? <RelicResolvePanel key={`${pendingPreview.id}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
+        pending={pendingPreview}
+        player={viewer!} potion={run.rewards.find((offer) => offer.playerId === viewerId)?.potion}
+        ascension={run.ascension}
+        onPotion={(decision) => setRun((current) => resolvePotionReward(current, viewerId, decision))}
+        onRewardChoice={(reward, choice) => setRun((current) =>
+          choosePendingRelicReward(current, viewerId, reward, choice))} onResolve={(cardUids, rewardIndices) => setRun((current) =>
+          resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
+      {pendingSocket && pendingSocketOwner ? <GuardianSocketPanel
+        key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
+        pending={pendingSocket}
+        deck={pendingSocketOwner.deck}
+        onResolve={(gemId) => setRun((current) => finishRewardsIfComplete(resolveGuardianSocket(
+          current, pendingSocket.playerId, pendingSocket.cardUid, gemId,
+        )))} /> : null}
+      {run.phase !== 'neow' && run.phase !== 'reward' && run.phase !== 'combat' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
+        Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
+        <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
+      </section> : null}
+
+      {!allocatingCampaignMarks && run.phase === 'neow' && run.neow ? <NeowScreen
+        players={run.players}
+        progress={Object.fromEntries(Object.keys(run.neow.players).map((id) => [id, neowPreview(run, id)]))}
+        viewerId={viewerId}
+        ascension={run.ascension}
+        enabled={!pendingAcquisition}
+        disabledMessage={pendingOwner && pendingRelic
+          ? `Waiting for ${pendingOwner.name} to resolve ${relicDef(pendingRelic.defId).name}.`
+          : undefined}
+        onViewer={setViewerId}
+        onReveal={(playerId, _stage, sources) => setRun((current) => revealNeowReward(current, playerId, sources))}
+        onReward={(playerId, choice) => setRun((current) => resolveNeowReward(current, playerId, choice))}
+        onEffect={(playerId, gain, decision) => setRun((current) => resolveNeowEffect(current, playerId, gain, decision))}
+        onChoose={(playerId, optionIndex, decision) => setRun((current) => chooseNeow(current, playerId, optionIndex, decision))}
+        onArmCardGain={morph.armGain}
+      /> : null}
+
+      {!allocatingCampaignMarks && run.phase === 'setup' && run.setup && !pendingAcquisition ? <QuickSetupScreen
+        setup={run.setup}
+        players={run.players}
+        currentStep={currentQuickSetupStep(run.setup)}
+        onAdvance={(cardUids) => setRun((current) => advanceQuickSetup(current, cardUids))}
+      /> : null}
+
+      {!allocatingCampaignMarks && run.phase === 'map' ? (
+        <>
+          <MapScreen map={seenMap} choices={pendingAcquisition ? [] : roomChoices({ ...run, map: seenMap })} blocked={pendingAcquisition}
+            bossDefId={run.actBossDefId}
+            canRerollBoss={!pendingAcquisition && canRerollDownfallSelfBoss(run)}
+            onRerollBoss={() => setRun(rerollDownfallSelfBoss)}
+            onSelectionChange={setMapSelectionPending}
+            wingChoices={pendingAcquisition ? [] : wingChoices}
+            wingUses={wingBootUses(run.players.find((player) => player.id === viewerId))}
+            onEnter={(roomId) => setRun((current) => wingChoices.some((room) => room.id === roomId)
+              ? enterRoom(current, roomId, viewerId)
+              : tutorial ? enterTutorialRoom(current, roomId, tutorial.seed) : enterRoom(current, roomId))} />
+        </>
+      ) : null}
+
+      {!pendingAcquisition && !mapSelectionPending && canSwitchRowsHere &&
+      run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
+        <strong>Switch rows before the next combat</strong>
+        {run.players.filter((player) => !player.dead).map((player) => <label key={player.id}>{player.name}
+          <select value={player.row} onChange={(event) => setRun((current) =>
+            switchBetweenCombatRow(current, player.id, Number(event.target.value)))}>
+            {run.players.map((_seat, row) => <option value={row} key={row}>Row {row + 1}</option>)}
+          </select>
+        </label>)}
+      </section> : null}
+
+      {!allocatingCampaignMarks && run.phase === 'reward' && !pendingAcquisition ? (
+        <RewardScreen
+          players={run.players}
+          rewards={run.rewards}
+          onReveal={(playerId, sources) => setRun((current) => revealCardReward(current, playerId, sources))}
+          onGold={(playerId, gain) => setRun((current) => resolveGoldReward(current, playerId, gain))}
+          onPotion={(playerId, decision) => setRun((current) => resolvePotionReward(current, playerId, decision))}
+          onRelic={(playerId, choice) => setRun((current) => resolveRelicReward(current, playerId, choice === 'gain'))}
+          onBossRelic={(playerId, relicId) => setRun((current) => resolveBossRelicReward(current, playerId, relicId))}
+          onTransform={(playerId, cardUid) => setRun((current) => resolveTransformReward(current, playerId, cardUid))}
+          onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
+          ascension={run.ascension}
+          act={run.act}
+        />
+      ) : null}
+
+      {!allocatingCampaignMarks && run.phase === 'betweenCombat' ? (
+        <section className="room-screen between-combat">
+          <h2>Another boss approaches</h2>
+          <p className="muted">Switch rows now. Relics and once-per-combat effects reset for the next fight.</p>
+          {run.players.filter((player) => !player.dead).map((player) => (
+            <label key={player.id}>{player.name}
+              <select value={player.row} onChange={(event) => setRun((current) =>
+                switchBetweenCombatRow(current, player.id, Number(event.target.value)))}>
+                {run.players.map((_seat, row) => <option value={row} key={row}>Row {row + 1}</option>)}
+              </select>
+            </label>
+          ))}
+          <button type="button" disabled={pendingAcquisition}
+            onClick={() => setRun((current) => startPendingBoss(current))}>Face the next boss</button>
+        </section>
+      ) : null}
+
+      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room'
+        && roomKind === 'campfire' && !run.roomState ? (
+        <CampfireScreen
+          players={run.players}
+          rubyAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.ruby}
+          restAllowed={!run.meta.modifierIds.includes('night_terrors')}
+          ruleset={run.meta.ruleset}
+          onResolve={(choices) => setRun((current) => resolveCampfire(current, choices))}
+        />
+      ) : null}
+
+      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room' && run.roomState ? (
+        <RoomScreen
+          room={run.roomState}
+          players={run.players}
+          viewerId={viewerId}
+          ascension={run.ascension}
+          onPurchase={(purchase) => setRun((current) => purchaseAtMerchant(current, purchase))}
+          onRemove={(playerId, cardUid, payments) => setRun((current) => removeAtCurrentMerchant(current, playerId, cardUid, payments))}
+          onFinishMerchant={() => setRun((current) => finishMerchant(current))}
+          onRelic={(playerId, decision) => setRun((current) => chooseRelicReward(current, playerId, decision))}
+          onEvent={(playerId, decision) => setRun((current) => chooseEvent(current, playerId, decision))}
+          onPreparedHermitSetup={(cardUid, enemyUid) => setRun((current) => {
+            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+            const preparedCombat = resolveHermitSetupLoad(current.roomState.preparedCombat, viewerId, cardUid, enemyUid, true)
+            return preparedCombat === current.roomState.preparedCombat ? current : {
+              ...current, roomState: { ...current.roomState, preparedCombat },
+            }
+          })}
+          onPreparedStartTurnScryOrder={(order) => setRun((current) => {
+            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+            const preparedCombat = orderStartTurnScries(current.roomState.preparedCombat, order)
+            return preparedCombat === current.roomState.preparedCombat ? current : {
+              ...current, roomState: { ...current.roomState, preparedCombat },
+            }
+          })}
+          onPreparedStartTurnScry={(sourceId, discardUids) => setRun((current) => {
+            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+            const preparedCombat = resolveStartTurnScry(
+              current.roomState.preparedCombat, viewerId, sourceId, discardUids,
+            )
+            return preparedCombat === current.roomState.preparedCombat ? current : {
+              ...current, roomState: { ...current.roomState, preparedCombat },
+            }
+          })}
+          eventCanSkip={canSkipEvent(run, viewerId)}
+          unavailableEventOptionIds={unavailableEventOptionIds(run, viewerId)}
+          onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
+          sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
+          eventMap={seenMap}
+          eventBossDefId={run.actBossDefId}
+          onArmCardGain={morph.armGain}
+        />
+      ) : null}
+
+      {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room' && roomKind !== 'campfire' && !run.roomState ? (
+        <section className="room-screen">
+          <h2>{roomKind ?? 'room'}</h2>
+          <button type="button" className="ribbon-back" aria-label="Back to the map" onClick={() => setRun((current) => leaveRoom(current))}>
+            <span aria-hidden="true"></span>
+          </button>
+        </section>
+      ) : null}
+
+      {tutorial && !pendingAcquisition && (run.phase === 'victory' || run.phase === 'defeat') ? (
+        <section className="room-screen tutorial-end" aria-labelledby="tutorial-end-title">
+          <h2 id="tutorial-end-title" className={run.phase === 'defeat' ? 'room-screen__defeat' : undefined}>
+            {run.phase === 'victory' ? 'Tutorial complete' : 'The tutorial run has ended'}
+          </h2>
+          <RunSummary act={run.act} roomsCleared={roomsCleared}
+            ascension={run.ascension} seats={run.players.map(summarySeat)} />
+          <p>{run.phase === 'victory'
+            ? 'You defeated the Act I boss. You know the basics now: start a Single Player run to climb all three Acts and unlock new cards.'
+            : 'Every run teaches something. Try again with the same hero, or start a Single Player run when you are ready.'}</p>
+          <div className="room-screen__actions">
+            {run.phase === 'defeat' ? <button type="button" onClick={() => startTutorial(tutorial.character)}>Try again</button> : null}
+            <button type="button" onClick={exitTutorial}>Return to main menu</button>
+          </div>
+        </section>
+      ) : null}
+
+      {!tutorial && !allocatingCampaignMarks && !pendingAcquisition && run.phase === 'victory' && !run.campaign.finalized ? (
+        <section className="room-screen">
+          <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
+          <RunSummary act={run.act} roomsCleared={roomsCleared}
+            ascension={run.ascension} seats={run.players.map(summarySeat)} coins={coinsOwed(run.campaign.bossCoins)}
+            coinsClaimed={Boolean(replayLog) || resultRecorded} />
+          {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
+            <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
+          ) : null}
+          <div className="room-screen__actions">
+            {(replayLog ? !replayFinished && !runLogMessage : !runLogExtracted) && !(run.lastStand && run.players.some((player) => player.dead)) &&
+            (run.act < 3 || canEnterActIV(run.campaignProgress, run.campaign.keys, run.act)) ? <button type="button" disabled={pendingAcquisition || extractingRunLog}
+              onClick={() => {
+                // A replay climbs only its own copy; the parked run keeps its log and result bookkeeping.
+                if (!replayLog) {
+                  setRunLogExtractedRunId(null)
+                  setRunLogMessage(null)
+                  terminalRun.current = null
+                }
+                setRun((current) => advanceAct(current))
+              }}>
+              Climb to Act {run.act + 1}
+            </button> : null}
+            {!replayLog ? <><button type="button" disabled={pendingAcquisition || extractingRunLog}
+              onClick={recordRunResult} data-run-log-control>Stop and record result</button>
+            <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog}
+              data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button></> : null}
+          </div>
+          {runLogMessage && !replayLog ? <p aria-live="polite">{runLogMessage}</p> : null}
+        </section>
+      ) : null}
+
+      {!tutorial && !allocatingCampaignMarks && run.phase === 'defeat' && !run.campaign.finalized ? (
+        <section className="room-screen">
+          <h2 className="room-screen__defeat">{lostToSpire ? SPIRE_REJECTION : 'The party has fallen'}</h2>
+          {lostToSpire ? <div className="room-screen__actions">
+            <button type="button" onClick={() => { discardSoloRun(); onClose() }}>Return to main menu</button>
+          </div> : <RunSummary act={run.act} roomsCleared={roomsCleared}
+            ascension={run.ascension} seats={run.players.map(summarySeat)} coins={coinsOwed(run.campaign.bossCoins)}
+            coinsClaimed={Boolean(replayLog) || resultRecorded} />}
+          {!lostToSpire && !run.campaign.finalized && !replayLog ? <><div className="room-screen__actions">
+            <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button>
+            <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog}
+              data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button>
+          </div>{runLogMessage ? <p aria-live="polite">{runLogMessage}</p> : null}</> : null}
+        </section>
+      ) : null}
+
+      {allocatingCampaignMarks ? <section className="campaign-end">{run.meta.dailyDate !== undefined ? <><span>Daily Climb · {run.meta.dailyDate}</span><h2>{run.floorsCleared ?? 0} floor{run.floorsCleared === 1 ? '' : 's'} reached</h2><p>Daily Climbs rank on the Daily Climb leaderboard and do not earn campaign marks.</p></> : <><span>Campaign journal</span><h2>Marks earned</h2><p>{run.campaignProgress.unspentMarks} shared mark{run.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. Assign each to Colorless or Act IV.</p></>}{!replayLog && run.campaign.finalized && leaderboardStatus ? <p key={leaderboardStatus} aria-live="polite" data-webmcp-transient-status data-webmcp-pending={leaderboardStatus === 'pending' ? 'true' : undefined}>{leaderboardStatus === 'pending' ? 'Recording run on the leaderboard…' : leaderboardStatus === 'recorded' ? 'Run recorded on the leaderboard.' : leaderboardStatus === 'queued' ? 'Leaderboard unavailable — run saved for automatic retry.' : 'Leaderboard rejected this run.'}</p> : null}{runLogMessage && !replayLog ? <p aria-live="polite">{runLogMessage}</p> : null}{!replayLog ? <div>{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.colorless < 3 ? <button type="button" onClick={() => allocateCampaignMark(1, 0)}>Mark Colorless · {run.campaignProgress.colorless}/3</button> : null}{run.campaignProgress.unspentMarks > 0 && run.campaignProgress.actIV < 5 ? <button type="button" onClick={() => allocateCampaignMark(0, 1)}>Mark Act IV · {run.campaignProgress.actIV}/5</button> : null}{run.campaign.finalized && !resultRecorded ? <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button> : null}{run.campaign.finalized ? <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog} data-run-log-control>{runLogExtracted ? 'Extract run logs again' : 'Extract run logs'}</button> : null}{resultRecorded && run.campaignProgress.unspentMarks === 0 ? <button type="button" disabled={extractingRunLog} onClick={prepareNextRun}>Prepare next run →</button> : null}</div> : null}</section> : null}
+      <TreasureEffects room={run.roomState?.kind === 'treasure' ? run.roomState : null}
+        players={run.players} runId={run.campaign.runId} resolved={run.log.at(-1) === 'The relics are resolved.'} />
+      {replayLog && (replayFinished || runLogMessage) ? <section className={`run-replay__banner${runLogMessage ? ' run-replay__banner--error' : ''}`}
+        data-run-log-control>
+        <p id="run-replay-banner-message" role={runLogMessage ? 'alert' : 'status'}>{runLogMessage ?? 'Replay finished'}</p>
+        <button type="button" autoFocus={!document.activeElement?.closest('.replay-bar')} aria-describedby="run-replay-banner-message" onClick={() => { leaveReplay(); onClose() }}>Return to main menu</button>
+      </section> : null}
+      {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.attempt}
+        chapters={tutorialChapterList} run={run} hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} /> : null}
+      {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
+      <CoinGainToast gain={coinGain} onDone={clearCoinGain} />
+      {/* `aria-live` rather than `role="status"`: the run already has status
+          regions ("Choice locked. Waiting for the party…"), and a second one
+          would both compete with them and make `getByRole('status')` ambiguous
+          for the suites. A bare live region announces without claiming a role.
+          Rendered always, empty when idle, because a live region has to exist
+          before its text changes for the change to be announced. */}
+      <CardMorphAnnouncement key={`${open ? run.campaign.runId : ''}:${viewerId}`} request={morph.current}
+        name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
+    </main>
+    </SkinProvider>
+    {replayLog && replaySession && !compendium ? <ReplayBar session={replaySession} onSeek={seekReplay}
+      onExit={() => { leaveReplay(); onClose() }} /> : null}
+    {compendium ? <CompendiumScreen onBack={() => {
+      setCompendium(false)
+      requestAnimationFrame(() => runShell.current?.focus())
+    }} backLabel="Back to run" /> : null}
+    </>
+  )
+}
