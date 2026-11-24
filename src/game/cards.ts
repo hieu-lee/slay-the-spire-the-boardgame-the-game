@@ -488,6 +488,20 @@ type EffectKind =
   | { kind: 'upgradeThisCard' }
   /** Ritual Dagger+ (inside `onKill`): privately reveal the top rare reward; its owner keeps or swaps it. */
   | { kind: 'revealRareReward' }
+  /** Slime Boss (Downfall): Slime play-area operations and card-specific hooks. */
+  | { kind: 'growSlime'; amount: number; upToDifferent?: number; commandAfter?: boolean }
+  | { kind: 'commandSlime'; amount: Amount; upToDifferent?: number; all?: boolean; same?: boolean }
+  | { kind: 'gainSlimeVigor'; amount: number; temporary?: boolean; commandAfter?: boolean }
+  | { kind: 'discountPartyAttack' }
+  | { kind: 'discountNextPowerOrSlime'; amount: number | 'free' }
+  | { kind: 'tapSlime' }
+  | { kind: 'rainOfGoop'; bonus: number }
+  | { kind: 'blockIfRetain'; amount: number }
+  | { kind: 'vulnerableIfTackle'; amount: number }
+  | { kind: 'gainEnergyIfExhaustCost'; minimum: number; amount: number }
+  | { kind: 'growIfExhaustCost'; minimum: number }
+  | { kind: 'overexert' }
+  | { kind: 'replicateSlime'; grow: boolean }
 
 /** What a card attached to an enemy does while it stays there. */
 export type AttachedCardText = {
@@ -691,9 +705,9 @@ function starterDefend(owner: CharacterId): CardDef {
  * Vigilance.
  */
 export const CARDS: Record<string, CardDef> = {
-  ...(HEXAGHOST_CARDS as unknown as Record<string, CardDef>),
+  ...HEXAGHOST_CARDS,
   ...GUARDIAN_CARD_DEFS,
-  ...(HERMIT_CARD_DEFS as unknown as Record<string, CardDef>),
+  ...HERMIT_CARD_DEFS,
   ...SLAYER_CARD_DEFS,
   strike_silent: starterStrike('silent'),
   defend_silent: starterDefend('silent'),

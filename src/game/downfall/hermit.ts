@@ -1,4 +1,6 @@
 /** Official public-v1.47 Hermit data from the Contention Games TTS prototype. */
+import type { Amount, CardDef, Effect } from '../cards.ts'
+
 export const HERMIT_SHEET_GUIDS = {
   starter: '3a0392',
   starter_upgrades: 'dcdd4a',
@@ -67,7 +69,7 @@ export type HermitCardFace = {
   /** Exact normalized transcription; resource names stand for the printed icons. */
   text: string
   /** Live opcodes are registered separately in HERMIT_CARD_DEFS. */
-  effects: readonly HermitEngineEffect[]
+  effects: readonly Effect[]
   deadOn: boolean
   inherentRapidFire: number
   mentionsRapidFire: boolean
@@ -76,37 +78,12 @@ export type HermitCardFace = {
   unplayable: boolean
 }
 
-type HermitEngineEffect = { kind: string; [key: string]: unknown }
-type HermitLiveCardDef = {
-  id: string
-  name: string
+type HermitLiveCardDef = CardDef & {
   owner: 'hermit'
-  type: 'attack' | 'skill' | 'power' | 'curse'
-  rarity: 'starter' | 'common' | 'uncommon' | 'rare' | 'curse' | 'special'
-  cost: number | 'X'
-  effects: readonly HermitEngineEffect[]
-  target?: 'enemy' | 'row'
-  supportTarget?: 'self' | 'anyPlayer'
-  exhaust?: boolean
-  retain?: boolean
-  unplayable?: boolean
-  trigger?: { kind: 'startOfTurn' | 'endOfTurn' | 'onHermitDeadOn' }
-  oncePerTurn?: boolean
-  activeAbility?: boolean
-  persistent?: boolean
-  resolvesOnPlay?: boolean
   printedText: string
   printedCost: number | 'X' | null
   multiplicity: number
-  hermit: {
-    sourceText: string
-    deadOn?: boolean
-    rapidFire?: number
-    rapidFireBy?: 'curseInChamber' | 'curses' | 'otherCardsInHand'
-    costReductionBy?: 'attacksInChamber' | 'starterCards' | 'attacksPlayed' | 'curses'
-    costZeroWhenDeadOn?: boolean
-  }
-  upgrade?: Partial<HermitLiveCardDef>
+  hermit: NonNullable<CardDef['hermit']>
 }
 
 export type HermitCardDef = Omit<HermitSourceCard, 'cost' | 'base_text' | 'upgraded_text'> & {
@@ -220,17 +197,17 @@ export const HERMIT_CARDS_BY_ID: Readonly<Record<string, HermitCardDef>> = Objec
   HERMIT_CARDS.map((card) => [card.id, card]),
 )
 
-const H = (kind: string, fields: Record<string, unknown> = {}): HermitEngineEffect => ({ kind, ...fields })
-const hit = (amount: unknown): HermitEngineEffect => H('hit', { amount })
-const rowHit = (amount: unknown): HermitEngineEffect => H('rowHit', { amount })
-const block = (amount: unknown, toChosen = false): HermitEngineEffect => H('block', { amount, ...(toChosen ? { toChosen } : {}) })
-const load = (amount: number, fields: Record<string, unknown> = {}): HermitEngineEffect => H('load', { amount, ...fields })
-const deadOn = (...effects: HermitEngineEffect[]): HermitEngineEffect => H('deadOnEffects', { effects })
+const hit = (amount: Amount): Effect => ({ kind: 'hit', amount })
+const rowHit = (amount: Amount): Effect => ({ kind: 'rowHit', amount })
+const block = (amount: Amount, toChosen = false): Effect => ({ kind: 'block', amount, ...(toChosen ? { toChosen } : {}) })
+const load = (amount: number, fields: Omit<Extract<Effect, { kind: 'load' }>, 'kind' | 'amount'> = {}): Effect =>
+  ({ kind: 'load', amount, ...fields })
+const deadOn = (...effects: Effect[]): Effect => ({ kind: 'deadOnEffects', effects })
 
 type HermitLiveSpec = Omit<HermitLiveCardDef,
   'id' | 'name' | 'owner' | 'printedText' | 'printedCost' | 'multiplicity' | 'hermit' | 'upgrade'> & {
     hermit?: Omit<HermitLiveCardDef['hermit'], 'sourceText'>
-    upgrade?: Partial<Omit<HermitLiveCardDef, 'id' | 'name' | 'owner' | 'multiplicity' | 'hermit'>> & {
+    upgrade?: Partial<Omit<HermitLiveCardDef, 'id' | 'name' | 'owner' | 'multiplicity' | 'hermit' | 'upgrade'>> & {
       hermit?: Omit<HermitLiveCardDef['hermit'], 'sourceText'>
     }
   }
@@ -239,28 +216,28 @@ const HERMIT_LIVE_SPECS: Readonly<Record<string, HermitLiveSpec>> = {
   hermit_covet: { type: 'skill', rarity: 'starter', cost: 0, retain: true, effects: [load(1)],
     upgrade: { effects: [load(2, { upTo: true })] } },
   hermit_strike: { type: 'attack', rarity: 'starter', cost: 1, effects: [hit(1)], upgrade: { effects: [hit(2)] } },
-  hermit_snapshot: { type: 'attack', rarity: 'starter', cost: 2, effects: [hit(2), deadOn(H('deadOnHitBlock'))],
-    hermit: { deadOn: true }, upgrade: { effects: [hit(3), deadOn(H('deadOnHitBlock'))] } },
+  hermit_snapshot: { type: 'attack', rarity: 'starter', cost: 2, effects: [hit(2), deadOn({ kind: 'deadOnHitBlock' })],
+    hermit: { deadOn: true }, upgrade: { effects: [hit(3), deadOn({ kind: 'deadOnHitBlock' })] } },
   hermit_defend: { type: 'skill', rarity: 'starter', cost: 1, effects: [block(1)],
     upgrade: { effects: [block(2, true)], supportTarget: 'anyPlayer' } },
 
   hermit_vantage: { type: 'skill', rarity: 'uncommon', cost: 1, exhaust: true,
-    effects: [load(1), H('grantNextAttackRapidFire')], upgrade: { exhaust: false } },
+    effects: [load(1), { kind: 'grantNextAttackRapidFire' }], upgrade: { exhaust: false } },
   hermit_flash_powder: { type: 'skill', rarity: 'uncommon', cost: 2,
-    effects: [block(1), H('applyWeak', { amount: 1 })], hermit: { rapidFire: 1 },
-    upgrade: { effects: [block(2), H('applyWeak', { amount: 1 })] } },
+    effects: [block(1), { kind: 'applyWeak', amount: 1 }], hermit: { rapidFire: 1 },
+    upgrade: { effects: [block(2), { kind: 'applyWeak', amount: 1 }] } },
   hermit_heroic_bravado: { type: 'skill', rarity: 'uncommon', cost: 3, exhaust: true,
-    effects: [H('gainStrength', { amount: 1 })], hermit: { costReductionBy: 'attacksInChamber' }, upgrade: { cost: 2 } },
+    effects: [{ kind: 'gainStrength', amount: 1 }], hermit: { costReductionBy: 'attacksInChamber' }, upgrade: { cost: 2 } },
   hermit_pistol_whip: { type: 'attack', rarity: 'common', cost: 1,
-    effects: [hit(2), deadOn(H('gainEnergy', { amount: 1 }), load(1))], hermit: { deadOn: true },
-    upgrade: { effects: [hit(3), deadOn(H('gainEnergy', { amount: 1 }), load(1))] } },
+    effects: [hit(2), deadOn({ kind: 'gainEnergy', amount: 1 }, load(1))], hermit: { deadOn: true },
+    upgrade: { effects: [hit(3), deadOn({ kind: 'gainEnergy', amount: 1 }, load(1))] } },
   hermit_misfire: { type: 'attack', rarity: 'common', cost: 0, target: 'row',
     effects: [rowHit({ base: 1, bonus: { plus: 1, when: { kind: 'hasCurseInChamber' } } })],
     upgrade: { effects: [rowHit({ base: 2, bonus: { plus: 1, when: { kind: 'hasCurseInChamber' } } })] } },
-  hermit_quickdraw: { type: 'attack', rarity: 'common', cost: 1, effects: [hit(1), H('draw', { amount: 1 }), load(1)],
-    upgrade: { effects: [hit(1), H('draw', { amount: 2 }), load(1)] } },
+  hermit_quickdraw: { type: 'attack', rarity: 'common', cost: 1, effects: [hit(1), { kind: 'draw', amount: 1 }, load(1)],
+    upgrade: { effects: [hit(1), { kind: 'draw', amount: 2 }, load(1)] } },
   hermit_tracking_shots: { type: 'attack', rarity: 'common', cost: 2,
-    effects: [hit(3), H('loadSelf', { optional: true })], upgrade: { effects: [hit(4), H('loadSelf', { optional: true })] } },
+    effects: [hit(3), { kind: 'loadSelf', optional: true }], upgrade: { effects: [hit(4), { kind: 'loadSelf', optional: true }] } },
   hermit_high_caliber: { type: 'attack', rarity: 'common', cost: 2, effects: [hit(1), block(1)], hermit: { rapidFire: 1 },
     upgrade: { effects: [hit(2), block(1)] } },
   hermit_headshot: { type: 'attack', rarity: 'common', cost: 2, effects: [deadOn(hit(5))], hermit: { deadOn: true },
@@ -268,16 +245,16 @@ const HERMIT_LIVE_SPECS: Readonly<Record<string, HermitLiveSpec>> = {
   hermit_itchy_trigger: { type: 'attack', rarity: 'common', cost: 1, effects: [hit(1)], hermit: { rapidFire: 1 },
     upgrade: { hermit: { rapidFire: 2 } } },
   hermit_fan_the_hammer: { type: 'attack', rarity: 'common', cost: 1, exhaust: true,
-    effects: [hit(2), H('playChamber', { amount: 1, free: true })],
-    upgrade: { effects: [hit(4), H('playChamber', { amount: 1, free: true })] } },
+    effects: [hit(2), { kind: 'playChamber', amount: 1, free: true }],
+    upgrade: { effects: [hit(4), { kind: 'playChamber', amount: 1, free: true }] } },
   hermit_dive: { type: 'skill', rarity: 'common', cost: 1,
     effects: [block({ base: 2, bonus: { plus: 1, when: { kind: 'hasCurseInChamber' } } })],
     upgrade: { effects: [block({ base: 3, bonus: { plus: 1, when: { kind: 'hasCurseInChamber' } } })] } },
-  hermit_feint: { type: 'skill', rarity: 'common', cost: 1, effects: [H('draw', { amount: 2 }), load(1)],
-    upgrade: { effects: [H('draw', { amount: 3 }), load(1)] } },
+  hermit_feint: { type: 'skill', rarity: 'common', cost: 1, effects: [{ kind: 'draw', amount: 2 }, load(1)],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, load(1)] } },
   hermit_take_cover: { type: 'skill', rarity: 'common', cost: 1,
-    effects: [block(1), H('gainTemporaryStrength', { amount: 1, loseGainedOnly: true })],
-    upgrade: { effects: [block(2), H('gainTemporaryStrength', { amount: 1, loseGainedOnly: true })] } },
+    effects: [block(1), { kind: 'gainTemporaryStrength', amount: 1, loseGainedOnly: true }],
+    upgrade: { effects: [block(2), { kind: 'gainTemporaryStrength', amount: 1, loseGainedOnly: true }] } },
   hermit_body_armor: { type: 'skill', rarity: 'common', cost: 1, effects: [block(2), deadOn()], hermit: { deadOn: true, costZeroWhenDeadOn: true },
     upgrade: { effects: [block(3), deadOn()] } },
   hermit_low_profile: { type: 'skill', rarity: 'common', cost: 0, exhaust: true, effects: [block(1), load(1)],
@@ -291,27 +268,27 @@ const HERMIT_LIVE_SPECS: Readonly<Record<string, HermitLiveSpec>> = {
   hermit_horror: { type: 'curse', rarity: 'curse', cost: 0, effects: [], unplayable: true },
   hermit_golden_ticket: { type: 'curse', rarity: 'special', cost: 0, effects: [], unplayable: true },
   hermit_fully_loaded: { type: 'power', rarity: 'uncommon', cost: 1, resolvesOnPlay: true,
-    effects: [H('gainChamberSlot', { amount: 1 }), load(1)],
-    upgrade: { effects: [H('gainChamberSlot', { amount: 1 }), load(99, { upTo: true })] } },
+    effects: [{ kind: 'gainChamberSlot', amount: 1 }, load(1)],
+    upgrade: { effects: [{ kind: 'gainChamberSlot', amount: 1 }, load(99, { upTo: true })] } },
   hermit_take_aim: { type: 'power', rarity: 'uncommon', cost: 2, trigger: { kind: 'endOfTurn' }, effects: [load(1)],
     upgrade: { cost: 1 } },
   hermit_enervate: { type: 'attack', rarity: 'uncommon', cost: 'X', effects: [hit({ base: 0, per: 'energySpent' })],
     hermit: { rapidFire: 1 }, upgrade: { effects: [hit({ base: 1, per: 'energySpent' })] } },
   hermit_wide_open: { type: 'attack', rarity: 'uncommon', cost: 1,
-    effects: [hit(2), deadOn(H('applyVulnerable', { amount: 1 }))], hermit: { deadOn: true },
-    upgrade: { effects: [hit(3), deadOn(H('applyVulnerable', { amount: 1 }))] } },
+    effects: [hit(2), deadOn({ kind: 'applyVulnerable', amount: 1 })], hermit: { deadOn: true },
+    upgrade: { effects: [hit(3), deadOn({ kind: 'applyVulnerable', amount: 1 })] } },
   hermit_desperado: { type: 'attack', rarity: 'uncommon', cost: 1, effects: [hit(2)], hermit: { rapidFireBy: 'curseInChamber' },
     upgrade: { effects: [hit(3)] } },
   hermit_cursed_weapon: { type: 'attack', rarity: 'uncommon', cost: 2,
     effects: [hit({ base: 2, per: 'cursesInHandAndChamber', scale: 3 })],
     upgrade: { effects: [hit({ base: 2, per: 'cursesInHandAndChamber', scale: 4 })] } },
   hermit_trick_shot: { type: 'attack', rarity: 'uncommon', cost: 1, exhaust: true,
-    effects: [hit(2), deadOn(H('drawLastHitDamage'))], hermit: { deadOn: true }, upgrade: { exhaust: false } },
+    effects: [hit(2), deadOn({ kind: 'drawLastHitDamage' })], hermit: { deadOn: true }, upgrade: { exhaust: false } },
   hermit_short_fuse: { type: 'attack', rarity: 'uncommon', cost: 3, target: 'row', effects: [rowHit(1)],
     hermit: { rapidFire: 1, costReductionBy: 'starterCards' }, upgrade: { effects: [rowHit(2)] } },
   hermit_deadeye: { type: 'attack', rarity: 'uncommon', cost: 2,
-    effects: [hit(2), deadOn(H('gainStrength', { amount: 1 }))], hermit: { deadOn: true },
-    upgrade: { effects: [hit(4), deadOn(H('gainStrength', { amount: 1 }))] } },
+    effects: [hit(2), deadOn({ kind: 'gainStrength', amount: 1 })], hermit: { deadOn: true },
+    upgrade: { effects: [hit(4), deadOn({ kind: 'gainStrength', amount: 1 })] } },
   hermit_brawl: { type: 'attack', rarity: 'uncommon', cost: 3, effects: [hit(3), block(1)],
     hermit: { costReductionBy: 'attacksPlayed' }, upgrade: { effects: [hit(4), block(2)] } },
   hermit_overwhelming_power: { type: 'power', rarity: 'uncommon', cost: 1, effects: [], persistent: true,
@@ -321,66 +298,66 @@ const HERMIT_LIVE_SPECS: Readonly<Record<string, HermitLiveSpec>> = {
   hermit_maintenance: { type: 'power', rarity: 'uncommon', cost: 1, effects: [], persistent: true },
   hermit_lone_wolf: { type: 'power', rarity: 'uncommon', cost: 1, effects: [], persistent: true },
   hermit_shadow_cloak: { type: 'power', rarity: 'uncommon', cost: 2, activeAbility: true, oncePerTurn: true,
-    effects: [H('discardChamber', { amount: 1, curseOnly: true, then: [block(2)] })],
-    upgrade: { effects: [H('discardChamber', { amount: 1, curseOnly: true, then: [block(3)] })] } },
+    effects: [{ kind: 'discardChamber', amount: 1, curseOnly: true, then: [block(2)] }],
+    upgrade: { effects: [{ kind: 'discardChamber', amount: 1, curseOnly: true, then: [block(3)] }] } },
   hermit_called_shot: { type: 'power', rarity: 'uncommon', cost: 1, trigger: { kind: 'startOfTurn' },
-    effects: [H('discountChamber', { amount: 1 })], upgrade: { cost: 0 } },
+    effects: [{ kind: 'discountChamber', amount: 1 }], upgrade: { cost: 0 } },
   hermit_black_wind: { type: 'power', rarity: 'uncommon', cost: 1, activeAbility: true, oncePerTurn: true,
-    effects: [H('discardChamber', { amount: 1 }), load(1)], upgrade: { cost: 0 } },
+    effects: [{ kind: 'discardChamber', amount: 1 }, load(1)], upgrade: { cost: 0 } },
   hermit_ghostly_presence: { type: 'skill', rarity: 'uncommon', cost: 1,
-    effects: [block(2), H('discardChamber', { amount: 1 }), load(2, { upTo: true })],
-    upgrade: { effects: [block(3), H('discardChamber', { amount: 1 }), load(2, { upTo: true })] } },
-  hermit_specter: { type: 'skill', rarity: 'uncommon', cost: 1, effects: [block(1), H('draw', { amount: 1 })],
-    hermit: { rapidFireBy: 'curses' }, upgrade: { effects: [block(2), H('draw', { amount: 1 })] } },
+    effects: [block(2), { kind: 'discardChamber', amount: 1 }, load(2, { upTo: true })],
+    upgrade: { effects: [block(3), { kind: 'discardChamber', amount: 1 }, load(2, { upTo: true })] } },
+  hermit_specter: { type: 'skill', rarity: 'uncommon', cost: 1, effects: [block(1), { kind: 'draw', amount: 1 }],
+    hermit: { rapidFireBy: 'curses' }, upgrade: { effects: [block(2), { kind: 'draw', amount: 1 }] } },
   hermit_midnight: { type: 'skill', rarity: 'uncommon', cost: 2, exhaust: true,
-    effects: [H('applyVulnerable', { amount: 1 })], hermit: { costReductionBy: 'attacksInChamber' },
+    effects: [{ kind: 'applyVulnerable', amount: 1 }], hermit: { costReductionBy: 'attacksInChamber' },
     upgrade: { exhaust: false } },
   hermit_rummage: { type: 'skill', rarity: 'uncommon', cost: 1, exhaust: true,
     effects: [load(1, { source: 'discard' })], upgrade: { exhaust: false } },
   hermit_eye_of_the_storm: { type: 'skill', rarity: 'uncommon', cost: 1, exhaust: true,
-    effects: [H('playChamber', { amount: 'all', free: true })], upgrade: { cost: 0 } },
+    effects: [{ kind: 'playChamber', amount: 'all', free: true }], upgrade: { cost: 0 } },
   hermit_virtue: { type: 'skill', rarity: 'uncommon', cost: 1, supportTarget: 'anyPlayer',
-    effects: [H('draw', { amount: 3, toChosen: true })], upgrade: { effects: [H('draw', { amount: 4, toChosen: true })] } },
+    effects: [{ kind: 'draw', amount: 3, toChosen: true }], upgrade: { effects: [{ kind: 'draw', amount: 4, toChosen: true }] } },
 
   hermit_fatal_desire: { type: 'curse', rarity: 'curse', cost: 0, effects: [], unplayable: true },
-  hermit_cheat: { type: 'attack', rarity: 'rare', cost: 1, effects: [hit(2), deadOn(H('triggerDieRelic', { amount: 1 }))],
-    hermit: { deadOn: true }, upgrade: { effects: [hit(2), deadOn(H('triggerDieRelic', { amount: 2, upTo: true }))] } },
-  hermit_magnum: { type: 'attack', rarity: 'rare', cost: 3, effects: [hit(2), H('discardHand')],
-    hermit: { rapidFireBy: 'otherCardsInHand' }, upgrade: { effects: [hit(3), H('discardHand')] } },
+  hermit_cheat: { type: 'attack', rarity: 'rare', cost: 1, effects: [hit(2), deadOn({ kind: 'triggerDieRelic', amount: 1 })],
+    hermit: { deadOn: true }, upgrade: { effects: [hit(2), deadOn({ kind: 'triggerDieRelic', amount: 2, upTo: true })] } },
+  hermit_magnum: { type: 'attack', rarity: 'rare', cost: 3, effects: [hit(2), { kind: 'discardHand' }],
+    hermit: { rapidFireBy: 'otherCardsInHand' }, upgrade: { effects: [hit(3), { kind: 'discardHand' }] } },
   hermit_roundhouse_kick: { type: 'attack', rarity: 'rare', cost: 2, target: 'row', exhaust: true,
-    effects: [rowHit(3), H('applyVulnerable', { amount: 1 })],
-    upgrade: { effects: [rowHit(5), H('applyVulnerable', { amount: 1 })] } },
+    effects: [rowHit(3), { kind: 'applyVulnerable', amount: 1 }],
+    upgrade: { effects: [rowHit(5), { kind: 'applyVulnerable', amount: 1 }] } },
   hermit_purgatory: { type: 'attack', rarity: 'rare', cost: 4, target: 'row', effects: [rowHit(7)],
     hermit: { costReductionBy: 'curses' }, upgrade: { effects: [rowHit(9)] } },
   hermit_golden_bullet: { type: 'attack', rarity: 'rare', cost: 1,
-    effects: [H('goldenBullet', { amount: 2 })], hermit: { deadOn: true },
-    upgrade: { effects: [H('goldenBullet', { amount: 3 })] } },
-  hermit_roulette: { type: 'attack', rarity: 'rare', cost: 1, effects: [H('roulette', { byRoll: {
-    1: [hit(1)], 2: [hit(2), H('applyVulnerable', { amount: 1 })], 3: [hit(2), block(2)],
-    4: [rowHit(2)], 5: [hit(2), H('applyWeak', { amount: 1 })], 6: [hit(6)],
-  } })], upgrade: { effects: [H('roulette', { byRoll: {
-    1: [hit(1)], 2: [hit(3), H('applyVulnerable', { amount: 1 })], 3: [hit(3), block(3)],
-    4: [rowHit(3)], 5: [hit(3), H('applyWeak', { amount: 1 })], 6: [hit(9)],
-  } })] } },
+    effects: [{ kind: 'goldenBullet', amount: 2 }], hermit: { deadOn: true },
+    upgrade: { effects: [{ kind: 'goldenBullet', amount: 3 }] } },
+  hermit_roulette: { type: 'attack', rarity: 'rare', cost: 1, effects: [{ kind: 'roulette', byRoll: {
+    1: [hit(1)], 2: [hit(2), { kind: 'applyVulnerable', amount: 1 }], 3: [hit(2), block(2)],
+    4: [rowHit(2)], 5: [hit(2), { kind: 'applyWeak', amount: 1 }], 6: [hit(6)],
+  } }], upgrade: { effects: [{ kind: 'roulette', byRoll: {
+    1: [hit(1)], 2: [hit(3), { kind: 'applyVulnerable', amount: 1 }], 3: [hit(3), block(3)],
+    4: [rowHit(3)], 5: [hit(3), { kind: 'applyWeak', amount: 1 }], 6: [hit(9)],
+  } }] } },
   hermit_no_holds_barred: { type: 'power', rarity: 'rare', cost: 2, effects: [], persistent: true, upgrade: { cost: 1 } },
   hermit_eternal_form: { type: 'power', rarity: 'rare', cost: 3, trigger: { kind: 'startOfTurn' },
     effects: [load(1, { discount: true })], upgrade: { cost: 2 } },
   hermit_high_noon: { type: 'power', rarity: 'rare', cost: 2, effects: [], persistent: true },
   hermit_snipe: { type: 'power', rarity: 'rare', cost: 2, activeAbility: true, oncePerTurn: true,
-    effects: [H('applyVulnerable', { amount: 1, when: { kind: 'hasDeadOnAttackInChamber' } })], upgrade: { cost: 1 } },
-  hermit_gestalt: { type: 'skill', rarity: 'rare', cost: 1, effects: [block(2), H('loadSelf', { optional: true })],
-    upgrade: { effects: [block(3), H('loadSelf', { optional: true })] } },
+    effects: [{ kind: 'applyVulnerable', amount: 1, when: { kind: 'hasDeadOnAttackInChamber' } }], upgrade: { cost: 1 } },
+  hermit_gestalt: { type: 'skill', rarity: 'rare', cost: 1, effects: [block(2), { kind: 'loadSelf', optional: true }],
+    upgrade: { effects: [block(3), { kind: 'loadSelf', optional: true }] } },
   hermit_dead_or_alive: { type: 'skill', rarity: 'rare', cost: 2,
-    effects: [H('attachBounty', { vulnerable: 2 })], upgrade: { effects: [H('attachBounty', { vulnerable: 3 })] } },
+    effects: [{ kind: 'attachBounty', vulnerable: 2 }], upgrade: { effects: [{ kind: 'attachBounty', vulnerable: 3 }] } },
   hermit_coalescence: { type: 'skill', rarity: 'rare', cost: 0, exhaust: true,
-    effects: [H('draw', { amount: 2 }), load(2, { upTo: true })],
-    upgrade: { effects: [H('draw', { amount: 3 }), load(2, { upTo: true })] } },
+    effects: [{ kind: 'draw', amount: 2 }, load(2, { upTo: true })],
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, load(2, { upTo: true })] } },
   hermit_smoking_barrel: { type: 'power', rarity: 'rare', cost: 1, trigger: { kind: 'startOfTurn' },
-    effects: [H('discardChamber', { amount: 1, optional: true, then: [H('draw', { amount: 3 })] })],
-    upgrade: { effects: [H('discardChamber', { amount: 1, optional: true, then: [H('draw', { amount: 4 })] })] } },
+    effects: [{ kind: 'discardChamber', amount: 1, optional: true, then: [{ kind: 'draw', amount: 3 }] }],
+    upgrade: { effects: [{ kind: 'discardChamber', amount: 1, optional: true, then: [{ kind: 'draw', amount: 4 }] }] } },
   hermit_combo: { type: 'power', rarity: 'rare', cost: 2, trigger: { kind: 'onHermitDeadOn' }, oncePerTurn: true,
-    effects: [H('draw', { amount: 2 }), H('load', { amount: 1 })], persistent: true,
-    upgrade: { effects: [H('draw', { amount: 3 }), H('load', { amount: 1 })] } },
+    effects: [{ kind: 'draw', amount: 2 }, { kind: 'load', amount: 1 }], persistent: true,
+    upgrade: { effects: [{ kind: 'draw', amount: 3 }, { kind: 'load', amount: 1 }] } },
 }
 
 function printedCost(cost: HermitPrintedCost): number | 'X' | null {

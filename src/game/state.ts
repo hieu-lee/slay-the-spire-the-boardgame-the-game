@@ -158,8 +158,11 @@ export {
   startTurnScryAbilities,
   startTurnScryPreview,
   defaultStartTurnChoices,
+  enemyActingOrder,
+  enemyTurn,
   mandatoryChoicePending,
   owedPlayerChoices,
+  resolveSlayerChoice,
   validEndTurnOrder,
 } from './combat.ts'
 export type { CardChoicePreview, CombatPhase, CombatState, DiscardOrders, EndTurnAbility, EndTurnOrder, EvokeChoice, PendingTrigger, PendingTriggerAbility, PlayContext, PotionContext, PowerContext, RelicContext, StartTurnAbility, StartTurnChoice, StartTurnDiscardPreview, StartTurnScryAbility, StartTurnScryPreview } from './combat.ts'
@@ -168,8 +171,6 @@ export { CARD_ASSET_ROOT, cardImagePath, tierOf } from './assets.ts'
 
 export { ENEMIES, abilityText, actionsFor, advanceCube, enemyDef, startingHp } from './enemies.ts'
 export type { CubeSlot, EnemyAbility, EnemyAction, EnemyDef, EnemyPattern } from './enemies.ts'
-export { enemyActingOrder, enemyTurn } from './combat.ts'
-export { resolveSlayerChoice } from './combat.ts'
 
 export { actIVMap, addBurningElite, availableMoves, currentRoom, generateMap, isActComplete, moveTo } from './map.ts'
 export type { MapTokenBack, Room, RoomKind, SpireMap } from './map.ts'
@@ -235,6 +236,7 @@ export {
   usePotionOutsideCombat,
   visibleMap,
   resolveCardRewards,
+  resolveCampfire,
   resolveCombat,
   rerollDownfallSelfBoss,
   roomChoices,
@@ -243,11 +245,9 @@ export {
   switchBetweenCombatRow,
   neowPreview,
 } from './run.ts'
-export type { CardRewardOffer, PartyMember, PendingRelicPreview, PotionRewardDecision, RunPhase, RunState } from './run.ts'
+export type { CampfireChoice, CampfireDecision, CardRewardOffer, PartyMember, PendingRelicPreview, PotionRewardDecision, RunPhase, RunState } from './run.ts'
 export { NEOW_CARDS, neowCard } from './neow.ts'
 export type { NeowCard, NeowDecision, NeowEffect, NeowImmediateReward, NeowOption, NeowPlayerState, NeowRewardKind, NeowRewardOffer, NeowState } from './neow.ts'
-export { resolveCampfire } from './run.ts'
-export type { CampfireChoice, CampfireDecision } from './run.ts'
 
 export { EVENT_CARDS, EVENT_DEFINITIONS, buildEventDeck } from './events.ts'
 export type { EventCard, EventDefinition, EventEffect, EventOption } from './events.ts'

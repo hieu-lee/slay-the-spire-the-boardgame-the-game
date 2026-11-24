@@ -48,13 +48,60 @@ import {
   triggerAngry,
 } from './pieces.ts'
 import { addPresentationEvent, presentationTargets } from './presentation.ts'
+import {
+  TURN_PRESENTATION_TRIGGERS,
+  activeTurnEffectLeaves,
+  dieRelicEffectsForParty,
+  dieRelicNeedsOwnerChoice,
+  markTurnEffect,
+  publishTurnEffect,
+  publishTurnEffectApplications,
+} from './turn-presentation.ts'
+import {
+  attachSlayerCard,
+  bandageUp,
+  cardIconBonus,
+  clearTerminalChoices,
+  closeAllCardPlayWindowsWithDiscard,
+  closeCardPlayWindowWithDiscard,
+  detachSlayerCards,
+  discardPowerFromPlay,
+  discardTopLine,
+  followCopiedPowers,
+  grantSlayerKillRewards,
+  lapseDeadOwnerPlayerChoices,
+  metamorphosisCard,
+  openCardPlayWindow,
+  queuePlayerChoice,
+  resolveDeadOwnerSlayerChoicesWithDiscard,
+  resolveSlayerAttachedDamage,
+  settleCardPlayWindows,
+  shedSlayerCardsOnLeaveWithDiscard,
+  slayerAttachmentKeys,
+  sweepMetamorphoses,
+  syncCardPlayWindowMarks,
+  takeDiscardTop,
+} from './slayer.ts'
+import {
+  pendingTriggerSlimeEnemyChoiceCount,
+  pendingTriggerSlimeEnemyChoiceLabels,
+  queuedTriggers,
+  triggerHermitChoices,
+  triggerNeedsEnemyChoice,
+  triggerNeedsHermitChoice,
+  triggerNeedsPlayerChoice,
+  triggerNeedsRowChoice,
+  triggerSlimeChoice,
+  triggerSourceById,
+  triggerSourceReachesEnemy,
+  triggerSources,
+} from './trigger-queries.ts'
+import type { TriggerResolutionOptions } from './trigger-queries.ts'
 import { commandSlime, gainSlimeVigor, growSlime, previewSlimeCommand, slimeDef } from '../downfall/slime-boss.ts'
-import type { SlimeBossEffect } from '../downfall/slime-boss.ts'
 import { hermitCurseLoadReaction } from '../downfall/hermit.ts'
 import {
   persistentEffectOf,
   attackIconsAgainst,
-  activeCardPlayWindow,
   amountOf,
   cardCanBeForced,
   cardPlayWindowCardPlayable,
@@ -73,18 +120,15 @@ import {
   reachedTimeWarpLimit,
   reachesEnemy,
   resolutionContext,
-  slimeCommandEnemyChoiceLabels,
 } from './queries.ts'
 import type {
   CombatState,
   DeferredHavoc,
   PendingTrigger,
-  PendingTriggerAbility,
   PlayContext,
   TriggerSource,
-  TurnEffectPresentation,
 } from './types.ts'
-import { CARDS, cardCost, cardDef, cardStaysInPlay, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
+import { cardCost, cardDef, cardStaysInPlay, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
 import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import {
   applyDamage,
@@ -101,99 +145,36 @@ import {
 } from '../damage.ts'
 import { advanceCube, enemyAbilities, enemyDef } from '../enemies.ts'
 import { addToDrawTop, drawCards, scry } from '../piles.ts'
-import { chosenDieRelicAbilities, relicAbilities, relicDef } from '../relics.ts'
+import { chosenDieRelicAbilities, relicDef } from '../relics.ts'
 import { nextInt, shuffle } from '../rng.ts'
-import { triggerMatches } from '../triggers.ts'
 import type { TriggerEvent } from '../triggers.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Enemy, OrbType, Player } from '../types.ts'
 import { healingCapFor } from '../acquisition.ts'
 
-function dieRelicNeedsOwnerChoice(effects: readonly Effect[]): boolean {
-  return effects.some((effect) => effect.kind === 'discard' || effect.kind === 'exhaustFromHand')
+export {
+  attachSlayerCard,
+  cardIconBonus,
+  dieRelicEffectsForParty,
+  discardTopLine,
+  pendingTriggerSlimeEnemyChoiceCount,
+  pendingTriggerSlimeEnemyChoiceLabels,
+  publishTurnEffect,
+  publishTurnEffectApplications,
+  slayerAttachmentKeys,
+  syncCardPlayWindowMarks,
+  takeDiscardTop,
+  triggerHermitChoices,
+  triggerNeedsEnemyChoice,
+  triggerNeedsHermitChoice,
+  triggerNeedsPlayerChoice,
+  triggerNeedsRowChoice,
+  triggerSlimeChoice,
+  triggerSourceById,
+  triggerSourceReachesEnemy,
+  triggerSources,
 }
-
-const TURN_PRESENTATION_TRIGGERS = new Set(['startOfCombat', 'beforeDraw', 'startOfTurn', 'dieRelic', 'endOfTurn'])
-
-export function publishTurnEffect(
-  state: CombatState,
-  actorId: string,
-  sourceId: string,
-  effect: TurnEffectPresentation,
-  targets: {
-    actorTargeted?: boolean
-    enemyIds?: string[]
-    playerIds?: string[]
-    enemyRow?: number
-  } = {},
-): void {
-  addPresentationEvent(state, {
-    kind: 'turn', effect,
-    actorTargeted: targets.actorTargeted ?? false,
-    actorId, sourceId,
-    enemyIds: targets.enemyIds ?? [],
-    playerIds: targets.playerIds ?? [],
-    ...(targets.enemyRow === undefined ? {} : { enemyRow: targets.enemyRow }),
-  })
-}
-
-function markTurnEffect(
-  context: PlayContext | undefined,
-  effect: TurnEffectPresentation,
-  target: { actor?: boolean; enemyId?: string; playerId?: string } = {},
-): void {
-  const applications = context?.turnEffectApplications
-  if (!applications) return
-  let applied = applications.find((candidate) => candidate.effect === effect)
-  if (!applied) applications.push(applied = { effect })
-  if (target.actor) applied.actorTargeted = true
-  if (target.enemyId && !(applied.enemyIds ??= []).includes(target.enemyId)) applied.enemyIds.push(target.enemyId)
-  if (target.playerId && !(applied.playerIds ??= []).includes(target.playerId)) applied.playerIds.push(target.playerId)
-}
-
-export function publishTurnEffectApplications(
-  state: CombatState,
-  actorId: string,
-  sourceId: string,
-  applications: NonNullable<PlayContext['turnEffectApplications']>,
-): void {
-  for (const applied of applications) {
-    publishTurnEffect(state, actorId, sourceId, applied.effect, {
-      actorTargeted: applied.actorTargeted,
-      enemyIds: applied.enemyIds,
-      playerIds: applied.playerIds,
-    })
-  }
-}
-
-function activeTurnEffectLeaves(
-  effects: readonly Effect[],
-  state: CombatState,
-  actor: Player,
-): Effect[] {
-  return effects.flatMap((effect): Effect[] => {
-    if (!effectIsActive(effect, state, actor)) return []
-    if (effect.kind === 'sequence') return effect.guardianAction || effect.guardianGemId
-      ? [effect]
-      : activeTurnEffectLeaves(effect.effects, state, actor)
-    if (effect.kind === 'branch') return activeTurnEffectLeaves(
-      conditionIsActive(effect.condition, state, actor) ? effect.effects : effect.otherwise,
-      state,
-      actor,
-    )
-    return [effect]
-  })
-}
-
-export function dieRelicEffectsForParty(
-  relicDefId: string,
-  effects: readonly Effect[],
-  playerCount: number,
-): readonly Effect[] {
-  return relicDefId === 'tungsten_rod' && playerCount === 1
-    ? effects.map((effect) => effect.kind === 'block' ? { ...effect, amount: 3 } : effect)
-    : effects
-}
+export type { TriggerResolutionOptions }
 
 /** Applies a chosen die face now, or queues its private hand choice for the relic owner. */
 export function triggerChosenDieRelic(
@@ -592,160 +573,15 @@ export function triggerEnemyDeath(state: CombatState, enemy: Enemy): void {
       discardByCardEffect(state, owner, [bounty.card])
     }
   }
-  detachSlayerCards(state, enemy)
+  detachSlayerCards(state, enemy, discardByCardEffect)
 }
 
-/**
- * "When it dies, discard this card" / Nightmare+'s "attach this card to
- * another target". With one other enemy alive the move has a single answer;
- * with several the owner chooses (`pendingSlayerChoices`); with none the card
- * is discarded like the base face.
- */
-function detachSlayerCards(state: CombatState, enemy: Enemy): void {
-  const attached = enemy.slayerAttachments ?? []
-  enemy.slayerAttachments = undefined
-  for (const entry of attached) {
-    const owner = findPlayer(state, entry.playerId)
-    if (!owner) continue
-    const def = faceOf(cardDef(entry.card.defId), entry.card.upgraded)
-    const hosts = livingEnemies(state).filter((candidate) => candidate.uid !== enemy.uid)
-    if (def.attached?.onHostDeath === 'reattach' && hosts.length > 1) {
-      state.pendingSlayerChoices = [...(state.pendingSlayerChoices ?? []),
-        { id: allocateChoiceId(state), kind: 'reattach', playerId: owner.id, card: entry.card, fromUid: enemy.uid }]
-      state.log = [...state.log, `${owner.name} chooses another enemy for ${def.name}`]
-    } else if (def.attached?.onHostDeath === 'reattach' && hosts.length === 1) {
-      attachSlayerCard(state, hosts[0]!, entry)
-    } else {
-      state.log = [...state.log, `${def.name} falls off ${enemyLabel(state.enemies, enemy)}`]
-      discardByCardEffect(state, owner, [entry.card])
-    }
-  }
-}
-
-/**
- * A dead player can never answer, and their open choice would hold the whole
- * table (Last Stand, or a death in the Enemy Turn). Their Nightmare+ moves to
- * the first other living enemy (or is discarded); their Ritual Dagger+ reveal
- * goes to the bottom of their rare deck, leaving the deck as it was.
- */
 export function resolveDeadOwnerSlayerChoices(state: CombatState): void {
-  const owed = state.pendingSlayerChoices
-  if (!owed?.some((choice) => findPlayer(state, choice.playerId)?.dead !== false)) return
-  state.pendingSlayerChoices = owed.filter((choice) => findPlayer(state, choice.playerId)?.dead === false)
-  for (const choice of owed) {
-    const owner = findPlayer(state, choice.playerId)
-    if (!owner?.dead) continue
-    if (choice.kind === 'reattach') {
-      const host = livingEnemies(state).find((enemy) => enemy.uid !== choice.fromUid)
-      if (host) attachSlayerCard(state, host, { card: choice.card, playerId: owner.id })
-      else discardByCardEffect(state, owner, [choice.card])
-    } else if (owner.rareRewards.length > 0) {
-      const [top, ...rest] = owner.rareRewards
-      owner.rareRewards = [...rest, top!]
-      state.log = [...state.log, `${owner.name}'s revealed rare reward goes to the bottom of their rare deck`]
-    }
-  }
-  if (state.pendingSlayerChoices.length === 0) delete state.pendingSlayerChoices
+  resolveDeadOwnerSlayerChoicesWithDiscard(state, discardByCardEffect)
 }
 
-/**
- * Ritual Dagger's earned rewards, applied once the physical card has left play (or the
- * fight is over): the card and its deck copy are upgraded, or its owner privately sees
- * the top rare reward (`pendingSlayerChoices`), with the dagger already in its pile.
- */
-function grantSlayerKillRewards(state: CombatState): void {
-  const earned = state.slayerKillRewards
-  if (!earned) return
-  const inPlay = state.pendingCardCopy && !combatIsOver(state) ? state.pendingCardCopy.card.uid : undefined
-  state.slayerKillRewards = earned.filter((reward) => reward.cardUid === inPlay)
-  for (const reward of earned) {
-    const owner = findPlayer(state, reward.playerId)
-    if (reward.cardUid === inPlay || !owner) continue
-    if (reward.reward === 'upgrade') {
-      const upgrade = (cards: CardInstance[]) =>
-        cards.map((card) => card.uid === reward.cardUid ? { ...card, upgraded: true } : card)
-      owner.deck = upgrade(owner.deck)
-      owner.hand = upgrade(owner.hand)
-      owner.draw = upgrade(owner.draw)
-      owner.discard = upgrade(owner.discard)
-      owner.exhaust = upgrade(owner.exhaust)
-      state.log = [...state.log, `${owner.name} upgrades Ritual Dagger`]
-    } else if (owner.rareRewards[0]) {
-      state.pendingSlayerChoices = [...(state.pendingSlayerChoices ?? []),
-        { id: allocateChoiceId(state), kind: 'ritualDagger', playerId: owner.id, cardUid: reward.cardUid,
-          revealed: owner.rareRewards[0] }]
-      state.log = [...state.log, `${owner.name} reveals the top card of their rare rewards`]
-    } else {
-      state.log = [...state.log, `${owner.name} has no rare reward left to reveal`]
-    }
-  }
-  if (state.slayerKillRewards.length === 0) delete state.slayerKillRewards
-}
-
-/**
- * A host that leaves combat (Looter, Mugger) does not die, so nothing "when it dies"
- * happens: every card on it, a Nightmare+ included, goes to its owner's discard pile.
- */
 export function shedSlayerCardsOnLeave(state: CombatState, enemy: Enemy): void {
-  const attached = enemy.slayerAttachments ?? []
-  enemy.slayerAttachments = undefined
-  for (const entry of attached) {
-    const owner = findPlayer(state, entry.playerId)
-    if (!owner) continue
-    state.log = [...state.log, `${faceOf(cardDef(entry.card.defId), entry.card.upgraded).name} leaves with ${
-      enemyLabel(state.enemies, enemy)} and is discarded`]
-    discardByCardEffect(state, owner, [entry.card])
-  }
-}
-
-export function attachSlayerCard(
-  state: CombatState,
-  host: Enemy,
-  entry: NonNullable<Enemy['slayerAttachments']>[number],
-): void {
-  host.slayerAttachments = [...(host.slayerAttachments ?? []), entry]
-  const owner = findPlayer(state, entry.playerId)
-  state.log = [...state.log, `${owner?.name ?? 'A player'} attaches ${
-    faceOf(cardDef(entry.card.defId), entry.card.upgraded).name} to ${enemyLabel(state.enemies, host)}`]
-}
-
-/** Which attached Slayer card sits on which enemy, captured when a play begins. */
-export function slayerAttachmentKeys(state: CombatState): string[] {
-  return state.enemies.flatMap((enemy) => (enemy.slayerAttachments ?? []).map((entry) => `${enemy.uid}/${entry.card.uid}`))
-}
-
-/**
- * Plain damage from the actor's attached cards whose condition this play met:
- * Nightmare for every host the Attack struck, Pressure Points for any Skill.
- * `excludeUid` is the card being played, which was not attached when it was.
- * Only cards already on their enemy when the play began (`attachedAtStart`)
- * react: a Nightmare+ that moved during this play waits for the next one. The
- * candidates are fixed before the first ping, so a ping that kills a host and
- * moves its card can never make that card answer twice, whatever the board order.
- */
-function resolveSlayerAttachedDamage(
-  state: CombatState,
-  actor: Player,
-  when: 'attackAgainstHost' | 'skill',
-  hosts: ReadonlySet<string> | null,
-  excludeUid?: string,
-  attachedAtStart?: readonly string[],
-): void {
-  const atStart = attachedAtStart ? new Set(attachedAtStart) : null
-  // A dead or departed enemy is no host, even if an older save left a card on it.
-  const reacting = state.enemies.flatMap((enemy) => enemy.dead || hosts && !hosts.has(enemy.uid) ? [] :
-    (enemy.slayerAttachments ?? []).filter((entry) => entry.playerId === actor.id && entry.card.uid !== excludeUid &&
-      faceOf(cardDef(entry.card.defId), entry.card.upgraded).attached?.damageWhen === when &&
-      (!atStart || atStart.has(`${enemy.uid}/${entry.card.uid}`))).map((entry) => ({ enemy, entry })))
-  for (const { enemy, entry } of reacting) {
-    if (combatIsOver(state)) return
-    // A host that died meanwhile has already shed its cards (`detachSlayerCards`),
-    // so "still attached here" also rules out pinging a corpse.
-    if (enemy.dead || !enemy.slayerAttachments?.some((held) => held.card.uid === entry.card.uid)) continue
-    const def = faceOf(cardDef(entry.card.defId), entry.card.upgraded)
-    damageEnemyLogged(state, enemy, actor.damageDealtZeroThisTurn ? 0 : def.attached!.amount,
-      `${actor.name}'s ${def.name}`, actor)
-  }
+  shedSlayerCardsOnLeaveWithDiscard(state, enemy, discardByCardEffect)
 }
 
 /**
@@ -796,99 +632,6 @@ export function damageEnemyLogged(
 }
 
 
-/**
- * Bandage Up: "When you lose HP, lose 1 HP less and Exhaust (+: discard) this card."
- *
- * It answers an HP loss that would really happen (at least 1 HP after the round
- * limit and Buffer), so it is never spent on a loss that was already stopped.
- * The reduction comes off the amount before it is capped by the HP left, so a
- * 1-HP player struck for 5 still falls. Each copy in play answers in turn while
- * any loss remains; all that answered then leave play together, so a
- * Metamorphosis copy still answers before following its original out.
- */
-function bandageUp(state: CombatState, player: Player, amount: number, losable: number): number {
-  let remaining = amount
-  let lost = losable
-  const answered: { held: CardInstance; then: 'exhaust' | 'discard' }[] = []
-  for (const held of player.powers) {
-    if (lost <= 0) break
-    const effect = persistentEffectOf(held, 'reduceHpLoss')
-    if (!effect) continue
-    remaining = Math.max(0, remaining - effect.amount)
-    lost = Math.min(player.hp, remaining)
-    answered.push({ held, then: effect.then })
-    state.log = [...state.log, `${player.name}'s Bandage Up prevents ${effect.amount} HP loss`]
-  }
-  for (const { held, then } of answered) {
-    if (!player.powers.includes(held)) continue
-    if (then === 'exhaust') {
-      player.powers = player.powers.filter((power) => power.uid !== held.uid)
-      exhaustCards(state, player, [held])
-      state.log = [...state.log, `${player.name} exhausts Bandage Up`]
-    } else discardPowerFromPlay(state, player, held)
-  }
-  return lost
-}
-
-/** Fasting: the per-icon bonus on the owner's own Attack and Skill cards. Shivs are not cards. */
-export function cardIconBonus(actor: Player, context: PlayContext, source?: string): number {
-  if (source === 'Shiv' || context.slimeCommand || context.guardianGemPowerDamage ||
-    (context.sourceCardType !== 'attack' && context.sourceCardType !== 'skill')) return 0
-  return actor.powers.reduce((sum, power) => sum + (persistentEffectOf(power, 'cardIconBonus')?.amount ?? 0), 0)
-}
-
-/** A Metamorphosis leaves play as the physical Metamorphosis card, never as the Power it copied. */
-function metamorphosisCard(card: CardInstance): CardInstance {
-  if (!card.metamorphosis) return card
-  return { uid: card.uid, defId: 'slayer_metamorphosis', upgraded: card.metamorphosis.upgraded }
-}
-
-/** "If the copied Power is Exhausted or discarded, this card is as well." Chains follow too. */
-function followCopiedPowers(
-  state: CombatState,
-  actor: Player,
-  leftUids: ReadonlySet<string>,
-  to: 'exhaust' | 'discard',
-  context?: PlayContext,
-): void {
-  const followers = actor.powers.filter((power) =>
-    power.metamorphosis !== undefined && leftUids.has(power.metamorphosis.sourceUid))
-  if (followers.length === 0) return
-  actor.powers = actor.powers.filter((power) => !followers.includes(power))
-  state.log = [...state.log, `${actor.name}'s Metamorphosis ${to === 'exhaust' ? 'exhausts' : 'is discarded'} with the Power it copied`]
-  if (to === 'exhaust') exhaustCards(state, actor, followers, context)
-  else for (const follower of followers) discardPowerFromPlay(state, actor, follower, false)
-}
-
-/** A Power that discards itself leaves play for the discard pile; it is not discarded from hand. */
-function discardPowerFromPlay(state: CombatState, actor: Player, held: CardInstance, removeFromPlay = true): void {
-  if (removeFromPlay) actor.powers = actor.powers.filter((power) => power.uid !== held.uid)
-  const card = metamorphosisCard(forgetRetain({ ...held, counter: undefined }))
-  actor.discard = [...actor.discard, card]
-  state.log = [...state.log, `${actor.name} discards ${cardDef(card.defId).name}`]
-  followCopiedPowers(state, actor, new Set([held.uid]), 'discard')
-}
-
-/**
- * Backstop for removal paths that predate Metamorphosis: a copy whose Power has
- * left play follows it, and no pile ever holds the copy's borrowed identity.
- */
-function sweepMetamorphoses(state: CombatState): void {
-  for (const player of state.players) {
-    for (const pile of ['hand', 'draw', 'discard', 'exhaust'] as const) {
-      if (player[pile].some((card) => card.metamorphosis)) player[pile] = player[pile].map(metamorphosisCard)
-    }
-    for (;;) {
-      const inPlay = new Set(player.powers.map((power) => power.uid))
-      const orphan = player.powers.find((power) => power.metamorphosis && !inPlay.has(power.metamorphosis.sourceUid))
-      if (!orphan) break
-      // Every Exhaust goes through `exhaustCards`, which already takes the copies along, so an
-      // orphan here lost its Power to a direct discard (Charge Up, Prepare Crush).
-      discardPowerFromPlay(state, player, orphan)
-    }
-  }
-}
-
 function preventPlayerHpLoss(state: CombatState, player: Player, amount: number): boolean {
   if (amount <= 0) return false
   const held = player.powers.find((power) =>
@@ -926,7 +669,7 @@ export function losePlayerHp(state: CombatState, player: Player, amount: number,
     return 0
   }
   if (preventPlayerHpLoss(state, player, losable)) return 0
-  losable = bandageUp(state, player, Math.max(0, limited), losable)
+  losable = bandageUp(state, player, Math.max(0, limited), losable, exhaustCards)
   const outcome = applyHpLoss(player.hp, losable)
   if (outcome.hpLost > 0) {
     player.lostHpThisCombat = true
@@ -1024,7 +767,7 @@ export function resolvePendingEnemyReactions(state: CombatState, actor: Player, 
   }
   // Slayer Pack: Nightmare answers each Attack its owner struck its host with.
   if (attacked.size > 0 && !combatIsOver(state)) {
-    resolveSlayerAttachedDamage(state, actor, 'attackAgainstHost', attacked, undefined, context.slayerAttachedAtStart)
+    resolveSlayerAttachedDamage(state, actor, 'attackAgainstHost', attacked, damageEnemyLogged, undefined, context.slayerAttachedAtStart)
   }
 }
 
@@ -1365,7 +1108,7 @@ function resolveGuardianGem(
 export function applyEffect(
   state: CombatState,
   actor: Player,
-  effect: Effect | SlimeBossEffect,
+  effect: Effect,
   scope: TargetScope,
   supportScope: TargetScope,
   context: PlayContext,
@@ -2690,7 +2433,7 @@ export function applyEffect(
       }
       const held = actor.powers.find((power) => power.uid === context.sourcePowerUid)
       if (!held) return
-      discardPowerFromPlay(state, actor, held)
+      discardPowerFromPlay(state, actor, held, exhaustCards)
       markTurnEffect(context, 'discard', { actor: true })
       return
     }
@@ -3556,7 +3299,7 @@ export function exhaustCards(
     }
   }
   // Slayer Pack: A Metamorphosis attached to an exhausted Power is exhausted with it.
-  if (cards.length > 0) followCopiedPowers(state, actor, new Set(cards.map((card) => card.uid)), 'exhaust', context)
+  if (cards.length > 0) followCopiedPowers(state, actor, new Set(cards.map((card) => card.uid)), 'exhaust', exhaustCards, context)
 }
 
 export function resolveExhaustReaction(state: CombatState, actor: Player, card: CardInstance): void {
@@ -3735,168 +3478,12 @@ export function scryPlayCardPlayable(
   return cardPlayWindowCardPlayable(probe, actor, card, 0)
 }
 
-/** Mirrors each player's live window onto their hand, so cost displays and checks read it. */
-export function syncCardPlayWindowMarks(state: CombatState): void {
-  for (const player of state.players) {
-    const live = activeCardPlayWindow(state, player.id)
-    for (const pile of ['hand', 'draw', 'discard', 'exhaust', 'powers', 'chamber'] as const) {
-      const cards = player[pile] ?? []
-      // Only an offered card that can be played gets the window's cost (and its glow).
-      const costOf = (card: CardInstance) => pile === 'hand' && live?.cardUids.includes(card.uid) &&
-        cardPlayWindowCardPlayable(state, player, card, live.cost) ? live.cost : undefined
-      if (cards.every((card) => card.playWindowCost === costOf(card))) continue
-      player[pile] = cards.map((card) => {
-        const cost = costOf(card)
-        if (card.playWindowCost === cost) return card
-        const { playWindowCost: _stale, ...rest } = card
-        return cost === undefined ? rest : { ...rest, playWindowCost: cost }
-      })
-    }
-  }
-}
-
-/** Opens a card-play window over the offered cards that are still in the caster's hand. */
-function openCardPlayWindow(
-  state: CombatState,
-  actor: Player,
-  context: PlayContext,
-  offered: readonly string[],
-  spec: Pick<Extract<Effect, { kind: 'openPlayWindow' }>, 'cost' | 'plays' | 'optional' | 'discardRest'>,
-): void {
-  const sourceCardId = context.sourceCardId ?? 'card'
-  const name = CARDS[sourceCardId]?.name ?? 'A card'
-  const cardUids = offered.filter((uid, index) => offered.indexOf(uid) === index &&
-    actor.hand.some((card) => card.uid === uid))
-  if (cardUids.length === 0 || spec.plays === 0) {
-    state.log = [...state.log, `${name}: ${actor.name} has no card to play`]
-    return
-  }
-  const windows = state.pendingCardPlayWindows ?? []
-  state.pendingCardPlayWindows = [...windows, {
-    id: `${context.sourceCardUid ?? sourceCardId}@${state.turn}:${actor.cardsPlayedThisTurn ?? 0}:${windows.length}`,
-    playerId: actor.id,
-    sourceCardId,
-    cardUids,
-    cost: spec.cost,
-    plays: spec.plays,
-    optional: spec.optional,
-    ...(spec.discardRest ? { discardRest: true } : {}),
-  }]
-  // Counts stay out of the public log: an offer of "every Attack in hand" would size a private hand.
-  state.log = [...state.log, `${name}: ${actor.name} ${spec.optional ? 'may' : 'must'} play ${spec.plays === 1
-    ? 'one card' : spec.plays === null ? spec.optional ? 'any number of cards' : 'the offered cards' : `${spec.plays} cards`
-  } for ${spec.cost} Energy${spec.plays === 1 ? '' : ' each'}`]
-  syncCardPlayWindowMarks(state)
-}
-
-/** Closes a player's live window. Discovery discards the offered cards that were not played. */
 export function closeCardPlayWindow(state: CombatState, player: Player): void {
-  const windows = state.pendingCardPlayWindows ?? []
-  const live = activeCardPlayWindow(state, player.id)
-  if (!live) return
-  state.pendingCardPlayWindows = windows.filter((candidate) => candidate !== live)
-  if (state.pendingCardPlayWindows.length === 0) delete state.pendingCardPlayWindows
-  syncCardPlayWindowMarks(state)
-  const rest = live.discardRest ? player.hand.filter((card) => live.cardUids.includes(card.uid)) : []
-  if (rest.length > 0) discardByCardEffect(state, player, rest)
+  closeCardPlayWindowWithDiscard(state, player, discardByCardEffect)
 }
 
-/**
- * Drops offered cards that left hand, then closes each player's live window
- * once it has nothing left to do: its plays are used, no offered card remains,
- * or (when it must be played) no offered card can be played. Waits while a
- * card, copy, or trigger is still resolving, so a nested window stays on top.
- */
-function settleCardPlayWindows(state: CombatState): void {
-  for (const player of state.players) {
-    for (let guard = 0; guard < 64 && !combatIsOver(state); guard++) {
-      const idle = state.phase === 'player' && !state.pendingCardCopy && !(state.pendingTriggers?.length) &&
-        !state.startTurnProgress && !state.endTurnProgress
-      const live = activeCardPlayWindow(state, player.id)
-      if (!live) break
-      const cardUids = live.cardUids.filter((uid) => player.hand.some((card) => card.uid === uid))
-      const current = cardUids.length === live.cardUids.length ? live : { ...live, cardUids }
-      if (current !== live) {
-        state.pendingCardPlayWindows = state.pendingCardPlayWindows!.map((candidate) =>
-          candidate === live ? current : candidate)
-      }
-      if (!player.dead && !idle) break
-      // Nothing it offers can still be played and paid for (a window that must be
-      // played costs 0, so only playability decides there). An optional window
-      // closes too, so cards outside it are playable again without a "Done".
-      const stuck = !player.hand.some((card) => cardUids.includes(card.uid) &&
-        cardPlayWindowCardPlayable(state, player, card, current.cost)) ||
-        current.optional && player.energy + player.miracles < current.cost
-      if (!player.dead && current.plays !== 0 && cardUids.length > 0 && !stuck) break
-      if (stuck && cardUids.length > 0 && !player.dead) {
-        state.log = [...state.log, `${player.name} cannot play the rest of ${CARDS[current.sourceCardId]?.name ?? 'a card'}'s cards`]
-      }
-      closeCardPlayWindow(state, player)
-    }
-  }
-  syncCardPlayWindowMarks(state)
-}
-
-/**
- * Ends every open window as the Player Turn ends. A window that must be played
- * cannot get here while it can still play; Discovery's offered-but-unplayed
- * cards are still discarded by its own effect.
- */
 export function closeAllCardPlayWindows(state: CombatState): void {
-  for (const player of state.players) {
-    for (let guard = 0; guard < 64 && activeCardPlayWindow(state, player.id); guard++) {
-      closeCardPlayWindow(state, player)
-    }
-  }
-}
-
-/**
- * Takes up to `count` cards off the top of a face-up discard pile — the end of
- * the array — topmost first, and gives them to the same player's hand or puts
- * them on top of their draw pile. Fewer cards are taken when the pile is short.
- */
-export function takeDiscardTop(
-  player: Player,
-  count: number,
-  to: 'hand' | 'drawTop',
-  mayRetain: boolean,
-): CardInstance[] {
-  const taken = player.discard.slice(Math.max(0, player.discard.length - count)).reverse()
-  if (taken.length === 0) return []
-  player.discard = player.discard.slice(0, player.discard.length - taken.length)
-  const cleaned = taken.map((card) => mayRetain ? { ...forgetRetain(card), mayRetainThisTurn: true } : forgetRetain(card))
-  if (to === 'hand') player.hand = [...player.hand, ...cleaned]
-  else player.draw = addToDrawTop(player, cleaned).draw
-  return cleaned
-}
-
-export function discardTopLine(player: Player, moved: readonly CardInstance[], to: 'hand' | 'drawTop'): string {
-  const names = moved.map((card) => faceOf(cardDef(card.defId), card.upgraded).name).join(' and ')
-  return to === 'hand'
-    ? `${player.name} returns ${names} from their discard pile to their hand`
-    : `${player.name} puts ${names} from their discard pile on top of their draw pile`
-}
-
-/** Parks a decision that only `player` may answer; see `resolvePendingPlayerChoice`. */
-function queuePlayerChoice(
-  state: CombatState,
-  player: Player,
-  sourceLabel: string,
-  choice: { kind: 'drawOrDiscard' } | { kind: 'returnDiscardTop'; upTo: number },
-): void {
-  const id = allocateChoiceId(state)
-  state.pendingPlayerChoices = [...(state.pendingPlayerChoices ?? []),
-    { id, playerId: player.id, sourceLabel, ...choice }]
-}
-
-/** The next public id for a card-given choice, shared by player and Slayer choices. */
-function allocateChoiceId(state: CombatState): number {
-  // A loaded state may lack the counter or carry a stale one: never reuse a pending id.
-  const counter = Number.isSafeInteger(state.nextPlayerChoiceId) ? state.nextPlayerChoiceId! : 0
-  const id = Math.max(counter, ...[...(state.pendingPlayerChoices ?? []), ...(state.pendingSlayerChoices ?? [])]
-    .map((entry) => (entry.id ?? -1) + 1))
-  state.nextPlayerChoiceId = id + 1
-  return id
+  closeAllCardPlayWindowsWithDiscard(state, discardByCardEffect)
 }
 
 /**
@@ -4310,234 +3897,11 @@ export function fireTriggers(
     fireTriggersInner(state, event, only, excludeUid)
     // Slayer Pack: Pressure Points answers each Skill its owner plays.
     if (event.kind === 'onPlayCard' && event.cardType === 'skill' && only && !combatIsOver(state)) {
-      resolveSlayerAttachedDamage(state, only, 'skill', null, excludeUid)
+      resolveSlayerAttachedDamage(state, only, 'skill', null, damageEnemyLogged, excludeUid)
     }
   } finally {
     if (!finiteDrawChain) triggerDepth--
   }
-}
-
-export function triggerSourceById(player: Player, id: string): TriggerSource | undefined {
-  if (id.startsWith('relic:')) {
-    const [indexText, abilityText] = id.slice(6).split(':')
-    const index = Number(indexText)
-    const held = Number.isInteger(index) ? player.relics[index] : undefined
-    if (!held) return undefined
-    const def = relicDef(held.defId)
-    const ability = relicAbilities(def)[Number(abilityText ?? 0)]
-    if (!ability) return undefined
-    return {
-      id,
-      presentationSourceId: held.defId,
-      trigger: ability.trigger,
-      effects: ability.effects,
-      name: `${player.name}'s ${def.name}`,
-      scope: ability.target ?? 'enemy',
-      supportScope: ability.supportTarget ?? 'self',
-      oncePerTurn: false,
-    }
-  }
-  if (!id.startsWith('power:')) return undefined
-  const powerKey = id.slice(6)
-  const extraAt = powerKey.lastIndexOf(':extra:')
-  const powerUid = extraAt < 0 ? powerKey : powerKey.slice(0, extraAt)
-  const held = player.powers.find((power) => power.uid === powerUid)
-  if (!held) return undefined
-  const def = faceOf(cardDef(held.defId), held.upgraded)
-  const extraIndex = extraAt < 0 ? -1 : Number(powerKey.slice(extraAt + 7))
-  const ability = extraIndex < 0
-    ? def.trigger && { trigger: def.trigger, effects: def.effects }
-    : def.additionalTriggers?.[extraIndex]
-  if (!ability) return undefined
-  return {
-    id,
-    presentationSourceId: held.defId,
-    trigger: ability.trigger,
-    effects: ability.effects,
-    name: `${player.name}'s ${def.name}`,
-    scope: def.target ?? 'enemy',
-    supportScope: def.supportTarget ?? 'self',
-    oncePerTurn: def.oncePerTurn === true,
-    powerUid: held.uid,
-  }
-}
-
-export function triggerSources(player: Player, event: TriggerEvent, excludeUid?: string): TriggerSource[] {
-  const sources: TriggerSource[] = []
-  for (const index of player.relics.keys()) {
-    if (player.relics[index]!.defId === 'loaded_die' && player.relics[index]!.spent) continue
-    if (player.relics[index]!.defId === 'dented_plate' && player.hp < 5) continue
-    for (const abilityIndex of relicAbilities(relicDef(player.relics[index]!.defId)).keys()) {
-      const source = triggerSourceById(player, `relic:${index}:${abilityIndex}`)
-      if (source && triggerMatches(source.trigger, event)) sources.push(source)
-    }
-  }
-  for (const held of player.powers) {
-    if (held.uid === excludeUid) continue
-    const source = triggerSourceById(player, `power:${held.uid}`)
-    if (source && triggerMatches(source.trigger, event)) sources.push(source)
-    const def = faceOf(cardDef(held.defId), held.upgraded)
-    for (const index of def.additionalTriggers?.keys() ?? []) {
-      const extra = triggerSourceById(player, `power:${held.uid}:extra:${index}`)
-      if (extra && triggerMatches(extra.trigger, event)) sources.push(extra)
-    }
-  }
-  return sources
-}
-
-function queuedTriggers(
-  state: CombatState,
-  event: TriggerEvent,
-  only?: Player,
-  excludeUid?: string,
-): PendingTrigger[] {
-  state.nextTriggerId ??= 0
-  return state.players.flatMap((player) => player.dead || (only && player.id !== only.id) ? [] :
-    triggerSources(player, event, excludeUid).map((source) => ({
-      id: state.nextTriggerId++, playerId: player.id, sourceId: source.id,
-      enemyUid: event.enemyUid,
-      ...(event.count === undefined ? {} : { count: event.count }),
-    })))
-}
-
-export function triggerNeedsRowChoice(state: CombatState, player: Player, source: TriggerSource): boolean {
-  return source.scope === 'row' && source.effects.some((effect) => reachesEnemy(effect, player)) &&
-    combatRows(state).length > 1
-}
-
-export function triggerNeedsEnemyChoice(
-  state: CombatState,
-  player: Player,
-  source: TriggerSource,
-  enemyUid?: string,
-): boolean {
-  const targetedCurse = triggerHermitChoices(player, source)?.loadCards.some((card) =>
-    ['hermit_grudge', 'hermit_malice', 'hermit_horror'].includes(card.defId)) === true
-  return enemyUid === undefined && (triggerSourceReachesEnemy(player, source) ||
-    (triggerNeedsHermitChoice(state, player, source) && targetedCurse)) && livingEnemies(state).length > 1
-}
-
-export function triggerSourceReachesEnemy(player: Player, source: TriggerSource): boolean {
-  return source.scope === 'enemy' && source.effects.some((effect) => reachesEnemy(effect, player))
-}
-
-function hermitChoiceEffects(effects: readonly Effect[]): Effect[] {
-  return effects.flatMap((effect) => effect.kind === 'deadOnEffects'
-    ? hermitChoiceEffects(effect.effects) : [effect])
-}
-
-export function triggerHermitChoices(player: Player, source: TriggerSource):
-  NonNullable<PendingTriggerAbility['hermitChoices']> | undefined {
-  const effects = hermitChoiceEffects(source.effects)
-  const load = effects.find((effect) => effect.kind === 'load') as Extract<Effect, { kind: 'load' }> | undefined
-  const chamberEffects = effects.filter((effect) =>
-    ['playChamber', 'discardChamber', 'discountChamber'].includes(effect.kind))
-  const loadCards = load && player.chamberSlots > 0 ? [...player[load.source ?? 'hand']] : []
-  const chamber = player.chamber ?? []
-  const needsReplacement = loadCards.length > 0 && chamber.length >= player.chamberSlots
-  const chamberCards = chamberEffects.length > 0 || needsReplacement
-    ? chamber.filter((card) => chamberEffects.some((effect) =>
-      effect.kind !== 'discardChamber' || !effect.curseOnly || faceOf(cardDef(card.defId), card.upgraded).type === 'curse') || needsReplacement)
-    : []
-  if (loadCards.length === 0 && chamberCards.length === 0) return undefined
-  const loadAmount = load ? Math.min(load.amount, loadCards.length) : 0
-  const chamberEffect = chamberEffects[0]
-  const chamberRequested = chamberEffect?.kind === 'playChamber' && chamberEffect.amount === 'all'
-    ? chamberCards.length : Number(chamberEffect && 'amount' in chamberEffect ? chamberEffect.amount : 0)
-  const chamberBase = Math.min(chamberRequested, chamberCards.length)
-  const thenDraw = chamberEffect?.kind === 'discardChamber'
-    ? chamberEffect.then?.find((effect): effect is Extract<Effect, { kind: 'draw' }> => effect.kind === 'draw')?.amount
-    : undefined
-  const replacements = Math.max(0, loadAmount - Math.max(0, player.chamberSlots - player.chamber.length))
-  const chamberAmount = Math.min(chamberCards.length, chamberBase + replacements)
-  return {
-    loadCards,
-    chamberCards,
-    loadAmount,
-    loadMinimum: load?.upTo ? 0 : loadAmount,
-    chamberAmount,
-    chamberMinimum: chamberEffect?.kind === 'discardChamber' && chamberEffect.optional ? 0 : chamberAmount,
-    loadDiscount: load?.discount === true,
-    chamberThenDraw: typeof thenDraw === 'number' ? thenDraw : 0,
-    chamberAction: chamberEffect?.kind === 'playChamber' ? 'play' : chamberEffect?.kind === 'discardChamber'
-      ? 'discard' : chamberEffect?.kind === 'discountChamber' ? 'discount' : 'replace',
-  }
-}
-
-export function triggerNeedsHermitChoice(_state: CombatState, player: Player, source: TriggerSource): boolean {
-  if (source.presentationSourceId === 'hermit_combo' && player.chamberSlots > 0 &&
-    player.hand.length + player.draw.length + player.discard.length > 0) return true
-  return triggerHermitChoices(player, source) !== undefined
-}
-
-export function triggerSlimeChoice(state: CombatState, player: Player, source: TriggerSource):
-  { cards: { uid: string; label: string }[]; amount: number; minimum: number } | undefined {
-  const effect = source.effects.find((candidate) =>
-    ['growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime', 'rainOfGoop'].includes(candidate.kind)) as unknown as
-    Extract<SlimeBossEffect, { kind: 'growSlime' | 'commandSlime' | 'gainSlimeVigor' | 'tapSlime' | 'rainOfGoop' }> | undefined
-  const cards = (player.slimes ?? []).map((slime) => ({ uid: slime.card.uid, label: cardDef(slime.card.defId).name }))
-  if (!effect || cards.length === 0 || effect.kind === 'commandSlime' && effect.all) return undefined
-  if (effect.kind === 'rainOfGoop') {
-    const held = source.powerUid ? player.powers.find((power) => power.uid === source.powerUid) : undefined
-    return (held?.counter ?? 0) > 0 ? { cards, amount: 1, minimum: 0 } : undefined
-  }
-  const requested = effect.kind === 'commandSlime' && effect.upToDifferent === 99
-    ? amountOf(effect.amount, state, player)
-    : 'upToDifferent' in effect && effect.upToDifferent !== undefined ? effect.upToDifferent : 1
-  const amount = Math.min(cards.length, requested)
-  const upTo = 'upToDifferent' in effect && effect.upToDifferent !== undefined && effect.upToDifferent !== 99
-  return cards.length > 1 || amount > 1 ? { cards, amount, minimum: upTo ? 0 : amount } : undefined
-}
-
-export function pendingTriggerSlimeEnemyChoiceCount(
-  state: CombatState,
-  triggerId: number,
-  slimeUids: readonly string[],
-): number {
-  return pendingTriggerSlimeEnemyChoiceLabels(state, triggerId, slimeUids).length
-}
-
-export function pendingTriggerSlimeEnemyChoiceLabels(
-  state: CombatState,
-  triggerId: number,
-  slimeUids: readonly string[],
-): string[] {
-  const pending = state.pendingTriggers?.find((trigger) => trigger.id === triggerId)
-  const player = pending && findPlayer(state, pending.playerId)
-  const source = player && pending ? triggerSourceById(player, pending.sourceId) : undefined
-  if (!player || !source) return []
-  const def: CardDef = {
-    id: `trigger_${source.id}`, name: source.name, owner: 'colorless', type: 'skill', rarity: 'special', cost: 0,
-    effects: source.effects,
-  }
-  const selected = slimeUids.length === 0 &&
-    source.presentationSourceId !== 'slime_boss_rain_of_goop' &&
-    !triggerSlimeChoice(state, player, source) && player.slimes.length === 1
-    ? [player.slimes[0]!.card.uid]
-    : slimeUids
-  return slimeCommandEnemyChoiceLabels(def, state, player, selected)
-}
-
-export function triggerNeedsPlayerChoice(state: CombatState, source: TriggerSource): boolean {
-  return source.supportScope === 'anyPlayer' &&
-    state.players.filter((candidate) => !candidate.dead).length > 1
-}
-
-/** Every input a triggered ability may resolve with; absent fields take the source's defaults. */
-export type TriggerResolutionOptions = {
-  /** End of combat abilities still resolve after the combat is decided. */
-  allowCombatOver?: boolean
-  shivEnemyUids?: readonly (string | null)[]
-  enemyUid?: string
-  enemyRow?: number
-  evokeSlots?: readonly number[]
-  evokeEnemyUids?: readonly (string | null)[]
-  scryDiscardUids?: readonly string[]
-  targetPlayerId?: string
-  exhaustUids?: readonly string[]
-  /** Private Hermit/Slime choices and event-bound inputs copied into the resolution context. */
-  hermitContext?: Pick<PlayContext, 'loadUids' | 'chamberUids' | 'hermitEnemyUids' | 'slimeUids' | 'slimeEnemyUids' |
-    'triggerCount' | 'optionalSelfExhaust'>
 }
 
 export function resolveTriggerSource(
@@ -4759,45 +4123,9 @@ function fireTriggersInner(
   }
 }
 
-function lapseDeadOwnerPlayerChoices(state: CombatState): void {
-  const owed = (state.pendingPlayerChoices ?? []).filter((choice) =>
-    state.players.some((player) => player.id === choice.playerId && !player.dead))
-  if (!state.pendingPlayerChoices || owed.length === state.pendingPlayerChoices.length) return
-  for (const choice of state.pendingPlayerChoices.filter((pending) => !owed.includes(pending))) {
-    state.log = [...state.log, `${choice.sourceLabel}: its chooser is gone; the choice lapses`]
-  }
-  if (owed.length > 0) state.pendingPlayerChoices = owed
-  else delete state.pendingPlayerChoices
-}
-
-function clearTerminalChoices(state: CombatState): void {
-    state.pendingTriggers = []
-    state.pendingPlunderSwitches = []
-    state.pendingDieRelicChoices = []
-    state.pendingHermitSetupLoads = []
-    state.pendingHermitChamberPlays = []
-    state.pendingHermitStrengthRewards = []
-    delete state.pendingPlayerChoices
-    // Slayer Pack: a Ritual Dagger+ reveal from the killing blow survives a
-    // victory: its owner still decides before the combat folds into the run.
-    const ritual = state.enemies.every((enemy) => enemy.dead)
-      ? state.pendingSlayerChoices?.filter((choice) => choice.kind === 'ritualDagger') : undefined
-    if (ritual?.length) state.pendingSlayerChoices = ritual
-    else delete state.pendingSlayerChoices
-    delete state.pendingDistilled
-    delete state.pendingRelicScry
-    if (state.pendingCardPlayWindows) {
-      delete state.pendingCardPlayWindows
-      syncCardPlayWindowMarks(state)
-    }
-    delete state.endTurnProgress
-    delete state.pendingCardCopy
-    delete state.startTurnProgress
-}
-
 /** Decides whether the combat has ended, and returns the state either way. */
 export function settle(state: CombatState): CombatState {
-  sweepMetamorphoses(state)
+  sweepMetamorphoses(state, exhaustCards)
   grantSlayerKillRewards(state)
   resolveDeadOwnerSlayerChoices(state)
   // Slayer Pack: a card-given choice owed by a dead (Last Stand) or departed player lapses.
@@ -4825,7 +4153,7 @@ export function settle(state: CombatState): CombatState {
     return state
   }
   if (state.pendingCardPlayWindows?.length) {
-    settleCardPlayWindows(state)
+    settleCardPlayWindows(state, discardByCardEffect)
     // Discovery's closing discard can set off a reaction that ends the fight.
     if (combatIsOver(state)) return settle(state)
   }

@@ -25,27 +25,28 @@ type SlimeBossCard = CardDef & {
 const id = (name: string) => `slime_boss_${name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '')}`
 const hit = (amount: Amount, times?: Amount): Effect => ({ kind: 'hit', amount, ...(times ? { times } : {}) })
 const block = (amount: number): Effect => ({ kind: 'block', amount })
-export type SlimeBossEffect =
-  | { kind: 'growSlime'; amount: number; upToDifferent?: number; commandAfter?: boolean }
-  | { kind: 'commandSlime'; amount: Amount; upToDifferent?: number; all?: boolean; same?: boolean }
-  | { kind: 'gainSlimeVigor'; amount: number; temporary?: boolean; commandAfter?: boolean }
-  | { kind: 'discountPartyAttack' }
-  | { kind: 'discountNextPowerOrSlime'; amount: number | 'free' }
-  | { kind: 'tapSlime' }
-  | { kind: 'rainOfGoop'; bonus: number }
-  | { kind: 'blockIfRetain'; amount: number }
-  | { kind: 'vulnerableIfTackle'; amount: number }
-  | { kind: 'gainEnergyIfExhaustCost'; minimum: number; amount: number }
-  | { kind: 'growIfExhaustCost'; minimum: number }
-  | { kind: 'overexert' }
-  | { kind: 'replicateSlime'; grow: boolean }
-const slimeEffect = (effect: SlimeBossEffect): Effect => effect as unknown as Effect
-const grow = (amount: number, options: Omit<Extract<SlimeBossEffect, { kind: 'growSlime' }>, 'kind' | 'amount'> = {}) =>
-  slimeEffect({ kind: 'growSlime', amount, ...options })
-const command = (amount: Amount, options: Omit<Extract<SlimeBossEffect, { kind: 'commandSlime' }>, 'kind' | 'amount'> = {}) =>
-  slimeEffect({ kind: 'commandSlime', amount, ...options })
-const vigor = (amount: number, options: Omit<Extract<SlimeBossEffect, { kind: 'gainSlimeVigor' }>, 'kind' | 'amount'> = {}) =>
-  slimeEffect({ kind: 'gainSlimeVigor', amount, ...options })
+export type SlimeBossEffect = Extract<Effect, {
+  kind:
+    | 'growSlime'
+    | 'commandSlime'
+    | 'gainSlimeVigor'
+    | 'discountPartyAttack'
+    | 'discountNextPowerOrSlime'
+    | 'tapSlime'
+    | 'rainOfGoop'
+    | 'blockIfRetain'
+    | 'vulnerableIfTackle'
+    | 'gainEnergyIfExhaustCost'
+    | 'growIfExhaustCost'
+    | 'overexert'
+    | 'replicateSlime'
+}>
+const grow = (amount: number, options: Omit<Extract<SlimeBossEffect, { kind: 'growSlime' }>, 'kind' | 'amount'> = {}): Effect =>
+  ({ kind: 'growSlime', amount, ...options })
+const command = (amount: Amount, options: Omit<Extract<SlimeBossEffect, { kind: 'commandSlime' }>, 'kind' | 'amount'> = {}): Effect =>
+  ({ kind: 'commandSlime', amount, ...options })
+const vigor = (amount: number, options: Omit<Extract<SlimeBossEffect, { kind: 'gainSlimeVigor' }>, 'kind' | 'amount'> = {}): Effect =>
+  ({ kind: 'gainSlimeVigor', amount, ...options })
 const levels = (...rows: Effect[][]): Readonly<Record<number, readonly Effect[]>> =>
   Object.fromEntries(rows.map((effects, index) => [index + 1, effects]))
 
@@ -149,15 +150,15 @@ const C: SlimeBossCard[] = [
     target: 'allEnemies', upgrade: { printedText: 'Deal 3 damage to ALL enemies. Command.', effects: [hit(3), command(1)] },
   }),
   card('Hungry Tackle', 'rewards', 18, 'attack', 'uncommon', 1, 1,
-    'Deal 2 damage. Exhaust a card in your hand. If it costs 2 or more, gain 2 Energy.', [hit(2), { kind: 'exhaustFromHand', amount: 1 }, slimeEffect({ kind: 'gainEnergyIfExhaustCost', minimum: 2, amount: 2 })], {
-      upgrade: { printedText: 'Deal 3 damage. Exhaust a card in your hand. If it costs 2 or more, gain 3 Energy.', effects: [hit(3), { kind: 'exhaustFromHand', amount: 1 }, slimeEffect({ kind: 'gainEnergyIfExhaustCost', minimum: 2, amount: 3 })] },
+    'Deal 2 damage. Exhaust a card in your hand. If it costs 2 or more, gain 2 Energy.', [hit(2), { kind: 'exhaustFromHand', amount: 1 }, { kind: 'gainEnergyIfExhaustCost', minimum: 2, amount: 2 }], {
+      upgrade: { printedText: 'Deal 3 damage. Exhaust a card in your hand. If it costs 2 or more, gain 3 Energy.', effects: [hit(3), { kind: 'exhaustFromHand', amount: 1 }, { kind: 'gainEnergyIfExhaustCost', minimum: 2, amount: 3 }] },
     }),
   card('Ravenous Tackle', 'rewards', 19, 'attack', 'uncommon', 1, 3, 'Deal 5 damage. Grow a Slime twice.', [hit(5), grow(2)], {
     upgrade: { printedText: 'Deal 7 damage. Grow a Slime twice.', effects: [hit(7), grow(2)] },
   }),
   card('Relentless Tackle', 'rewards', 20, 'attack', 'uncommon', 1, 2,
-    'Deal 2 damage. The next Attack played by any player this turn costs 0.', [hit(2), slimeEffect({ kind: 'discountPartyAttack' })], {
-      upgrade: { printedText: 'Deal 3 damage. The next Attack played by any player this turn costs 0.', effects: [hit(3), slimeEffect({ kind: 'discountPartyAttack' })] },
+    'Deal 2 damage. The next Attack played by any player this turn costs 0.', [hit(2), { kind: 'discountPartyAttack' }], {
+      upgrade: { printedText: 'Deal 3 damage. The next Attack played by any player this turn costs 0.', effects: [hit(3), { kind: 'discountPartyAttack' }] },
     }),
   card('Spear Tackle', 'rewards', 21, 'attack', 'uncommon', 1, 2, 'Deal 2 damage twice.', [hit(2, 2)], {
     upgrade: { printedText: 'Deal 3 damage twice.', effects: [hit(3, 2)] },
@@ -177,14 +178,14 @@ const C: SlimeBossCard[] = [
   card('Pile On!', 'rewards', 30, 'attack', 'uncommon', 1, 1, 'Deal 1 damage for each Slime you have in play.', [hit(1, { base: 0, perSlime: 1 })], {
     upgrade: { printedText: 'Deal 2 damage for each Slime you have in play.', effects: [hit(2, { base: 0, perSlime: 1 })] },
   }),
-  card('Just Desserts', 'rewards', 31, 'skill', 'uncommon', 1, 0, 'Retain. The next Power or Slime you play this turn costs 1 less.', [slimeEffect({ kind: 'discountNextPowerOrSlime', amount: 1 })], {
-    retain: true, upgrade: { printedText: 'Retain. The next Power or Slime you play this turn costs 0.', effects: [slimeEffect({ kind: 'discountNextPowerOrSlime', amount: 'free' })] },
+  card('Just Desserts', 'rewards', 31, 'skill', 'uncommon', 1, 0, 'Retain. The next Power or Slime you play this turn costs 1 less.', [{ kind: 'discountNextPowerOrSlime', amount: 1 }], {
+    retain: true, upgrade: { printedText: 'Retain. The next Power or Slime you play this turn costs 0.', effects: [{ kind: 'discountNextPowerOrSlime', amount: 'free' }] },
   }),
   card('Repurpose', 'rewards', 32, 'skill', 'uncommon', 1, 0, 'Retain. Gain 1 Energy. Exhaust.', [{ kind: 'gainEnergy', amount: 1 }], {
     retain: true, exhaust: true, upgrade: { printedText: 'Retain. Gain 2 Energy. Exhaust.', effects: [{ kind: 'gainEnergy', amount: 2 }] },
   }),
-  card('Leech Energy', 'rewards', 33, 'attack', 'common', 2, 0, 'Deal 1 damage. Gain 1 Block if you have a card with Retain in your hand.', [hit(1), slimeEffect({ kind: 'blockIfRetain', amount: 1 })], {
-    upgrade: { printedText: 'Deal 2 damage. Gain 1 Block if you have a card with Retain in your hand.', effects: [hit(2), slimeEffect({ kind: 'blockIfRetain', amount: 1 })] },
+  card('Leech Energy', 'rewards', 33, 'attack', 'common', 2, 0, 'Deal 1 damage. Gain 1 Block if you have a card with Retain in your hand.', [hit(1), { kind: 'blockIfRetain', amount: 1 }], {
+    upgrade: { printedText: 'Deal 2 damage. Gain 1 Block if you have a card with Retain in your hand.', effects: [hit(2), { kind: 'blockIfRetain', amount: 1 }] },
   }),
   card('Goop Spray', 'rewards', 35, 'skill', 'uncommon', 1, 1, 'Apply 1 Weak. Draw 1 card.', [{ kind: 'applyWeak', amount: 1 }, { kind: 'draw', amount: 1 }], {
     upgrade: { printedText: 'Apply 1 Weak. Draw 2 cards.', effects: [{ kind: 'applyWeak', amount: 1 }, { kind: 'draw', amount: 2 }] },
@@ -202,8 +203,8 @@ const C: SlimeBossCard[] = [
     upgrade: { printedText: 'Gain X+2 Block. X is the highest level among Slimes you have in play.', effects: [{ kind: 'block', amount: { base: 2, plusHighestSlimeLevel: true } }] },
   }),
   card('It Looks Tasty', 'rewards', 42, 'skill', 'uncommon', 1, 1, 'Gain 1 Block. Exhaust a card in your hand. If it costs 2 or more, Grow a Slime.', [block(1), { kind: 'exhaustFromHand', amount: 1 }], {
-    effects: [block(1), { kind: 'exhaustFromHand', amount: 1 }, slimeEffect({ kind: 'growIfExhaustCost', minimum: 2 })],
-    upgrade: { printedText: 'Gain 2 Block. Exhaust a card in your hand. If it costs 2 or more, Grow a Slime.', effects: [block(2), { kind: 'exhaustFromHand', amount: 1 }, slimeEffect({ kind: 'growIfExhaustCost', minimum: 2 })] },
+    effects: [block(1), { kind: 'exhaustFromHand', amount: 1 }, { kind: 'growIfExhaustCost', minimum: 2 }],
+    upgrade: { printedText: 'Gain 2 Block. Exhaust a card in your hand. If it costs 2 or more, Grow a Slime.', effects: [block(2), { kind: 'exhaustFromHand', amount: 1 }, { kind: 'growIfExhaustCost', minimum: 2 }] },
   }),
   card('Divide & Conquer', 'rewards', 43, 'skill', 'uncommon', 1, 'X', 'Command X different Slimes.', [command({ base: 0, per: 'energySpent' }, { upToDifferent: 99 })], {
     upgrade: { minimumX: 1, printedText: 'Command X+1 different Slimes. X can’t be 0.', effects: [command({ base: 1, per: 'energySpent' }, { upToDifferent: 99 })] },
@@ -223,7 +224,7 @@ const C: SlimeBossCard[] = [
   card('Haunting Lick', 'rewards', 49, 'skill', 'uncommon', 1, 1, 'Retain. Command.', [command(1)], {
     retain: true, upgrade: { printedText: 'Retain. Command up to 2 different Slimes.', effects: [command(1, { upToDifferent: 2 })] },
   }),
-  card('Glop Chop', 'rewards', 50, 'attack', 'uncommon', 1, 1, 'Deal 2 damage. Apply 1 Vulnerable if you have a ‘Tackle’ in your hand.', [hit(2), slimeEffect({ kind: 'vulnerableIfTackle', amount: 1 })], {
+  card('Glop Chop', 'rewards', 50, 'attack', 'uncommon', 1, 1, 'Deal 2 damage. Apply 1 Vulnerable if you have a ‘Tackle’ in your hand.', [hit(2), { kind: 'vulnerableIfTackle', amount: 1 }], {
     upgrade: { cost: 0, printedText: 'Deal 2 damage. Apply 1 Vulnerable if you have a ‘Tackle’ in your hand.' },
   }),
   card('Smothering Tackle', 'rewards', 51, 'attack', 'uncommon', 1, 2, 'Retain. Deal 2 damage. Apply 1 Vulnerable.', [hit(2), { kind: 'applyVulnerable', amount: 1 }], {
@@ -258,12 +259,12 @@ const C: SlimeBossCard[] = [
   card('Feeding Frenzy', 'rare', 1, 'attack', 'rare', 1, 2, 'Deal 2 damage. Grow up to 3 different Slimes.', [hit(2), grow(1, { upToDifferent: 3 })], {
     upgrade: { printedText: 'Deal 2 damage. Grow up to 5 different Slimes.', effects: [hit(2), grow(1, { upToDifferent: 5 })] },
   }),
-  card('Slime Tap', 'rare', 2, 'skill', 'rare', 1, 1, 'Choose a Slime. Draw cards and gain Energy equal to its level. Exhaust.', [slimeEffect({ kind: 'tapSlime' })], {
+  card('Slime Tap', 'rare', 2, 'skill', 'rare', 1, 1, 'Choose a Slime. Draw cards and gain Energy equal to its level. Exhaust.', [{ kind: 'tapSlime' }], {
     exhaust: true, upgrade: { cost: 0, printedText: 'Choose a Slime. Draw cards and gain Energy equal to its level. Exhaust.' },
   }),
-  card('Rain of Goop', 'rare', 3, 'power', 'rare', 1, 'X', 'When played, place X Strength on this. Start of turn: Move 1 Strength from this onto you or a Slime card. If this has no Strength, Exhaust.', [slimeEffect({ kind: 'rainOfGoop', bonus: 0 })], {
+  card('Rain of Goop', 'rare', 3, 'power', 'rare', 1, 'X', 'When played, place X Strength on this. Start of turn: Move 1 Strength from this onto you or a Slime card. If this has no Strength, Exhaust.', [{ kind: 'rainOfGoop', bonus: 0 }], {
     trigger: { kind: 'startOfTurn' }, resolvesOnPlay: true,
-    upgrade: { printedText: 'When played, place X+1 Strength on this. Start of turn: Move 1 Strength from this onto you or a Slime card. If this has no Strength, Exhaust.', effects: [slimeEffect({ kind: 'rainOfGoop', bonus: 1 })] },
+    upgrade: { printedText: 'When played, place X+1 Strength on this. Start of turn: Move 1 Strength from this onto you or a Slime card. If this has no Strength, Exhaust.', effects: [{ kind: 'rainOfGoop', bonus: 1 }] },
   }),
   card('Consult Playbook', 'rare', 4, 'power', 'rare', 1, 1, 'Once per turn: When you play a ‘Tackle,’ draw 1 card and gain 1 Energy.', [], {
     persistent: true, oncePerTurn: true, upgrade: { printedText: 'Once per turn: When you play a ‘Tackle,’ draw 2 cards and gain 1 Energy.' },
@@ -274,11 +275,11 @@ const C: SlimeBossCard[] = [
   card('Minion Master', 'rare', 6, 'power', 'rare', 1, 2, 'Start of turn: Command a Slime.', [command(1)], {
     trigger: { kind: 'startOfTurn' }, upgrade: { cost: 1, printedText: 'Start of turn: Command a Slime.' },
   }),
-  card('Overexert', 'rare', 7, 'skill', 'rare', 1, 1, 'Draw 2 cards, then play a card in your hand for 0 Energy. If it’s an Attack, it’s played twice. Exhaust.', [{ kind: 'draw', amount: 2 }, slimeEffect({ kind: 'overexert' })], {
-    exhaust: true, upgrade: { printedText: 'Draw 3 cards, then play a card in your hand for 0 Energy. If it’s an Attack, it’s played twice. Exhaust.', effects: [{ kind: 'draw', amount: 3 }, slimeEffect({ kind: 'overexert' })] },
+  card('Overexert', 'rare', 7, 'skill', 'rare', 1, 1, 'Draw 2 cards, then play a card in your hand for 0 Energy. If it’s an Attack, it’s played twice. Exhaust.', [{ kind: 'draw', amount: 2 }, { kind: 'overexert' }], {
+    exhaust: true, upgrade: { printedText: 'Draw 3 cards, then play a card in your hand for 0 Energy. If it’s an Attack, it’s played twice. Exhaust.', effects: [{ kind: 'draw', amount: 3 }, { kind: 'overexert' }] },
   }),
-  card('Replication', 'rare', 8, 'skill', 'rare', 1, 1, 'Search your draw pile for a Slime, then play it for 0 Energy. Shuffle your draw pile. Exhaust.', [slimeEffect({ kind: 'replicateSlime', grow: false })], {
-    exhaust: true, upgrade: { printedText: 'Search your draw pile for a Slime, play it for 0 Energy, and Grow it. Shuffle your draw pile. Exhaust.', effects: [slimeEffect({ kind: 'replicateSlime', grow: true })] },
+  card('Replication', 'rare', 8, 'skill', 'rare', 1, 1, 'Search your draw pile for a Slime, then play it for 0 Energy. Shuffle your draw pile. Exhaust.', [{ kind: 'replicateSlime', grow: false }], {
+    exhaust: true, upgrade: { printedText: 'Search your draw pile for a Slime, play it for 0 Energy, and Grow it. Shuffle your draw pile. Exhaust.', effects: [{ kind: 'replicateSlime', grow: true }] },
   }),
   card('Darkling Duo', 'rare', 9, 'power', 'rare', 1, 1, 'Whenever you play a card with Retain, Command your Bruiser Slime.', [], {
     persistent: true, upgrade: { cost: 0, printedText: 'Whenever you play a card with Retain, Command your Bruiser Slime.' },

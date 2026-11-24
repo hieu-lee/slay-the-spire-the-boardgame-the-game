@@ -116,15 +116,21 @@ export function formatHeartBoonLabel(label: string): string {
   return formatDownfallText(label)
 }
 
-export const HEARTS_BOON_CARDS: readonly NeowCard[] = HEARTS_BOONS.map((boon, index) => ({
-  id: `heart_boon_${String(index).padStart(2, '0')}`,
-  text: boon.speech,
-  source: 'heart' as const,
-  unlocked: index >= 14,
-  options: boon.options.map((label, optionIndex) => ({
-    label: formatHeartBoonLabel(label), effects: boonEffects[index]![optionIndex]!,
-  })) as unknown as NeowCard['options'],
-}))
+export const HEARTS_BOON_CARDS: readonly NeowCard[] = HEARTS_BOONS.map((boon, index) => {
+  const [o0, o1, o2] = boon.options
+  const [e0, e1, e2] = boonEffects[index]!
+  return {
+    id: `heart_boon_${String(index).padStart(2, '0')}`,
+    text: boon.speech,
+    source: 'heart' as const,
+    unlocked: index >= 14,
+    options: [
+      { label: formatHeartBoonLabel(o0), effects: e0 },
+      { label: formatHeartBoonLabel(o1), effects: e1 },
+      { label: formatHeartBoonLabel(o2), effects: e2 },
+    ] as const,
+  }
+})
 
 /** Exact 14-card base deck plus the six cards in the Colorless unlock box. */
 export const NEOW_CARDS: readonly NeowCard[] = [

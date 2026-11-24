@@ -62,7 +62,6 @@ import {
   cardPlayerChoiceCount,
   cardShivChoiceCount,
   copySourcesFor,
-  conditionIsActive,
   effectIsActive,
   effectiveCombatCardDef,
   evokePlan,
@@ -78,7 +77,6 @@ import {
   metamorphosisCost,
   metamorphosisPlayEffects,
   needsChosenEnemy,
-  nextEvokeChoice,
   omniscienceEligibleCards,
   overflowShivCount,
   playCost,
@@ -87,9 +85,22 @@ import {
   resolutionContext,
   slimeChoiceIsAvailable,
   slimeCommandEnemyChoiceCount,
-  soulburnChoiceCount,
 } from './queries.ts'
-import { finishCardCopy, finishForcedCardPlay, resumeStartTurnAfterHermitSetup } from './start-turn.ts'
+import { finishCardCopy, finishForcedCardPlay } from './start-turn.ts'
+import {
+  abandonHermitChamberPlay,
+  abandonHermitSetupLoad,
+  hermitRapidFireCount,
+  playHermitChamberCardWithPlay,
+  previewHermitChamberCardChoiceWithPreview,
+  queuedRapidFire,
+  resolveHermitSetupLoad,
+  resolveHermitStrengthReward,
+} from './hermit-play.ts'
+import {
+  abandonForcedCardWithSettle,
+  resolveDeterministicForcedCardWithPlay,
+} from './forced-play.ts'
 import { cardNeedsCorruptedShard } from '../downfall/items.ts'
 import { createRelicInstance } from '../relics.ts'
 import type {
@@ -100,13 +111,20 @@ import type {
   PowerContext,
   PresentationContext,
 } from './types.ts'
-import { cardDef, cardStaysInPlay, faceOf, isStarterStrikeOrDefend } from '../cards.ts'
+import { cardDef, cardStaysInPlay, faceOf } from '../cards.ts'
 import type { CardDef, Effect, TargetScope } from '../cards.ts'
 import { gainBlock, gainStrength } from '../damage.ts'
 import { addToDrawTop } from '../piles.ts'
 import { CAPS } from '../types.ts'
 import type { CardInstance, Player } from '../types.ts'
 import { slimeDef } from '../downfall/slime-boss.ts'
+
+export {
+  abandonHermitChamberPlay,
+  abandonHermitSetupLoad,
+  resolveHermitSetupLoad,
+  resolveHermitStrengthReward,
+}
 
 function presentationEnemyScope(
   state: CombatState,
@@ -149,50 +167,11 @@ function presentationCardContext(
   }
 }
 
-function hermitRapidFireCount(def: CardDef, actor: Player, sourceInHand = true): number {
-  let count = def.hermit?.rapidFire ?? 0
-  if (def.hermit?.rapidFireBy === 'curseInChamber') {
-    count += Number(actor.chamber.some((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse'))
-  } else if (def.hermit?.rapidFireBy === 'curses') {
-    count += [...actor.hand, ...actor.chamber].filter((card) => faceOf(cardDef(card.defId), card.upgraded).type === 'curse').length
-  } else if (def.hermit?.rapidFireBy === 'otherCardsInHand') {
-    count += Math.max(0, actor.hand.length - Number(sourceInHand))
-  }
-  const highNoon = actor.powers.find((power) => power.defId === 'hermit_high_noon')
-  if (highNoon && (isStarterStrikeOrDefend(def.id, 'Strike')
-    || highNoon.upgraded && isStarterStrikeOrDefend(def.id, 'Defend'))) count++
-  if (def.type === 'attack') count += actor.nextAttackRapidFire ?? 0
-  if (count > 0 && actor.powers.some((power) => power.defId === 'hermit_no_holds_barred')) count++
-  return count
-}
-
-type CardCopySourceName = NonNullable<CombatState['pendingCardCopy']>['sourceNames'][number]
-
 const choicePreview = (
   state: CombatState,
   kind: CardChoicePreview['kind'],
   cards: CardInstance[],
 ): CardChoicePreview => ({ kind, cards, reservedRng: { ...state.rng } })
-
-function queuedRapidFire(
-  card: CardInstance,
-  actor: Player,
-  baseSources: CardCopySourceName[],
-): Pick<NonNullable<CombatState['pendingCardCopy']>, 'sourceNames' | 'hermitRapidFireCard' | 'deferRapidFire'> {
-  const printedDef = faceOf(cardDef(card.defId), card.upgraded)
-  if (printedDef.guardianVariableType && actor.character !== 'guardian' && actor.guardianMode === null) {
-    return { sourceNames: baseSources, deferRapidFire: true }
-  }
-  const def = effectiveCombatCardDef(printedDef, actor.guardianMode)
-  const rapidFire = hermitRapidFireCount(def, actor, false)
-  return {
-    sourceNames: [
-      ...baseSources,
-      ...Array.from({ length: rapidFire * baseSources.length }, () => 'Rapid Fire' as const),
-    ],
-    hermitRapidFireCard: rapidFire > 0,
-  }
-}
 
 /**
  * Privately previews a post-reveal choice without advancing the real RNG or
@@ -980,43 +959,13 @@ function playCardImpl(
   return finishForcedCardPlay(settleForbiddenPendingCopy(next, actor), forcedChoices)
 }
 
-function stageHermitChamberCard(state: CombatState, playerId: string, cardUid: string): CombatState | null {
-  const player = findPlayer(state, playerId)
-  const card = player?.chamber.find((held) => held.uid === cardUid)
-  if (!player || player.dead || !card || state.phase !== 'player' || state.pendingCardCopy) return null
-  const pending = state.pendingHermitChamberPlays?.[0]
-  if (pending && (pending.playerId !== playerId || pending.cardUids[0] !== cardUid)) return null
-  const staged = clone(state)
-  const actor = findPlayer(staged, playerId)!
-  actor.chamber = actor.chamber.filter((held) => held.uid !== cardUid)
-  actor.hand.push({ ...card, hermitDeadOn: true, ...(pending?.free ? { freeThisTurn: true } : {}) })
-  if (pending) {
-    const rest = pending.cardUids.slice(1)
-    staged.pendingHermitChamberPlays = rest.length
-      ? [{ ...pending, cardUids: rest }, ...(staged.pendingHermitChamberPlays?.slice(1) ?? [])]
-      : staged.pendingHermitChamberPlays?.slice(1)
-  }
-  return staged
-}
-
 /** Privately previews a Chamber card whose draw is followed by a Load choice. */
 export function previewHermitChamberCardChoice(
   state: CombatState,
   playerId: string,
   cardUid: string,
 ): CardChoicePreview | null {
-  const staged = stageHermitChamberCard(state, playerId, cardUid)
-  return staged ? previewCardChoice(staged, playerId, cardUid) : null
-}
-
-function skipPendingHermitChamberPlay(state: CombatState, pending: NonNullable<CombatState['pendingHermitChamberPlays']>[number], message: string): CombatState {
-  const next = clone(state)
-  const rest = pending.cardUids.slice(1)
-  next.pendingHermitChamberPlays = rest.length
-    ? [{ ...pending, cardUids: rest }, ...(next.pendingHermitChamberPlays?.slice(1) ?? [])]
-    : next.pendingHermitChamberPlays?.slice(1)
-  next.log = [...next.log, message]
-  return settle(next)
+  return previewHermitChamberCardChoiceWithPreview(state, playerId, cardUid, previewCardChoice)
 }
 
 /** Plays a private Chamber card through the ordinary authoritative card pipeline. */
@@ -1036,49 +985,7 @@ function playHermitChamberCardImpl(
   context: PlayContext,
   previewShivTarget?: PlayContext['previewShivTarget'],
 ): CombatState {
-  const pending = state.pendingHermitChamberPlays?.[0]
-  const owner = findPlayer(state, playerId)
-  // A Hermit who dies mid-resolution (e.g. a Thorns/Sharp Hide retaliation)
-  // can never legally play their queued Chamber card: `stageHermitChamberCard`
-  // rejects any dead player outright, so without this the mandatory play
-  // (and the table-wide `phase !== 'player'`-equivalent block it imposes via
-  // `mandatoryChoicePending`) would be stuck forever under Last Stand.
-  if (pending && pending.playerId === playerId && owner?.dead) {
-    return skipPendingHermitChamberPlay(state, pending,
-      `${owner.name}'s mandatory Chamber play was skipped because they did not survive to play it`)
-  }
-  if (pending?.playerId === playerId && pending.cardUids[0] === cardUid && owner &&
-    !owner.chamber.some((card) => card.uid === cardUid)) {
-    return skipPendingHermitChamberPlay(state, pending,
-      `${owner.name}'s mandatory Chamber play was skipped because the card left the Chamber`)
-  }
-  const staged = stageHermitChamberCard(state, playerId, cardUid)
-  if (!staged) return state
-  const actor = findPlayer(staged, playerId)!
-  const card = actor.hand.find((held) => held.uid === cardUid)!
-  const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), actor.guardianMode)
-  if (pending && (reachedTimeWarpLimit(staged, actor) || !cardIsPlayable(def, staged, actor) ||
-    !cardCanBeForced(def, staged, actor, guardianGemForCard(actor, card), card.uid))) {
-    return skipPendingHermitChamberPlay(state, pending,
-      `${actor.name}'s mandatory Chamber play of ${def.name} was skipped because it cannot be played`)
-  }
-  const resolved = playCardImpl(staged, playerId, cardUid, {
-    ...context, hermitChamberPlay: true, ...(pending ? { outsidePlayWindow: true } : {}),
-  }, previewShivTarget)
-  return resolved === staged ? state : resolved
-}
-
-/** Assigns Dead or Alive's Strength to one living player. */
-export function resolveHermitStrengthReward(state: CombatState, ownerId: string, targetPlayerId: string): CombatState {
-  const pending = state.pendingHermitStrengthRewards?.[0]
-  const target = state.players.find((player) => player.id === targetPlayerId && !player.dead)
-  if (!pending || pending.playerId !== ownerId || !target) return state
-  const next = clone(state)
-  const recipient = findPlayer(next, targetPlayerId)!
-  recipient.strength = gainStrength(recipient.strength, 1)
-  next.pendingHermitStrengthRewards = next.pendingHermitStrengthRewards?.slice(1)
-  next.log = [...next.log, `${recipient.name} gains 1 Strength from Dead or Alive`]
-  return settle(next)
+  return playHermitChamberCardWithPlay(state, playerId, cardUid, context, playCardImpl, previewShivTarget)
 }
 
 /**
@@ -1131,48 +1038,6 @@ export function resolveSlayerChoice(
   }
   if (next.pendingSlayerChoices.length === 0) delete next.pendingSlayerChoices
   return next.phase === 'won' ? next : settle(next)
-}
-
-/** Resolves the Load half of the Hermit's private start-of-combat board ability. */
-export function resolveHermitSetupLoad(
-  state: CombatState,
-  playerId: string,
-  cardUid: string,
-  enemyUid: string | null = null,
-  prepared = false,
-): CombatState {
-  const pending = state.pendingHermitSetupLoads?.[0]
-  const player = findPlayer(state, playerId)
-  if (!pending || pending.playerId !== playerId || !player || player.dead ||
-    player.chamber.length >= player.chamberSlots || !player.hand.some((card) => card.uid === cardUid)) return state
-  const next = clone(state)
-  const actor = findPlayer(next, playerId)!
-  const context: PlayContext = { enemyUid, playerId: null, loadUids: [cardUid], loadChoiceIndex: 0,
-    invalidHermitChoice: false }
-  applyEffect(next, actor, { kind: 'load', amount: 1 }, 'self', 'self', context, 'Hermit board')
-  if (context.invalidHermitChoice || actor.hand.some((card) => card.uid === cardUid)) return state
-  next.pendingHermitSetupLoads = next.pendingHermitSetupLoads?.slice(1)
-  return resumeStartTurnAfterHermitSetup(next, prepared)
-}
-
-/** Drops a disconnected Hermit's unresolved private setup choice. */
-export function abandonHermitSetupLoad(state: CombatState, playerId: string, prepared = false): CombatState {
-  const pending = state.pendingHermitSetupLoads?.[0]
-  if (!pending || pending.playerId !== playerId) return state
-  const next = clone(state)
-  next.pendingHermitSetupLoads = next.pendingHermitSetupLoads?.slice(1)
-  next.log = [...next.log, `${findPlayer(next, playerId)?.name ?? 'Hermit'}'s setup Load was skipped after disconnecting`]
-  return resumeStartTurnAfterHermitSetup(next, prepared)
-}
-
-/** Drops a disconnected Hermit's unresolved private Chamber play. */
-export function abandonHermitChamberPlay(state: CombatState, playerId: string): CombatState {
-  const pending = state.pendingHermitChamberPlays?.[0]
-  if (!pending || pending.playerId !== playerId) return state
-  const next = clone(state)
-  next.pendingHermitChamberPlays = next.pendingHermitChamberPlays?.slice(1)
-  next.log = [...next.log, `${findPlayer(next, playerId)?.name ?? 'Hermit'}'s Chamber play was skipped after disconnecting`]
-  return settle(next)
 }
 
 /** Resolves the physical original after its separately targeted virtual copy. */
@@ -1704,30 +1569,7 @@ export function previewPowerChoice(
 
 /** Settles a disconnected owner's private forced card and resumes queued abilities. */
 export function abandonForcedCard(state: CombatState, playerId: string): CombatState {
-  const forced = state.startTurnProgress?.forcedCard
-  if ((state.phase !== 'start' && state.phase !== 'player' && state.phase !== 'discard') || forced?.playerId !== playerId ||
-    typeof forced.cardUid !== 'string') return state
-  const next = clone(state)
-  const actor = findPlayer(next, playerId)
-  const card = actor?.hand.find((held) => held.uid === forced.cardUid)
-  if (!actor || !card) return state
-  const choices = state.phase === 'start' && !forced.resumeOpenStart
-    ? [...(next.startTurnProgress?.choices ?? [])] : null
-  next.startTurnProgress = undefined
-  if (forced.exhaustNonPower && !cardStaysInPlay(faceOf(cardDef(card.defId), card.upgraded))) {
-    actor.hand = actor.hand.filter((held) => held.uid !== card.uid)
-    exhaustCards(next, actor, [card])
-  } else {
-    discardByCardEffect(next, actor, [card])
-  }
-  next.log = [...next.log, `${actor.name}'s ${cardDef(forced.sourceCardId ?? 'mayhem').name} card was settled after disconnecting`]
-  const resumedTriggers = finishDeferredHavocs(next, actor, forced.deferredHavocs ?? [])
-  releasePendingTriggers(next, {
-    enemyUid: null,
-    playerId: actor.id,
-    pendingTriggers: [...(forced.pendingTriggers ?? []), ...resumedTriggers],
-  })
-  return finishForcedCardPlay(settleForbiddenPendingCopy(next, actor), choices)
+  return abandonForcedCardWithSettle(state, playerId, settleForbiddenPendingCopy)
 }
 
 /**
@@ -1740,324 +1582,6 @@ function pinRowAnchor(state: CombatState, def: CardDef, context: PlayContext): v
   context.enemyRow = state.enemies.find((enemy) => !enemy.dead && enemy.uid === context.enemyUid)?.row
 }
 
-function activeForcedCardEffects(
-  effects: readonly Effect[],
-  state: CombatState,
-  player: Player,
-  sourceDeadOn: boolean,
-): Effect[] {
-  return effects.flatMap((effect): Effect[] => {
-    if (!effectIsActive(effect, state, player)) return []
-    if (effect.kind === 'sequence') return effect.guardianAction || effect.guardianGemId
-      ? [effect]
-      : activeForcedCardEffects(effect.effects, state, player, sourceDeadOn)
-    if (effect.kind === 'branch') return activeForcedCardEffects(
-      conditionIsActive(effect.condition, state, player) ? effect.effects : effect.otherwise,
-      state,
-      player,
-      sourceDeadOn,
-    )
-    if (effect.kind === 'deadOnEffects') return sourceDeadOn
-      ? activeForcedCardEffects(effect.effects, state, player, sourceDeadOn)
-      : []
-    if (effect.kind === 'roulette') return activeForcedCardEffects(
-      effect.byRoll[state.die] ?? [], state, player, sourceDeadOn,
-    )
-    return [effect]
-  })
-}
-
-const append = <T>(values: T[] | undefined, additions: readonly T[]): T[] => [...(values ?? []), ...additions]
-
-/**
- * Builds a context only when every pre-resolution choice has exactly one legal
- * outcome. The authoritative `playCard` validator below still gets the final
- * word; this helper merely supplies values whose cardinality the board proves.
- */
-function deterministicForcedCardContext(
-  state: CombatState,
-  player: Player,
-  held: CardInstance,
-  def: CardDef,
-  effects: readonly Effect[],
-  mode?: number,
-): PlayContext | null {
-  const enemies = livingEnemies(state)
-  const livingPlayers = state.players.filter((candidate) => !candidate.dead)
-  const activeEffects = activeForcedCardEffects(effects, state, player, held.hermitDeadOn === true)
-  const context: PlayContext = { enemyUid: null, playerId: null, ...(mode === undefined ? {} : { mode }) }
-  let virtualHand = player.hand.filter((card) => card.uid !== held.uid)
-  let virtualDiscard = [...player.discard]
-  let virtualChamber = [...player.chamber]
-
-  const preview = mode === undefined ? previewCardChoice(state, player.id, held.uid) : null
-  if (preview?.kind === 'discard' || preview?.kind === 'topdeck' || preview?.kind === 'load' ||
-    preview?.kind === 'loadAny') virtualHand = [...preview.cards]
-
-  for (const effect of activeEffects) {
-    if (effect.kind === 'hitChoices' || effect.kind === 'weakChoices' ||
-      effect.kind === 'vulnerableChoices' || effect.kind === 'poisonChoices') {
-      if (enemies.length !== 1 || effect.kind === 'hitChoices' && effect.distinct && effect.targets > 1) return null
-      context.enemyUids = append(context.enemyUids, Array<string>(effect.targets).fill(enemies[0]!.uid))
-      continue
-    }
-    if (effect.kind === 'blockChoices') {
-      if (livingPlayers.length !== 1) return null
-      context.playerIds = append(context.playerIds, Array<string>(effect.targets).fill(livingPlayers[0]!.id))
-      continue
-    }
-    if (effect.kind === 'discard' || effect.kind === 'exhaustFromHand' || effect.kind === 'topdeck') {
-      const cards = preview && ((preview.kind === 'discard' && effect.kind === 'discard') ||
-        (preview.kind === 'topdeck' && effect.kind === 'topdeck')) ? preview.cards : virtualHand
-      const required = Math.min(effect.amount, cards.length)
-      if (required > 1 || required === 1 && cards.length !== 1) return null
-      const chosen = cards.slice(0, required).map((card) => card.uid)
-      if (effect.kind === 'discard') context.discardUids = append(context.discardUids, chosen)
-      else if (effect.kind === 'exhaustFromHand') context.exhaustUids = append(context.exhaustUids, chosen)
-      else context.topdeckUids = append(context.topdeckUids, chosen)
-      const picked = new Set(chosen)
-      virtualHand = cards.filter((card) => !picked.has(card.uid))
-      continue
-    }
-    if (effect.kind === 'discardAny') {
-      if (virtualHand.length > 0) return null
-      context.discardUids ??= []
-      continue
-    }
-    if (effect.kind === 'exhaustAny') {
-      const minimum = Math.min(effect.minimum ?? 0, virtualHand.length)
-      if (virtualHand.length > 0 && minimum < virtualHand.length) return null
-      if (virtualHand.length > effect.amount) return null
-      context.exhaustUids = append(context.exhaustUids, virtualHand.map((card) => card.uid))
-      virtualHand = []
-      continue
-    }
-    if (effect.kind === 'recoverDiscard') {
-      const required = Math.min(effect.amount, virtualDiscard.length)
-      if (required > 1 || required === 1 && virtualDiscard.length !== 1) return null
-      const chosen = virtualDiscard.slice(0, required)
-      context.recoverDiscardUids = chosen.map((card) => card.uid)
-      virtualDiscard = virtualDiscard.slice(required)
-      if (effect.toHand) virtualHand.push(...chosen)
-      continue
-    }
-    if (effect.kind === 'recoverExhaust') {
-      if (player.exhaust.length > 1) return null
-      if (player.exhaust.length === 1) context.recoverExhaustUid = player.exhaust[0]!.uid
-      continue
-    }
-    if (effect.kind === 'recoverExhaustToDraw') {
-      if (player.exhaust.length > 0) return null
-      context.recoverExhaustUids = []
-      continue
-    }
-    if (effect.kind === 'recoverExhaustToDiscard') {
-      const required = Math.min(effect.amount, player.exhaust.length)
-      if (required > 1 || required === 1 && player.exhaust.length !== 1) return null
-      context.recoverExhaustUids = player.exhaust.slice(0, required).map((card) => card.uid)
-      continue
-    }
-    if (effect.kind === 'scry') {
-      const revealed = preview?.kind === 'scry' ? preview.cards : player.draw.slice(0, effect.amount)
-      if (revealed.length > 0) return null
-      context.scryDiscardUids = []
-      continue
-    }
-    if (effect.kind === 'scryToHand' || effect.kind === 'scryAndPlay') {
-      const revealed = preview?.kind === 'scryToHand' ? preview.cards : player.draw.slice(0, effect.amount)
-      if (revealed.length > 0) return null
-      context.scryDiscardUids = []
-      continue
-    }
-    // Slayer Pack: Forethought chooses from the hand; only an empty one decides itself.
-    if (effect.kind === 'bottomdeck') {
-      if (virtualHand.length > 0) return null
-      context.topdeckUids = []
-      continue
-    }
-    if (effect.kind === 'searchDraw' || effect.kind === 'searchDrawAndPlayTwice') {
-      const eligible = preview?.kind === 'search' ? preview.cards : effect.kind === 'searchDraw'
-        ? player.draw
-        : omniscienceEligibleCards(state, { ...player,
-          hand: player.hand.filter((card) => card.uid !== held.uid) })
-      const required = Math.min(effect.kind === 'searchDraw' ? effect.amount : 1, eligible.length)
-      if (required > 1 || required === 1 && eligible.length !== 1) return null
-      context.searchDrawUids = eligible.slice(0, required).map((card) => card.uid)
-      continue
-    }
-    if (effect.kind === 'load') {
-      const source = effect.source ?? 'hand'
-      const zone = preview && (preview.kind === 'load' || preview.kind === 'loadAny')
-        ? preview.cards : source === 'discard' ? virtualDiscard : virtualHand
-      const maximum = Math.min(effect.amount, zone.length)
-      if (effect.upTo && maximum > 0 || maximum > 1 || maximum === 1 && zone.length !== 1) return null
-      const selected = zone.slice(0, maximum)
-      context.loadUids = append(context.loadUids, selected.map((card) => card.uid))
-      for (const card of selected) {
-        if (virtualChamber.length >= player.chamberSlots) {
-          if (virtualChamber.length !== 1) return null
-          context.chamberUids = append(context.chamberUids, [virtualChamber[0]!.uid])
-          virtualChamber = []
-        }
-        virtualChamber.push(card)
-      }
-      const picked = new Set(selected.map((card) => card.uid))
-      if (source === 'discard') virtualDiscard = virtualDiscard.filter((card) => !picked.has(card.uid))
-      else virtualHand = virtualHand.filter((card) => !picked.has(card.uid))
-      continue
-    }
-    if (effect.kind === 'loadSelf' || effect.kind === 'triggerDieRelic') return null
-    if (effect.kind === 'playChamber' || effect.kind === 'discountChamber') {
-      const chamberAmount = effect.kind === 'playChamber'
-        ? effect.amount === 'all' ? virtualChamber.length : effect.amount
-        : effect.amount
-      const requested = Math.min(chamberAmount, virtualChamber.length)
-      if (requested > 1 || requested === 1 && virtualChamber.length !== 1) return null
-      context.chamberUids = append(context.chamberUids,
-        virtualChamber.slice(0, requested).map((card) => card.uid))
-      continue
-    }
-    if (effect.kind === 'discardChamber') {
-      const eligible = virtualChamber.filter((card) => !effect.curseOnly ||
-        faceOf(cardDef(card.defId), card.upgraded).type === 'curse')
-      const requested = Math.min(effect.amount, eligible.length)
-      if (effect.optional && requested > 0 || requested > 1 || requested === 1 && eligible.length !== 1) return null
-      const selected = eligible.slice(0, requested)
-      context.chamberUids = append(context.chamberUids, selected.map((card) => card.uid))
-      const picked = new Set(selected.map((card) => card.uid))
-      virtualChamber = virtualChamber.filter((card) => !picked.has(card.uid))
-      virtualDiscard.push(...selected)
-      continue
-    }
-    if (effect.kind === 'switchRows') {
-      if (livingPlayers.length > 1) return null
-      context.switchWithPlayerId = null
-      continue
-    }
-
-    const slime = effect as unknown as {
-      kind: string
-      amount?: number | import('../cards.ts').Amount
-      upToDifferent?: number
-      all?: boolean
-      same?: boolean
-    }
-    if (['growSlime', 'commandSlime', 'gainSlimeVigor', 'tapSlime'].includes(slime.kind)) {
-      const available = player.slimes.filter((candidate) =>
-        slimeChoiceIsAvailable({ ...def, modes: undefined, effects: [...effects] }, state, player,
-          candidate.card.uid, 0))
-      if (slime.kind === 'commandSlime' && slime.all) {
-        // `all` has no Slime-card choice; enemy targets are synthesized below.
-      } else if (slime.upToDifferent !== undefined && slime.upToDifferent !== 99) {
-        if (available.length > 0) return null
-      } else {
-        const required = slime.kind === 'commandSlime' && slime.upToDifferent === 99
-          ? amountOf(slime.amount ?? 0, state, player, undefined, context) : 1
-        if (required === 0) continue
-        if (required !== 1 || available.length !== 1) return null
-        context.slimeUids = append(context.slimeUids, [available[0]!.card.uid])
-      }
-      continue
-    }
-    // Rain of Goop only stores X (+ upgrade bonus) while the card is played;
-    // its player/Slime decision belongs to the later Power trigger.
-  }
-
-  const mandatoryShivs = cardShivChoiceCount({ ...def, modes: undefined, effects: [...effects] }, player)
-  if (mandatoryShivs > 0) {
-    if (enemies.length !== 1) return null
-    context.shivEnemyUids = Array<string>(mandatoryShivs).fill(enemies[0]!.uid)
-  }
-  const gainedShivs = activeEffects.reduce((sum, effect) => sum + (effect.kind === 'gainShiv'
-    ? effect.amount : effect.kind === 'gainShivPerDiscard' ? (context.discardUids?.length ?? 0) + effect.bonus : 0), 0)
-  if (overflowShivCount(state, gainedShivs) > 0) {
-    if (enemies.length > 0) return null
-    context.shivEnemyUids ??= []
-  }
-
-  const soulburnTargets = soulburnChoiceCount(effects, state, player)
-  if (soulburnTargets > 0) {
-    if (enemies.length !== 1) return null
-    context.soulburnEnemyUids = Array<string>(soulburnTargets).fill(enemies[0]!.uid)
-  }
-
-  const slimeEnemyTargets = slimeCommandEnemyChoiceCount(
-    { ...def, modes: undefined, effects: [...effects] }, state, player, context.slimeUids ?? [], 0, 0, held,
-  )
-  if (slimeEnemyTargets > 0) {
-    if (enemies.length !== 1) return null
-    context.slimeEnemyUids = Array<string>(slimeEnemyTargets).fill(enemies[0]!.uid)
-  }
-
-  const evokeSlots: number[] = []
-  for (;;) {
-    const next = nextEvokeChoice({ ...def, modes: undefined, effects: [...effects] }, player, evokeSlots, state.die, undefined, 0)
-    if (!next) break
-    if (next.options.length !== 1) return null
-    evokeSlots.push(next.options[0]!.slot)
-  }
-  const evokeDef = { ...def, modes: undefined, effects: [...effects] }
-  const chosenOrbs = evokePlan(evokeDef, player, evokeSlots, state.die, undefined, 0).chosen
-  const evokeEnemyUids: (string | null)[] = []
-  for (const orb of chosenOrbs) {
-    if (orb === 'frost') {
-      evokeEnemyUids.push(null)
-      continue
-    }
-    const target = evokeTargetProgress(evokeDef, state, player, evokeSlots, evokeEnemyUids, undefined, 0)
-    if (target.complete) break
-    if (target.options.length !== 1) return null
-    evokeEnemyUids.push(target.options[0]!.uid)
-  }
-  if (evokeSlots.length > 0) {
-    context.evokeSlots = evokeSlots
-    context.evokeEnemyUids = evokeEnemyUids
-  }
-
-  const attachedGemId = guardianGemForCard(player, held)
-  const targetDef = def.guardian ? def : { ...def, modes: undefined, effects: activeEffects }
-  if (def.id === 'guardian_power_beam' && player.guardianMode === 'defense') {
-    const powers = guardianPowerBeamCards(player, held.uid)
-    if (powers.length > 1) return null
-    if (powers.length === 1) context.guardianPowerCardUid = powers[0]!.uid
-  }
-  const opaquePlayerChoices = cardPlayerChoiceCount(def, mode) - (context.playerIds?.length ?? 0)
-  if (opaquePlayerChoices > 0) {
-    if (livingPlayers.length !== 1) return null
-    context.playerIds = append(context.playerIds,
-      Array<string>(opaquePlayerChoices).fill(livingPlayers[0]!.id))
-  }
-  if (def.supportTarget === 'anyPlayer' || guardianCardNeedsAlly(def, player, attachedGemId)) {
-    if (livingPlayers.length !== 1) return null
-    context.playerId = livingPlayers[0]!.id
-  }
-  const needsEnemy = cardNeedsEnemy(
-    targetDef, player, true, 0, false, attachedGemId, held.uid, 0, held.hermitDeadOn === true,
-  )
-  const enemyTarget = enemies.length === 1 ? enemies[0]
-    : targetDef.target === 'row' &&
-      new Set(enemies.filter((enemy) => !enemy.isBoss).map((enemy) => enemy.row)).size <= 1
-      ? enemies.find((enemy) => !enemy.isBoss) ?? enemies[0]
-      : undefined
-  if (needsEnemy && !enemyTarget) return null
-  context.enemyUid = needsEnemy ? enemyTarget!.uid : null
-  if (def.cost === 'X') context.energySpent = 0
-  if (attachedGemId === 'guardian_jasper') {
-    if (virtualHand.length > 0) return null
-    const previewState = clone(state)
-    const previewActor = findPlayer(previewState, player.id)!
-    previewActor.hand = previewActor.hand.filter((card) => card.uid !== held.uid)
-    const previewContext = resolutionContext(context, def, { ...held, attachedGemId: undefined }, 0)
-    for (const effect of effects) {
-      applyEffect(previewState, previewActor, effect, def.target ?? 'enemy', def.supportTarget ?? 'self', previewContext)
-      if (invalidPlayChoice(previewContext)) return null
-    }
-    if (previewActor.hand.length > 0) return null
-    context.exhaustUids ??= []
-  }
-  return context
-}
-
 /**
  * Plays a forced card only when the current board proves one complete legal
  * context. This is intentionally narrower than "a default context happens to
@@ -2065,43 +1589,5 @@ function deterministicForcedCardContext(
  * them would also be legal.
  */
 export function resolveDeterministicForcedCard(state: CombatState): CombatState {
-  const forced = state.startTurnProgress?.forcedCard
-  if (!forced || !['start', 'player', 'discard'].includes(state.phase) ||
-    (state.pendingTriggers?.length ?? 0) > 0) return state
-  const player = findPlayer(state, forced.playerId)
-  const held = player?.hand.find((card) => card.uid === forced.cardUid)
-  if (!player || player.dead || !held || player.cardPlayLocked || reachedTimeWarpLimit(state, player)) return state
-
-  const printed = faceOf(cardDef(held.defId), held.upgraded)
-  const attachedGemId = guardianGemForCard(player, held)
-  if (player.character !== 'guardian' && player.guardianMode === null &&
-    cardReferencesGuardianMode(printed, attachedGemId)) return state
-  const def = effectiveCombatCardDef(printed, player.guardianMode)
-  if (!cardIsPlayable(def, state, player) || def.cost === 'X' && (def.minimumX ?? 0) > 0) return state
-  // Slayer Pack: A forced play is X = 0, so Metamorphosis may still attach to any Power
-  // whose X is 0; which one is its owner's choice. With none it is discarded as usual.
-  if (def.id === 'slayer_metamorphosis' &&
-    player.powers.some((power) => metamorphosisCost(player, power.uid, held.upgraded) === 0)) return state
-
-  // Vigor, Body Crash, these Mode shifts, and the two choice-bearing Gems all
-  // alter the outcome while a zero/false context remains legal.
-  if (player.guardianMode !== null && player.vigor > 0 && (def.type === 'attack' || def.type === 'skill') ||
-    def.id === 'guardian_body_crash' && player.block > 0 ||
-    ['guardian_hack', 'guardian_gear_up', 'guardian_speed_boost'].includes(def.id) ||
-    attachedGemId === 'guardian_amethyst' || held.growOnPlay) return state
-
-  const modeEffects = def.modes
-    ? def.modes.flatMap((mode, index) => cardModeIsAvailable(def, state, player, index, player.draw.length, held.uid)
-      ? [{ index, effects: mode.effects }]
-      : [])
-    : [{ index: undefined, effects: def.type === 'power' && def.resolvesOnPlay !== true ? [] : def.effects }]
-  const candidates: PlayContext[] = []
-  for (const { index, effects } of modeEffects) {
-    if (!cardCanBeForced({ ...def, modes: undefined, effects: [...effects] },
-      state, player, attachedGemId, held.uid)) continue
-    const context = deterministicForcedCardContext(state, player, held, def, effects, index)
-    if (!context) return state
-    if (playCard(state, forced.playerId, held.uid, context) !== state) candidates.push(context)
-  }
-  return candidates.length === 1 ? playCard(state, forced.playerId, held.uid, candidates[0]!) : state
+  return resolveDeterministicForcedCardWithPlay(state, previewCardChoice, playCard)
 }
