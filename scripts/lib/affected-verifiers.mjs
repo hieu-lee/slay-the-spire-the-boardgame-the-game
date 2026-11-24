@@ -103,8 +103,21 @@ const focusedUiOwners = ownerMap([
   ]],
   ['src/ui/CombatAnimation.tsx', ['verify-combat-video-browser.mjs', 'verify-combat-hand-viewport-browser.mjs']],
   ['src/ui/combat-webm-sources.json', ['verify-art-bakes.mjs', 'verify-combat-video-browser.mjs']],
-  ...['src/ui/EnemyCard.tsx', 'src/ui/enemy-card/intent.ts', 'src/ui/enemy-card/EnemyAttackOverlays.tsx', 'src/ui/enemy-card/useEnemyGeometry.ts', 'src/ui/enemy-card/useEnemyVisuals.ts']
+  ...['src/ui/EnemyCard.tsx', 'src/ui/enemy-card/intent.ts', 'src/ui/enemy-card/EnemyIntentStrip.tsx', 'src/ui/enemy-card/EnemyAttackOverlays.tsx', 'src/ui/enemy-card/useEnemyGeometry.ts', 'src/ui/enemy-card/useEnemyVisuals.ts']
     .map((file) => [file, ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-boss-heavy-attacks-browser.mjs']]),
+  ['src/ui/enemy-card/EnemyAttachments.tsx', ['verify-elite-signatures-browser.mjs', 'verify-elite-intent-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-boss-heavy-attacks-browser.mjs', 'verify-skin-cards-browser.mjs']],
+  ['src/ui/combat-screen/useAttackPosePreload.ts', ['verify-assets.mjs', 'verify-combat-vfx-preload-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-monogatari-animation-browser.mjs', 'verify-monogatari-skins-browser.mjs', 'verify-defect-chan-evoke-browser.mjs']],
+  ['src/ui/combat-screen/useCardPlay.ts', ['verify-combat-choices-browser.mjs', 'verify-flurry-stance-browser.mjs', 'verify-unload-shivs-browser.mjs', 'verify-double-tap-recover-browser.mjs', 'verify-singleton-slime-command-browser.mjs', 'verify-empty-scry-browser.mjs', 'verify-card-damage-preview-browser.mjs']],
+  ['src/ui/combat-screen/useItemActions.ts', ['verify-combat-choices-browser.mjs', 'verify-die-relic-browser.mjs', 'verify-hero-potions-browser.mjs', 'verify-runic-pyramid-browser.mjs', 'verify-hermit-combo-browser.mjs']],
+  ['src/ui/combat-screen/useStartTurnActions.ts', ['verify-start-turn-party-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-empty-scry-browser.mjs']],
+  ['src/ui/combat-screen/useHermitChamber.ts', ['verify-hermit-combo-browser.mjs', 'verify-hermit-load-reconnect-browser.mjs', 'verify-hermit-online-staged-trigger-browser.mjs']],
+  ['src/ui/combat-screen/useCombatMotions.ts', ['verify-combat-video-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-monogatari-animation-browser.mjs', 'verify-defect-chan-evoke-browser.mjs']],
+  ['src/ui/combat-screen/useCombatPresentation.ts', ['verify-combat-video-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-monogatari-animation-browser.mjs', 'verify-defect-chan-evoke-browser.mjs', 'verify-boss-heavy-attacks-browser.mjs']],
+  ['src/ui/combat-screen/useModalDialog.ts', ['verify-combat-choices-browser.mjs', 'verify-empty-scry-browser.mjs']],
+  ['src/ui/combat-screen/CombatPromptBar.tsx', ['verify-combat-choices-browser.mjs', 'verify-hermit-combo-browser.mjs', 'verify-start-turn-party-browser.mjs']],
+  ['src/ui/combat-screen/RelicActions.tsx', ['verify-die-relic-browser.mjs', 'verify-runic-pyramid-browser.mjs']],
+  ['src/ui/combat-screen/TurnEffectOverlays.tsx', ['verify-turn-targets-browser.mjs', 'verify-end-turn-drag-browser.mjs', 'verify-start-turn-party-browser.mjs']],
+  ['src/ui/combat-screen/prompts.ts', ['verify-combat-choices-browser.mjs', 'verify-start-turn-party-browser.mjs', 'verify-hermit-combo-browser.mjs']],
   ['src/ui/combat-screen/useCombatDrag.ts', ['verify-end-turn-drag-browser.mjs', 'verify-row-target-browser.mjs', 'verify-turn-targets-browser.mjs']],
   ['src/ui/combat-screen/useStageLayout.ts', ['verify-combat-layout-reload-browser.mjs', 'verify-act-four-facing-browser.mjs', 'verify-hero-potions-browser.mjs']],
   ['src/ui/combat-screen/portraits.tsx', ['verify-skin-browser.mjs', 'verify-skin-attack-browser.mjs', 'verify-monogatari-animation-browser.mjs', 'verify-defect-chan-evoke-browser.mjs']],
@@ -131,7 +144,7 @@ const focusedUiOwners = ownerMap([
   ['src/ui/ItemImage.tsx', ['verify-courier-browser.mjs']],
   ['src/ui/MailBox.tsx', ['verify-mail-browser.mjs']],
   ['src/ui/MapScreen.tsx', ['verify-wing-focus-browser.mjs']],
-  ...['src/ui/RoomScreen.tsx', 'src/ui/room-screen/EventScreen.tsx', 'src/ui/room-screen/MerchantScreen.tsx', 'src/ui/room-screen/RelicRoomScreen.tsx']
+  ...['src/ui/RoomScreen.tsx', 'src/ui/room-screen/EventScreen.tsx', 'src/ui/room-screen/MerchantScreen.tsx', 'src/ui/room-screen/RelicRoomScreen.tsx', 'src/ui/room-screen/shared.ts', 'src/ui/room-screen/Price.tsx']
     .map((file) => [file, ['verify-joust-browser.mjs', 'verify-scrap-ooze-browser.mjs', 'verify-event-panels-browser.mjs', 'verify-face-trader-solo-browser.mjs']]),
   ['src/ui/chrome/event-phone.css', ['verify-event-panels-browser.mjs', 'verify-scrap-ooze-browser.mjs']],
   ['src/ui/chrome/event-loot.css', ['verify-event-panels-browser.mjs', 'verify-scrap-ooze-browser.mjs']],
@@ -139,9 +152,11 @@ const focusedUiOwners = ownerMap([
   ['src/ui/chrome/room-stages.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/styles/non-combat-rooms.css', ['verify-event-panels-browser.mjs']],
   ['src/ui/chrome/mailbox.css', ['verify-mail-browser.mjs']],
-  ['src/multiplayer/useRoomSession.ts', ['verify-ascension-sync-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']],
+  ...['src/multiplayer/useRoomSession.ts', 'src/multiplayer/room-endpoint.ts', 'src/multiplayer/room-types.ts', 'src/multiplayer/session-storage.ts']
+    .map((file) => [file, ['verify-ascension-sync-browser.mjs', 'verify-combat-layout-reload-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']]),
   ['src/ui/RelicChip.tsx', ['verify-courier-browser.mjs', 'verify-toolbox-browser.mjs']],
-  ['src/ui/OnlineGame.tsx', ['verify-courier-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']],
+  ...['src/ui/OnlineGame.tsx', 'src/ui/online/adapters.ts', 'src/ui/online/LobbyWidgets.tsx', 'src/ui/online/VoiceControls.tsx']
+    .map((file) => [file, ['verify-courier-browser.mjs', 'verify-skin-browser.mjs', 'verify-skin-cards-browser.mjs', 'verify-start-turn-resync-browser.mjs', 'verify-monogatari-online-browser.mjs']]),
   ['src/ui/OnlineCampfireScreen.tsx', ['verify-art-scenes-browser.mjs', 'verify-monogatari-online-browser.mjs']],
   ['src/ui/StartMenu.tsx', ['verify-run-replay-browser.mjs', 'verify-title-menu-browser.mjs', 'verify-tutorial-browser.mjs', 'verify-skin-browser.mjs']],
   ['src/ui/ProfileScreen.tsx', ['verify-skin-profile-browser.mjs', 'verify-account-browser.mjs', 'verify-wallet-sync-browser.mjs', 'verify-restricted-browser.mjs']],
@@ -216,6 +231,7 @@ const stylesheetBrowserOwners = (file) => file === 'src/ui/styles/hand.css'
 const engineModuleOf = (file) => {
   const clean = cleanPath(file)
   if (clean === 'src/game/guardian-gems.ts') return 'src/game/run.ts'
+  if (/^src\/game\/slayer\/[\w.-]+\.ts$/.test(clean)) return 'src/game/cards.ts'
   return clean.replace(/^src\/game\/(combat|run)\/[\w.-]+\.ts$/, 'src/game/$1.ts')
 }
 const directImportCache = new Map()

@@ -463,4 +463,9 @@ check('retry flags are rejected', () => {
   assertEqual(result.status, 2)
   assert(result.stderr.includes('fix flaky tests instead'))
 })
+check('decomposed combat-screen hooks and slayer modules keep asset and browser coverage', () => {
+  assert(affected('src/ui/combat-screen/useAttackPosePreload.ts').includes('verify-assets.mjs'))
+  assert(affectedBrowser('src/ui/combat-screen/useAttackPosePreload.ts').includes('verify-combat-vfx-preload-browser.mjs'))
+  assert(affectedBrowser('src/game/slayer/ironclad.ts').includes('verify-browser.mjs'))
+})
 report('verification pipeline')
