@@ -164,17 +164,39 @@ export function activePowerWindow(state: Pick<CombatState, 'phase' | 'startTurnP
     !state.startTurnProgress?.discard
 }
 
+const discardTopFlagCache = new WeakMap<CardDef, { readsTop: boolean; recoversTop: boolean }>()
+
+function discardTopFlags(def: CardDef): { readsTop: boolean; recoversTop: boolean } {
+  let flags = discardTopFlagCache.get(def)
+  if (!flags) {
+    const text = JSON.stringify([faceOf(def, false), faceOf(def, true)]).toLowerCase()
+    flags = {
+      readsTop: text.includes('discardtopcosts'),
+      recoversTop: text.includes('recoverdiscardtopcosts'),
+    }
+    discardTopFlagCache.set(def, flags)
+  }
+  return flags
+}
+
 /** Whether ordering these discarded cards changes a later top-card effect. */
 export function discardOrderNeedsChoice(player: Player, discarding: readonly CardInstance[]): boolean {
   if (discarding.length <= 1) return false
-  const owned = [player.hand, player.draw, player.discard, player.exhaust, player.powers, player.chamber].flat()
-  const readers = owned.map((card) => {
-    const def = cardDef(card.defId)
-    return JSON.stringify([faceOf(def, false), faceOf(def, true)]).toLowerCase()
-  })
-  if (!readers.some((face) => face.includes('discardtopcosts'))) return false
-  const recoversTop = readers.some((face) => face.includes('recoverdiscardtopcosts'))
-  const canCorrupt = owned.some((card) => cardDef(card.defId).corruptSkills)
+  const piles = [player.hand, player.draw, player.discard, player.exhaust, player.powers, player.chamber]
+  let hasReader = false
+  let recoversTop = false
+  let canCorrupt = false
+  for (let pileIndex = 0; pileIndex < piles.length; pileIndex++) {
+    const pile = piles[pileIndex]!
+    for (let cardIndex = 0; cardIndex < pile.length; cardIndex++) {
+      const def = cardDef(pile[cardIndex]!.defId)
+      const flags = discardTopFlags(def)
+      if (flags.readsTop) hasReader = true
+      if (flags.recoversTop) recoversTop = true
+      if (def.corruptSkills) canCorrupt = true
+    }
+  }
+  if (!hasReader) return false
   const outcomes = new Set(discarding.map((card) => {
     const face = faceOf(cardDef(card.defId), card.upgraded)
     if (face.unplayable) return false

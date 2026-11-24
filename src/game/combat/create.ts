@@ -32,7 +32,7 @@ export function createCombat(
     die: 1,
     phase: 'player',
     initialEnemyCount: enemies.length,
-    players: structuredClone(players).map((player) => ({
+    players: clone(players).map((player) => ({
       ...player,
       lostHpThisCombat: false,
       shuffledThisCombat: false,

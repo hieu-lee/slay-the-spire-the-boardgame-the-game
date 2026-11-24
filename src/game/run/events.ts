@@ -10,8 +10,9 @@ import { BOSSES, buildEncounter, createEnemyDecks, readyForCombat } from './enco
 import { availableRewardSources, reservePrismaticDraws, settlePrismaticDraws } from './rewards.ts'
 import { enterRoom } from './rooms.ts'
 import { applyDeadlyEvent, hasRelic, nextRunUid } from './rules.ts'
-import { merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
+import { cloneEnemyDecks, cloneItemDecks, merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
 import type { CardRewardEffect, RunState } from './types.ts'
+import { clone } from '../clone.ts'
 import {
   addCard,
   bottomCardChoices,
@@ -57,8 +58,8 @@ function nextEventCardOffer(
   replaceDuplicates: boolean,
 ): { offer?: string[]; valid: boolean } {
   const players = state.players.map((player) => ({ ...player, cardRewards: [...player.cardRewards], rareRewards: [...player.rareRewards] }))
-  const characterCards = structuredClone(state.itemDecks.characterCards)
-  const characterRares = structuredClone(state.itemDecks.characterRares)
+  const characterCards = clone(state.itemDecks.characterCards)
+  const characterRares = clone(state.itemDecks.characterRares)
   let colorless = [...state.itemDecks.colorless]
   let used = 0
   for (const effect of effects) {
@@ -171,7 +172,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   if (state.roomState.card.id === 'lab' && !state.roomState.pendingRolls?.[playerId]) {
     if (decision.optionIds[0] !== 'resolve' || state.roomState.labChoices?.[playerId]) return state
     const revealed = state.roomState.itemOffers?.[playerId]
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = { ...state.itemDecks, potions: [...state.itemDecks.potions] }
     if (!revealed) {
       const potionId = drawItems(itemDecks.potions, 1)[0]
       if (!potionId) {
@@ -369,7 +370,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   if (rewardEffects.length > 0 && !pending && Object.keys(state.roomState.rewardOffers ?? {}).some((id) => id !== playerId)) return state
   if (state.roomState.card.id === 'face_trader' && decision.optionIds[0] === 'take_and_give' && !pending) {
     const rng = { ...state.rng }
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = cloneItemDecks(state.itemDecks)
     const option = state.roomState.card.options.find((candidate) => candidate.id === 'take_and_give')!
     const staged = resolveEventDecision({ ...state.roomState, card: { ...state.roomState.card, options: [{ ...option, effects: option.effects.slice(0, 1) }] } }, rng, itemDecks, state.players, state.ascension, playerId, decision, [], false, state.meta.ruleset)
     if (!staged) return state
@@ -379,7 +380,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   }
   if (state.roomState.card.id === 'nloth' && decision.optionIds[0] === 'offer_relic' && !pending) {
     const rng = { ...state.rng }
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = cloneItemDecks(state.itemDecks)
     const option = state.roomState.card.options.find((candidate) => candidate.id === 'offer_relic')!
     const staged = resolveEventDecision({ ...state.roomState, card: { ...state.roomState.card, options: [{ ...option, effects: option.effects.slice(0, 1) }] } }, rng, itemDecks, state.players, state.ascension, playerId, decision, [], false, state.meta.ruleset)
     if (!staged) return state
@@ -485,7 +486,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     })
     const itemOffer = state.roomState.itemOffers?.[playerId]
     if (preRollKinds.length > 0 && !itemOffer) {
-      const itemDecks = structuredClone(state.itemDecks)
+      const itemDecks = { ...state.itemDecks, relics: [...state.itemDecks.relics], potions: [...state.itemDecks.potions] }
       const offers = preRollKinds.map((kind) => ({ kind, id: drawItems(kind === 'relic' ? itemDecks.relics : itemDecks.potions, 1)[0] ?? '' })).filter((offer) => offer.id)
       if (offers.length > 0) return { ...state, itemDecks, roomState: { ...state.roomState, itemOffers: { ...state.roomState.itemOffers, [playerId]: offers }, pendingDecisions: { ...state.roomState.pendingDecisions, [playerId]: stageEventDecision(pending ?? decision) } } }
     }
@@ -502,7 +503,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
       rollDecision.rewardItemKinds = itemOffer.map((offer) => offer.kind)
     }
     const rng = { ...state.rng }
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = cloneItemDecks(state.itemDecks)
     const staged = resolveEventBeforeRoll(state.roomState, rng, itemDecks, state.players, state.ascension, playerId, rollDecision, state.meta.ruleset)
     if (!staged) return state
     if (staged.players.some((candidate) => candidate.dead)) return { ...state, rng, itemDecks, players: staged.players, phase: 'defeat', roomState: null, log: [...state.log, `${state.roomState.card.name} defeats the party.`] }
@@ -537,10 +538,10 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   const itemOffer = state.roomState.itemOffers?.[playerId]
   let stagedItemDecks: ItemDecks | undefined
   if (itemKinds.length > 0 && !itemOffer && !(state.roomState.card.id === 'face_trader' && decision.optionIds[0] === 'take_and_give')) {
-    const completeDecks = structuredClone(state.itemDecks)
+    const completeDecks = { ...state.itemDecks, relics: [...state.itemDecks.relics], potions: [...state.itemDecks.potions] }
     const completeOffers = itemKinds.map((kind) => ({ kind, id: drawItems(kind === 'relic' ? completeDecks.relics : completeDecks.potions, 1)[0] ?? '' }))
     if (completeOffers.every((offer) => offer.id)) return { ...state, itemDecks: completeDecks, roomState: { ...state.roomState, itemOffers: { ...state.roomState.itemOffers, [playerId]: completeOffers }, pendingDecisions: { ...state.roomState.pendingDecisions, [playerId]: stageEventDecision(pending ?? decision) } } }
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = { ...state.itemDecks, relics: [...state.itemDecks.relics], potions: [...state.itemDecks.potions] }
     const rewardItemIds: string[] = []
     const rewardItemKinds: ('relic' | 'potion')[] = []
     // An item the empty deck could not supply still takes its place in every
@@ -562,7 +563,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
   }
   if (itemOffer && (!decision.rewardItemChoices || decision.rewardItemChoices.length !== itemOffer.length)) return state
   if (itemOffer) {
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = cloneItemDecks(state.itemDecks)
     const rewardItemIds = [...(pending?.rewardItemIds ?? [])]
     const rewardItemKinds = [...(pending?.rewardItemKinds ?? [])]
     const rewardItemChoices = [...(pending?.rewardItemChoices ?? [])]
@@ -641,7 +642,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     payments: decision.payments ?? pending.payments,
   } : decision
   const rng = { ...state.rng }
-  const itemDecks = stagedItemDecks ?? structuredClone(state.itemDecks)
+  const itemDecks = stagedItemDecks ?? cloneItemDecks(state.itemDecks)
   const forcedRolls = leavesScrap ? [] : state.roomState.pendingRolls?.[playerId] ?? []
   const cleanRoom = pending ? {
     ...state.roomState,
@@ -716,7 +717,7 @@ function chooseEventInternal(state: RunState, playerId: string, decision: EventD
     let combat = preparedCombat
     if (!combat) {
       enemyDecks = state.enemyDecks.act === state.act
-        ? structuredClone(state.enemyDecks)
+        ? cloneEnemyDecks(state.enemyDecks)
         : createEnemyDecks(rng, state.act, state.ascension)
       const encounter = buildEncounter(
         rng, enemyDecks, mindBloom ? 1 : state.act, players,

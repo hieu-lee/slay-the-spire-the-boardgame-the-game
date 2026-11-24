@@ -67,6 +67,7 @@ import type {
   PlayerChoiceAnswer,
   StartTurnAbility,
   StartTurnChoice,
+  StartTurnSource,
   TriggerSource,
   PlayContext,
   TurnEffectPresentation,
@@ -539,22 +540,30 @@ function deterministicStartTurnTriggerChoice(
   return needsHermit || slime || slimeEnemyAmount > 0 || slimeResolution ? trigger : undefined
 }
 
-/** Resolves the ordered ability phase prepared by `preparePlayerTurn`. */
-export function resolveStartPlayerTurn(
+function resolveStartPlayerTurnWithSources(
   state: CombatState,
   choices: readonly StartTurnChoice[],
+  knownSources?: readonly StartTurnSource[],
 ): CombatState {
   if (state.phase !== 'start' || state.startTurnProgress?.forcedCard ||
     state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
     state.startTurnProgress?.pauseAfterDraw || state.startTurnProgress?.discard ||
     (state.pendingTriggers?.length ?? 0) > 0 || owedPlayerChoices(state).length > 0) return state
-  const sources = pendingStartTurnSources(state)
+  const sources = knownSources ?? pendingStartTurnSources(state)
   const order = choices.map((choice) => choice.id)
   if (!validStartTurnOrder(sources, order)) return state
 
   const next = clone(state)
   next.startTurnProgress = undefined
   return continueStartTurn(next, choices, state)
+}
+
+/** Resolves the ordered ability phase prepared by `preparePlayerTurn`. */
+export function resolveStartPlayerTurn(
+  state: CombatState,
+  choices: readonly StartTurnChoice[],
+): CombatState {
+  return resolveStartPlayerTurnWithSources(state, choices)
 }
 
 function validStartTurnShivChoice(
@@ -564,6 +573,7 @@ function validStartTurnShivChoice(
   enemyUids: readonly (string | null)[],
 ): boolean {
   if (enemyUids.length > overflowShivs) return false
+  if (overflowShivs === 0) return enemyUids.length === 0
   const simulation = clone(state)
   const actor = findPlayer(simulation, player.id)!
   for (const enemyUid of enemyUids) {
@@ -589,6 +599,9 @@ function validStartTurnEvokeChoice(
   const plan = effectEvokePlan(source.effects, player, slots, state.die)
   if (plan.invalid || plan.index !== slots.length || targets.length > plan.chosen.length) {
     return false
+  }
+  if (plan.chosen.length === 0) {
+    return targets.length === 0 && (!plan.next || combatIsOver(state))
   }
   const simulation = clone(state)
   const actor = findPlayer(simulation, player.id)!
@@ -626,16 +639,16 @@ export function continueStartTurn(
   let forcedDrawResolved = false
   for (let index = 0; index < choices.length; index++) {
     const choice = choices[index]!
-    const entry = startTurnSources(next).find(({ ability }) => ability.id === choice.id)
+    const entry = startTurnSources(next, false, choice.id)[0]
     if (!entry) {
-      const inactive = startTurnSources(next, true).find(({ ability }) => ability.id === choice.id)
+      const inactive = startTurnSources(next, true, choice.id)[0]
       if (inactive && findPlayer(next, inactive.ability.playerId)?.dead) continue
       // Slayer Pack: An earlier ability took this Power out of play (a Metamorphosis
       // follows the Power it copied); a Power that is gone has nothing left to resolve.
       if (!inactive && startTurnPowerLeftPlay(next, choice.id)) continue
     }
     const player = entry && findPlayer(next, entry.ability.playerId)
-    const ability = entry ? startTurnAbilitiesFor(next, [entry])[0] : undefined
+    const ability = entry?.ability
     if (!entry || !player || !ability ||
       (ability.targets
         ? ability.targets.length > 0 && !ability.targets.some((target) => target.uid === choice.enemyUid)
@@ -649,7 +662,14 @@ export function continueStartTurn(
       next.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
       return rollback ?? next
     }
-    if (!validStartTurnShivChoice(next, player, ability.overflowShivs, choice.shivEnemyUids) ||
+    const shivs = entry.source
+      ? entry.source.effects.reduce((sum, effect) => sum + (
+          effect.kind === 'gainShiv' && effectIsActive(effect, next, player) ? effect.amount : 0
+        ), 0)
+      : 0
+    const plannedShivs = shivs > 0 ? next.players.reduce((sum, candidate) => sum + candidate.shivs, 0) : 0
+    const overflowShivs = shivs > 0 ? shivs - Math.min(Math.max(0, CAPS.shivs - plannedShivs), shivs) : 0
+    if (!validStartTurnShivChoice(next, player, overflowShivs, choice.shivEnemyUids) ||
       !validStartTurnEvokeChoice(next, player, entry.source, choice)) {
       next.startTurnProgress = { choices: choices.slice(index).map((pending) => ({ ...pending })) }
       // A forced draw ahead of this ability (Mayhem) was planned as a card that must be played, so this
@@ -1108,18 +1128,27 @@ export function startPlayerTurnWithChoices(state: CombatState): CombatState {
 export function startTurnOrderChoicePlayerId(
   state: CombatState,
   knownAbilities?: readonly StartTurnAbility[],
+  knownSources?: readonly StartTurnSource[],
 ): string | undefined {
-  return startTurnOrderChoicePlayerIdWithResolver(state, resolveStartPlayerTurn, knownAbilities)
+  const sources = knownSources ?? (knownAbilities && knownAbilities.length < 2 ? undefined : pendingStartTurnSources(state))
+  return startTurnOrderChoicePlayerIdWithResolver(
+    state,
+    (candidate, choices) => resolveStartPlayerTurnWithSources(candidate, choices, sources),
+    knownAbilities,
+    sources,
+  )
 }
 
 export function startTurnNeedsChoice(
   state: CombatState,
   knownAbilities?: readonly StartTurnAbility[],
   playerId?: string,
+  knownSources?: readonly StartTurnSource[],
 ): boolean {
   if (playerId === undefined ? hasPostRollStartTurnChoice(state) : state.players.some((player) =>
     player.id === playerId && playerHasPostRollStartTurnChoice(state, player))) return true
-  const abilities = knownAbilities ?? startTurnAbilities(state)
+  const sources = knownSources ?? (knownAbilities ? undefined : pendingStartTurnSources(state))
+  const abilities = knownAbilities ?? startTurnAbilitiesFor(state, sources!)
   // An ability that cannot be resolved without input, whatever else is queued.
   if (abilities.some((ability) => (ability.exhaustCards?.length ?? 0) > 1 || ability.overflowShivs > 0 ||
     ability.guardianModeShift ||
@@ -1127,7 +1156,7 @@ export function startTurnNeedsChoice(
     (ability.players?.length ?? 0) > 1 || ability.evokeChoice)) return true
   if (abilities.some((ability) => ability.id === 'enemy:darkling/regrow') &&
     abilities.some((ability) => (ability.targets?.length ?? 0) > 0)) return true
-  return startTurnOrderChoicePlayerId(state, abilities) !== undefined
+  return startTurnOrderChoicePlayerId(state, abilities, sources) !== undefined
 }
 
 /** Players who genuinely owe input before Start of Turn can finish. */
@@ -1169,8 +1198,9 @@ export function startTurnChoicePlayerIds(
     if (postRollOwners.length > 0) return postRollOwners
   }
 
-  const abilities = knownAbilities ?? startTurnAbilities(state)
-  if (includeOrderChoice) add(startTurnOrderChoicePlayerId(state, abilities))
+  const sources = pendingStartTurnSources(state)
+  const abilities = knownAbilities ?? startTurnAbilitiesFor(state, sources)
+  if (includeOrderChoice) add(startTurnOrderChoicePlayerId(state, abilities, sources))
   // A choice in an earlier ability deliberately blocks simulation of later
   // effects. Complete the same order with safe defaults so a downstream owner
   // (for example full-slot Storm behind another player's overflow Shiv) is not
@@ -1178,7 +1208,7 @@ export function startTurnChoicePlayerIds(
   const order = abilities.map((ability) => ability.id)
   const downstreamChoicePlayers = new Set<string>()
   if (order.length > 0) defaultStartTurnChoicesForOrder(
-    state, order, downstreamChoicePlayers, undefined, committedChoices,
+    state, order, downstreamChoicePlayers, undefined, committedChoices, sources,
   )
   for (const playerId of downstreamChoicePlayers) add(playerId)
   for (const ability of abilities) if (
@@ -1187,7 +1217,7 @@ export function startTurnChoicePlayerIds(
   ) add(ability.playerId)
   // If input exists only because aimed effects can invalidate one another, one
   // involved owner commits the shared order; deterministic owners do not vote.
-  if (includeOrderChoice && required.size === 0 && startTurnNeedsChoice(state, abilities)) {
+  if (includeOrderChoice && required.size === 0 && startTurnNeedsChoice(state, abilities, undefined, sources)) {
     add(abilities.find((ability) => (ability.targets?.length ?? 0) > 0)?.playerId ?? abilities[0]?.playerId)
   }
   return [...required]
@@ -1197,8 +1227,13 @@ function finishPreparedStartTurnWithChoices(prepared: CombatState): CombatState 
   if (prepared.phase !== 'start' || prepared.startTurnProgress || prepared.pendingTriggers.length > 0) return prepared
   const staged = stageStartTurnTriggerChoice(prepared)
   if (staged !== prepared) return staged
-  const abilities = startTurnAbilities(prepared)
-  return startTurnNeedsChoice(prepared, abilities)
+  const sources = pendingStartTurnSources(prepared)
+  const abilities = startTurnAbilitiesFor(prepared, sources)
+  return startTurnNeedsChoice(prepared, abilities, undefined, sources)
     ? prepared
-    : resolveStartPlayerTurn(prepared, defaultStartTurnChoices(prepared))
+    : resolveStartPlayerTurnWithSources(
+        prepared,
+        defaultStartTurnChoicesForOrder(prepared, undefined, undefined, undefined, [], sources),
+        sources,
+      )
 }

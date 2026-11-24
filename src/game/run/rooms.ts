@@ -17,7 +17,7 @@ import {
 } from './rules.ts'
 import { enteringRoom } from './setup.ts'
 import { queueNewGuardianSockets } from '../guardian-gems.ts'
-import { colorlessCardsAvailable, merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
+import { cloneEnemyDecks, cloneItemDecks, colorlessCardsAvailable, merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
 import type { CardRewardOffer, RunPhase, RunState } from './types.ts'
 import { healingCapFor, transformCard } from '../acquisition.ts'
 import { canEnterActIV, finishCampaign, isActIVUnlocked } from '../campaign.ts'
@@ -92,7 +92,6 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
   if (!room) return state
 
   const rng = { ...state.rng }
-  const enemyDecks = structuredClone(state.enemyDecks)
   const roomPlayers = state.players.map((player) => ({
     ...player,
     relics: player.relics.flatMap((relic) => {
@@ -106,7 +105,6 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     ...state,
     map,
     rng,
-    enemyDecks,
     players: roomPlayers,
     floorsCleared: state.floorsCleared === undefined
       ? undefined : Math.max(0, state.floorsCleared) + 1,
@@ -114,6 +112,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
   }
 
   if (room.kind === 'encounter' || room.kind === 'elite' || room.kind === 'boss') {
+    const enemyDecks = cloneEnemyDecks(state.enemyDecks)
     let nextUid = Math.max(0, ...roomPlayers.flatMap((player) => player.deck.map((card) => Number(/^c(\d+)$/.exec(card.uid)?.[1] ?? 0))))
     const players = roomPlayers.map((player) => {
       const prepared = room.burning && !state.campaign.keys.emerald
@@ -137,6 +136,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     ))
     return {
       ...next,
+      enemyDecks,
       phase: 'combat',
       players,
       combat,
@@ -147,7 +147,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
   }
 
   if (room.kind === 'merchant') {
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = cloneItemDecks(state.itemDecks)
     itemDecks.potions = [...state.potionDeck]
     const guardianGemDeck = [...(state.guardianGemDeck ?? [])]
     const roomState = createMerchant(merchantItemDecks(state, itemDecks), roomPlayers, guardianGemDeck,
@@ -155,13 +155,12 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     return mirrorItemSupplies({ ...next, phase: 'room', roomState, guardianGemDeck }, itemDecks)
   }
   if (room.kind === 'treasure') {
-    const itemDecks = structuredClone(state.itemDecks)
+    const itemDecks = { ...state.itemDecks, relics: [...state.itemDecks.relics] }
     return mirrorItemSupplies({ ...next, phase: 'room', roomState: createRelicReward('treasure', itemDecks, roomPlayers, state.chooseYourRelic) }, itemDecks)
   }
 
   if (room.kind === 'event') {
-    const itemDecks = structuredClone(state.itemDecks)
-    itemDecks.potions = [...state.potionDeck]
+    const itemDecks = { ...state.itemDecks, potions: [...state.potionDeck] }
     const eventDeck = [...state.eventDeck]
     let card = eventDeck.shift()
     while (state.eventsVisited === 0 && (card?.firstEventRedraw || card?.id === 'encounter_redraw' || card?.id === 'merchant_redraw' || card?.id === 'dead_adventurer')) {
@@ -200,9 +199,11 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
       roomState.revealedCards = Object.fromEntries(revealed.map(([player, cards]) => [player.id, cards.map((entry) => entry.uid)]))
       roomState.revealedCardDefs = Object.fromEntries(revealed.map(([player, cards]) => [player.id, cards.map((entry) => entry.defId)]))
     }
+    let eventEnemyDecks = state.enemyDecks
     if (card.id === 'downfall_event_act3_mysterious_sphere') {
+      eventEnemyDecks = cloneEnemyDecks(state.enemyDecks)
       const players = roomPlayers.map((player) => readyForCombat(rng, player))
-      const encounter = buildEncounter(rng, enemyDecks, state.act, players, 'encounter', false, state.ascension, undefined, undefined, state.meta.campaign ?? state.meta.ruleset)
+      const encounter = buildEncounter(rng, eventEnemyDecks, state.act, players, 'encounter', false, state.ascension, undefined, undefined, state.meta.campaign ?? state.meta.ruleset)
       const prepared = createCombat(
         rng, players, encounter.enemies, room.id, state.potionDeck,
         state.ascension >= 4 ? 2 : 3, encounter.summonSupply, state.lastStand, state.meta.ruleset,
@@ -211,6 +212,7 @@ export function enterRoom(state: RunState, roomId: string, wingBootsPlayerId?: s
     }
     return mirrorItemSupplies({
       ...next,
+      enemyDecks: eventEnemyDecks,
       phase: 'room',
       eventDeck,
       eventsVisited: state.eventsVisited + 1,
@@ -272,9 +274,8 @@ export function resolveCombat(state: RunState): RunState {
     ? undefined : Math.max(0, state.combatsFinished) + 1
 
   const epitaph = combat.log.filter((line) => !/^Turn \d+ begins/.test(line)).slice(-COMBAT_EPITAPH)
-  const itemDecks = structuredClone(state.itemDecks)
-  itemDecks.potions = [...combat.potionDeck]
   if (combat.phase === 'lost') {
+    const itemDecks = { ...state.itemDecks, potions: [...combat.potionDeck] }
     return {
       ...state,
       phase: 'defeat',
@@ -294,6 +295,8 @@ export function resolveCombat(state: RunState): RunState {
       log: [...state.log, ...epitaph, 'The party has fallen.'],
     }
   }
+  const itemDecks = cloneItemDecks(state.itemDecks)
+  itemDecks.potions = [...combat.potionDeck]
 
   const room = currentRoom(state.map)
   const wasBoss = room?.kind === 'boss' && !state.eventCombat

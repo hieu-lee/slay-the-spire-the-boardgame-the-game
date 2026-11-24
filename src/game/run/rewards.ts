@@ -15,7 +15,7 @@ import {
   nextRunUid,
   victoryIsTerminal,
 } from './rules.ts'
-import { mirrorItemSupplies, mirrorLegacySupplies } from './supplies.ts'
+import { cloneItemDecks, mirrorItemSupplies, mirrorLegacySupplies } from './supplies.ts'
 import type { CardRewardOffer, PotionRewardDecision, RewardSource, RunState } from './types.ts'
 import {
   addCard,
@@ -976,7 +976,7 @@ export function chooseRelicReward(state: RunState, playerId: string, decision: T
   const reward = decideRelicReward(state.roomState, playerId, decision)
   if (!reward) return state
   if (!reward.playerIds.every((id) => reward.decisions[id] !== undefined)) return { ...state, roomState: reward }
-  const itemDecks = structuredClone(state.itemDecks)
+  const itemDecks = cloneItemDecks(state.itemDecks)
   const resolved = resolveRoomRelicReward(reward, itemDecks, state.players, state.campaign.keys.sapphire,
     state.ascension)
   if (!resolved) return state

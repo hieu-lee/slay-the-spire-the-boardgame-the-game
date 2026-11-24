@@ -1,6 +1,6 @@
 // The merchant: buying, removing a card, and the Courier's offer.
 import { finishQuickSetup } from './quick-setup.ts'
-import { mirrorItemSupplies } from './supplies.ts'
+import { cloneItemDecks, mirrorItemSupplies } from './supplies.ts'
 import type { RunState } from './types.ts'
 import { drawItems } from '../acquisition.ts'
 import { currentQuickSetupStep } from '../meta.ts'
@@ -14,7 +14,7 @@ export function purchaseAtMerchant(state: RunState, purchase: MerchantPurchase):
   const eligible = state.setup?.kind === 'catch-up'
     ? state.players.filter((player) => state.setup!.playerIds.includes(player.id)) : state.players
   if (!eligible.some((player) => player.id === purchase.buyerId)) return state
-  const itemDecks = structuredClone(state.itemDecks)
+  const itemDecks = cloneItemDecks(state.itemDecks)
   itemDecks.potions = [...state.potionDeck]
   const result = buyFromMerchant(state.roomState, itemDecks, eligible, state.ascension, purchase)
   const byId = result && new Map(result.players.map((player) => [player.id, player]))
@@ -49,7 +49,7 @@ export function removeAtCurrentMerchant(
 
 export function finishMerchant(state: RunState): RunState {
   if (state.phase !== 'room' || state.roomState?.kind !== 'merchant' || hasPendingRelicAcquisition(state)) return state
-  const itemDecks = structuredClone(state.itemDecks)
+  const itemDecks = cloneItemDecks(state.itemDecks)
   const eligible = state.setup?.kind === 'catch-up'
     ? state.players.filter((player) => state.setup!.playerIds.includes(player.id)) : state.players
   const closed = closeMerchant(state.roomState, itemDecks, eligible)
@@ -65,8 +65,9 @@ export function revealCourier(state: RunState, playerId: string, kind: CourierOf
   if (state.phase !== 'combat' || !state.combat || ['won', 'lost'].includes(state.combat.phase) || state.courier.offer || state.courier.usedBy.includes(playerId)) return state
   const player = state.combat.players.find((candidate) => candidate.id === playerId && !candidate.dead)
   if (!player?.relics.some((relic) => relic.defId === 'the_courier')) return state
-  const itemDecks = structuredClone(state.itemDecks)
-  if (kind === 'potion') itemDecks.potions = [...state.combat.potionDeck]
+  const itemDecks = kind === 'potion'
+    ? { ...state.itemDecks, potions: [...state.combat.potionDeck] }
+    : { ...state.itemDecks, relics: [...state.itemDecks.relics] }
   const deck = kind === 'relic' ? itemDecks.relics : itemDecks.potions
   const blocked = kind === 'relic' ? new Set(['old_coin']) : new Set<string>()
   const id = drawItems(deck, 1, blocked)[0]
@@ -87,8 +88,9 @@ export function decideCourier(
 ): RunState {
   const offer = state.courier.offer
   if (state.phase !== 'combat' || !state.combat || ['won', 'lost'].includes(state.combat.phase) || !offer || offer.playerId !== playerId) return state
-  const itemDecks = structuredClone(state.itemDecks)
-  if (offer.kind === 'potion') itemDecks.potions = [...state.combat.potionDeck]
+  const itemDecks = offer.kind === 'potion'
+    ? { ...state.itemDecks, potions: [...state.combat.potionDeck] }
+    : { ...state.itemDecks, relics: [...state.itemDecks.relics] }
   const combatPlayers = resolveCourierOffer(offer, itemDecks, state.combat.players, state.ascension, decision === 'buy', payments, discardPotionId)
   if (!combatPlayers) return state
   const byId = new Map(combatPlayers.map((player) => [player.id, player]))

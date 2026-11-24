@@ -19,6 +19,7 @@ import {
   hasRelic,
   nextRunUid,
 } from './rules.ts'
+import { clone } from '../clone.ts'
 import { mirrorLegacySupplies } from './supplies.ts'
 import type { PotionRewardDecision, RewardSource, RunState } from './types.ts'
 import { bottomGuardianGems, queueNewGuardianSockets, revealGuardianDraftGems } from '../guardian-gems.ts'
@@ -196,7 +197,7 @@ export function neowPreview(state: RunState, playerId: string, viewerId = player
   const player = state.players.find((candidate) => candidate.id === playerId)
   const rewardKind = progress.redRewardPending ? 'card' : progress.rewardKind
   const visibleOffer = (offer: NeowRewardOffer | null) => !offer || playerId === viewerId ||
-    !['card', 'rare', 'colorless'].includes(offer.kind) ? structuredClone(offer) : {
+    !['card', 'rare', 'colorless'].includes(offer.kind) ? clone(offer) : {
     ...offer,
     choices: [],
     cardsDrawn: [],
@@ -209,7 +210,7 @@ export function neowPreview(state: RunState, playerId: string, viewerId = player
     redRewardPending: progress.redRewardPending,
     redReward: visibleOffer(progress.redReward),
     blueOption: progress.blueOption,
-    pendingEffect: structuredClone(progress.pendingEffect),
+    pendingEffect: clone(progress.pendingEffect),
     ...(playerId === viewerId && progress.transformExcludedUids?.length
       ? { transformExcludedUids: [...progress.transformExcludedUids] } : {}),
     rewardKind: progress.rewardKind,

@@ -5,12 +5,49 @@
 // fields that saved runs and the room server still read — so every change to
 // one has to be mirrored onto the other or a physical item gets handed out
 // twice.
-import type { RunState } from './types.ts'
+import type { EnemyDecks, RunState } from './types.ts'
 import type { ItemDecks } from '../acquisition.ts'
 import { isColorlessUnlocked } from '../campaign.ts'
 import { potionDef } from '../relics.ts'
 import { cardPackOf } from '../packs.ts'
 import type { MerchantItemDecks } from '../noncombat.ts'
+import type { CharacterId } from '../types.ts'
+
+/** Shallow-copies every mutable array inside `ItemDecks` without `structuredClone`. */
+export function cloneItemDecks(decks: ItemDecks): ItemDecks {
+  const characterCards: ItemDecks['characterCards'] = {}
+  for (const key in decks.characterCards) {
+    if (Object.prototype.hasOwnProperty.call(decks.characterCards, key)) {
+      const list = decks.characterCards[key as CharacterId]
+      if (list) characterCards[key as CharacterId] = [...list]
+    }
+  }
+  const characterRares: ItemDecks['characterRares'] = {}
+  for (const key in decks.characterRares) {
+    if (Object.prototype.hasOwnProperty.call(decks.characterRares, key)) {
+      const list = decks.characterRares[key as CharacterId]
+      if (list) characterRares[key as CharacterId] = [...list]
+    }
+  }
+  return {
+    relics: [...decks.relics],
+    potions: [...decks.potions],
+    colorless: [...decks.colorless],
+    curses: [...decks.curses],
+    characterCards,
+    characterRares,
+  }
+}
+
+/** Shallow-copies the encounter arrays in `EnemyDecks` (encounter definitions are immutable). */
+export function cloneEnemyDecks(decks: EnemyDecks): EnemyDecks {
+  return {
+    act: decks.act,
+    first: [...decks.first],
+    encounter: [...decks.encounter],
+    elite: [...decks.elite],
+  }
+}
 
 /** Keep the compatibility deck fields as mirrors of the one physical item supply. */
 export function mirrorItemSupplies(state: RunState, itemDecks: ItemDecks): RunState {

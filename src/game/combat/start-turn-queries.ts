@@ -100,19 +100,157 @@ export function startTurnDiscardPreview(state: CombatState): StartTurnDiscardPre
   }
 }
 
-function stableGameplayValue(value: unknown): unknown {
-  return Array.isArray(value) ? value.map(stableGameplayValue) :
-    value && typeof value === 'object' ? Object.fromEntries(Object.entries(value)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => [key, stableGameplayValue(entry)])) : value
+const hasOwn = Object.prototype.hasOwnProperty
+const JSON_ESCAPE_RE = /["\\\x00-\x1f]/
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object'
+}
+
+function quoteJsonString(value: string): string {
+  return JSON_ESCAPE_RE.test(value) ? JSON.stringify(value) : `"${value}"`
+}
+
+function stableJsonString(value: unknown): string {
+  if (value === null) return 'null'
+  const kind = typeof value
+  if (kind === 'number') return Number.isFinite(value) ? `${value}` : 'null'
+  if (kind === 'boolean') return value ? 'true' : 'false'
+  if (kind === 'string') return quoteJsonString(value as string)
+  if (Array.isArray(value)) {
+    const length = value.length
+    if (length === 0) return '[]'
+    let out = '['
+    for (let index = 0; index < length; index++) {
+      if (index > 0) out += ','
+      const item = value[index]
+      out += item === undefined ? 'null' : stableJsonString(item)
+    }
+    return `${out}]`
+  }
+  if (isPlainRecord(value)) {
+    const keys = Object.keys(value)
+    const length = keys.length
+    if (length === 0) return '{}'
+    if (length > 1) {
+      let sorted = true
+      for (let index = 1; index < length; index++) {
+        if (keys[index - 1]! > keys[index]!) { sorted = false; break }
+      }
+      if (!sorted) keys.sort()
+    }
+    let out = '{'
+    let first = true
+    for (let index = 0; index < length; index++) {
+      const key = keys[index]!
+      const entry = value[key]
+      if (entry === undefined) continue
+      if (!first) out += ','
+      first = false
+      out += `${quoteJsonString(key)}:${stableJsonString(entry)}`
+    }
+    return `${out}}`
+  }
+  return 'null'
 }
 
 export function gameplaySignature(state: CombatState): string {
-  const { log: _log, presentationEvents: _presentationEvents, ...gameplay } = state
-  return JSON.stringify(stableGameplayValue({
-    ...gameplay,
-    powerTriggersUsedThisTurn: [...gameplay.powerTriggersUsedThisTurn].sort(),
-  }))
+  const value: unknown = state
+  if (!isPlainRecord(value)) return 'null'
+  const keys = Object.keys(value).sort()
+  let out = '{'
+  let first = true
+  for (let index = 0; index < keys.length; index++) {
+    const key = keys[index]!
+    if (key === 'log' || key === 'presentationEvents') continue
+    const entry = key === 'powerTriggersUsedThisTurn'
+      ? [...state.powerTriggersUsedThisTurn].sort()
+      : value[key]
+    if (entry === undefined) continue
+    if (!first) out += ','
+    first = false
+    out += `${quoteJsonString(key)}:${stableJsonString(entry)}`
+  }
+  return `${out}}`
+}
+
+function rawGameplayKey(state: CombatState): string {
+  return JSON.stringify({ ...state, log: undefined, presentationEvents: undefined })
+}
+
+function sameStringBag(left: readonly string[], right: readonly string[]): boolean {
+  const length = left.length
+  if (length !== right.length) return false
+  if (length === 0) return true
+  if (length === 1) return left[0] === right[0]
+  const sortedLeft = [...left].sort()
+  const sortedRight = [...right].sort()
+  for (let index = 0; index < length; index++) {
+    if (sortedLeft[index] !== sortedRight[index]) return false
+  }
+  return true
+}
+
+function jsonValuesEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true
+  if (typeof left === 'number' && typeof right === 'number') {
+    return !Number.isFinite(left) && !Number.isFinite(right)
+  }
+  if (Array.isArray(left)) {
+    if (!Array.isArray(right) || left.length !== right.length) return false
+    for (let index = 0; index < left.length; index++) {
+      const lv = left[index]
+      const rv = right[index]
+      if (lv === rv) continue
+      if ((lv === undefined || lv === null) && (rv === undefined || rv === null)) continue
+      if (!jsonValuesEqual(lv, rv)) return false
+    }
+    return true
+  }
+  if (Array.isArray(right) || !isPlainRecord(left) || !isPlainRecord(right)) return false
+  let leftCount = 0
+  for (const key in left) {
+    if (!hasOwn.call(left, key)) continue
+    const lv = left[key]
+    if (lv === undefined) continue
+    leftCount++
+    if (!hasOwn.call(right, key)) return false
+    const rv = right[key]
+    if (lv !== rv && !jsonValuesEqual(lv, rv)) return false
+  }
+  let rightCount = 0
+  for (const key in right) {
+    if (hasOwn.call(right, key) && right[key] !== undefined) rightCount++
+  }
+  return leftCount === rightCount
+}
+
+function gameplayStatesEqual(left: CombatState, right: CombatState): boolean {
+  if (left === right) return true
+  const leftValue: unknown = left
+  const rightValue: unknown = right
+  if (!isPlainRecord(leftValue) || !isPlainRecord(rightValue)) return false
+  let leftCount = 0
+  for (const key in leftValue) {
+    if (!hasOwn.call(leftValue, key) || key === 'log' || key === 'presentationEvents') continue
+    const lv = leftValue[key]
+    if (lv === undefined) continue
+    leftCount++
+    if (!hasOwn.call(rightValue, key)) return false
+    if (key === 'powerTriggersUsedThisTurn') {
+      if (!sameStringBag(left.powerTriggersUsedThisTurn, right.powerTriggersUsedThisTurn)) return false
+      continue
+    }
+    const rv = rightValue[key]
+    if (lv !== rv && !jsonValuesEqual(lv, rv)) return false
+  }
+  let rightCount = 0
+  for (const key in rightValue) {
+    if (hasOwn.call(rightValue, key) && key !== 'log' && key !== 'presentationEvents' && rightValue[key] !== undefined) {
+      rightCount++
+    }
+  }
+  return leftCount === rightCount
 }
 
 export function triggerTargets(state: CombatState, player: Player, source: TriggerSource) {
@@ -123,19 +261,19 @@ export function triggerTargets(state: CombatState, player: Player, source: Trigg
 }
 
 /** One physical anchor per distinct row outcome; bosses belong to every row. */
-function triggerChoiceSignature(
+function triggerChoiceOutcome(
   state: CombatState,
   player: Player,
   source: TriggerSource,
   enemyUid?: string,
   targetPlayerId?: string,
-): string | undefined {
+): CombatState | undefined {
   const next = clone(state)
   const actor = findPlayer(next, player.id)
   const liveSource = actor && triggerSourceById(actor, source.id)
   if (!actor || !liveSource ||
     !resolveTriggerSource(next, actor, liveSource, { enemyUid, targetPlayerId })) return undefined
-  return gameplaySignature(next)
+  return next
 }
 
 const EQUIVALENT_TARGET_VERDICT_LIMIT = 128
@@ -148,22 +286,25 @@ function equivalentTriggerTargets<T extends { uid?: string; id?: string }>(
   source: TriggerSource,
   targets: readonly T[],
   playerTargets = false,
+  getStateKey?: () => string,
 ): T[] {
   if (targets.length < 2) return [...targets]
   // Planning replays the same board for every ability, seat and snapshot, and
-  // each probe clones and serialises the whole combat; reuse the verdict.
-  const key = `${gameplaySignature(state)}|${player.id}|${source.id}|${playerTargets ? 'p' : 'e'}|` +
+  // each probe clones the combat; reuse the verdict.
+  const stateKey = getStateKey ? getStateKey() : rawGameplayKey(state)
+  const key = `${stateKey}|${player.id}|${source.id}|${playerTargets ? 'p' : 'e'}|` +
     targets.map((target) => target.uid ?? target.id).join(',')
   let collapses = equivalentTargetVerdicts.get(key)
   if (collapses === undefined) {
-    const signatureFor = (target: T) => triggerChoiceSignature(
+    const outcomeFor = (target: T) => triggerChoiceOutcome(
       state, player, source, playerTargets ? undefined : target.uid,
       playerTargets ? target.id : undefined,
     )
-    const first = signatureFor(targets[0]!)
+    const first = outcomeFor(targets[0]!)
     collapses = first !== undefined
     for (let index = 1; collapses && index < targets.length; index++) {
-      collapses = signatureFor(targets[index]!) === first
+      const other = outcomeFor(targets[index]!)
+      collapses = other !== undefined && gameplayStatesEqual(first!, other)
     }
     if (equivalentTargetVerdicts.size >= EQUIVALENT_TARGET_VERDICT_LIMIT) equivalentTargetVerdicts.clear()
     equivalentTargetVerdicts.set(key, collapses)
@@ -171,30 +312,62 @@ function equivalentTriggerTargets<T extends { uid?: string; id?: string }>(
   return collapses ? [targets[0]!] : [...targets]
 }
 
-function startTurnTriggerTargets(state: CombatState, player: Player, source: TriggerSource) {
+function startTurnTriggerTargets(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  getStateKey?: () => string,
+) {
   const targets = triggerTargets(state, player, source)
   if (!targets) return targets
-  if (source.scope !== 'row') return equivalentTriggerTargets(state, player, source, targets)
+  if (source.scope !== 'row') return equivalentTriggerTargets(state, player, source, targets, false, getStateKey)
   const minions = livingEnemies(state).filter((enemy) => !enemy.isBoss)
-  if (minions.length === 0) return equivalentTriggerTargets(state, player, source, targets.slice(0, 1))
+  if (minions.length === 0) return equivalentTriggerTargets(state, player, source, targets.slice(0, 1), false, getStateKey)
   const rows = new Set<number>()
   const rowTargets = minions.flatMap((enemy) => rows.has(enemy.row) ? [] : (
     rows.add(enemy.row), [{ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) }]
   ))
-  return equivalentTriggerTargets(state, player, source, rowTargets)
+  return equivalentTriggerTargets(state, player, source, rowTargets, false, getStateKey)
 }
 
-function startTurnTriggerPlayers(state: CombatState, player: Player, source: TriggerSource) {
+function startTurnTriggerPlayers(
+  state: CombatState,
+  player: Player,
+  source: TriggerSource,
+  getStateKey?: () => string,
+) {
   return triggerNeedsPlayerChoice(state, source)
     ? equivalentTriggerTargets(state, player, source, state.players
       .filter((candidate) => !candidate.dead)
-      .map((candidate) => ({ id: candidate.id, label: candidate.name })), true)
+      .map((candidate) => ({ id: candidate.id, label: candidate.name })), true, getStateKey)
     : undefined
 }
 
-export function startTurnSources(state: CombatState, includeDeadPlayers = false): StartTurnSource[] {
+export function startTurnSources(
+  state: CombatState,
+  includeDeadPlayers = false,
+  onlyId?: string,
+): StartTurnSource[] {
   if (state.phase !== 'start' || state.startTurnProgress?.beforeDraw || state.startTurnProgress?.rollPending ||
     state.startTurnProgress?.pauseAfterDraw || state.startTurnProgress?.discard) return []
+  let cachedStateKey: string | undefined
+  const getStateKey = () => (cachedStateKey ??= rawGameplayKey(state))
+  const owner = state.players.find((player) => !player.dead)
+  if (state.startTurnStage === 'facing') {
+    if (!owner) return []
+    const facing = livingEnemies(state).filter((enemy) =>
+      enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'facing'))
+    return state.players.filter((player) => !player.dead && (onlyId === undefined || `facing:${player.id}` === onlyId)).map((player) => ({
+      facingPlayerId: player.id,
+      ability: {
+        id: `facing:${player.id}`,
+        playerId: player.id,
+        label: `${player.name} — choose Facing`,
+        targets: [...facing.map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) })),
+          ...(facing.length === 1 ? [{ uid: 'none', label: 'No Facing enemy' }] : [])],
+      },
+    }))
+  }
   const events: TriggerEvent[] = [
     ...(state.turn === 1 ? [{ kind: 'startOfCombat' as const }] : []),
     { kind: 'startOfTurn' },
@@ -204,8 +377,11 @@ export function startTurnSources(state: CombatState, includeDeadPlayers = false)
     player.dead && !includeDeadPlayers ? [] :
     // Earlier effects can change a condition (Mayhem can enter Calm for Study).
     // Keep the source in the order and evaluate its effects when it resolves.
-    triggerSources(player, event).filter((source) =>
-      !state.powerTriggersUsedThisTurn.includes(`${player.id}/${source.id}`))
+    triggerSources(player, event).filter((source) => {
+      const abilityId = `${player.id}/${source.id}`
+      return (onlyId === undefined || abilityId === onlyId) &&
+        !state.powerTriggersUsedThisTurn.includes(abilityId)
+    })
       .map((source) => ({
         source,
         ability: {
@@ -215,29 +391,15 @@ export function startTurnSources(state: CombatState, includeDeadPlayers = false)
           visual: source.id.startsWith('relic:')
             ? { kind: 'relic' as const, relicId: source.presentationSourceId }
             : source.powerUid ? { kind: 'card' as const, cardUid: source.powerUid } : undefined,
-          targets: startTurnTriggerTargets(state, player, source),
-          players: startTurnTriggerPlayers(state, player, source),
+          targets: startTurnTriggerTargets(state, player, source, getStateKey),
+          players: startTurnTriggerPlayers(state, player, source, getStateKey),
         },
       }))))
-  const owner = state.players.find((player) => !player.dead)
-  if (state.startTurnStage === 'facing') {
-    const facing = livingEnemies(state).filter((enemy) =>
-      enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'facing'))
-    return owner ? state.players.filter((player) => !player.dead).map((player) => ({
-      facingPlayerId: player.id,
-      ability: {
-        id: `facing:${player.id}`,
-        playerId: player.id,
-        label: `${player.name} — choose Facing`,
-        targets: [...facing.map((enemy) => ({ uid: enemy.uid, label: enemyLabel(state.enemies, enemy) })),
-          ...(facing.length === 1 ? [{ uid: 'none', label: 'No Facing enemy' }] : [])],
-      },
-    })) : []
-  }
   const enemySources: StartTurnSource[] = []
   const guardianSources: StartTurnSource[] = state.players.filter((player) =>
     (includeDeadPlayers || !player.dead) && player.character === 'guardian' &&
-    player.guardianMode !== null && !player.guardianModeLocked)
+    player.guardianMode !== null && !player.guardianModeLocked &&
+    (onlyId === undefined || `guardian:${player.id}/mode-shift` === onlyId))
     .map((player) => ({
       guardianModeShiftPlayerId: player.id,
       ability: {
@@ -248,16 +410,19 @@ export function startTurnSources(state: CombatState, includeDeadPlayers = false)
       },
     }))
   if (owner) for (const enemy of livingEnemies(state)) {
+    const id = `enemy:${enemy.uid}/starting-block`
+    if (onlyId !== undefined && id !== onlyId) continue
     const def = enemyDef(enemy.defId, enemy.ascension)
     const amount = state.turn === 1 ? def.startingBlock ?? 0 : 0
     if (amount > 0) enemySources.push({
       enemyUid: enemy.uid, enemyBlock: amount,
-      ability: { id: `enemy:${enemy.uid}/starting-block`, playerId: owner.id,
+      ability: { id, playerId: owner.id,
         label: `${enemyLabel(state.enemies, enemy)} — ${amount} Block` },
     })
   }
-  const regrow = owner && state.enemies.some((enemy) => enemy.dead &&
-    (enemy.defId.startsWith('darkling') || enemy.defId.startsWith('downfall_darkling_'))) &&
+  const regrow = owner && (onlyId === undefined || onlyId === 'enemy:darkling/regrow') &&
+    state.enemies.some((enemy) => enemy.dead &&
+      (enemy.defId.startsWith('darkling') || enemy.defId.startsWith('downfall_darkling_'))) &&
     livingEnemies(state).find((enemy) =>
       enemyAbilities(enemyDef(enemy.defId, enemy.ascension)).some((ability) => ability.kind === 'regrow'))
   if (owner && regrow) enemySources.push({
@@ -365,31 +530,30 @@ export function startTurnAbilitiesFor(
   return ids.map((id) => {
     const entry = byId.get(id)!
     if (planningEnded) return { ...entry.ability, targets: undefined, overflowShivs: 0 }
-    const simulationState = clone(plannedState)
-    const player = findPlayer(simulationState, entry.ability.playerId)!
+    const readPlayer = findPlayer(plannedState, entry.ability.playerId)!
     const parkedByEarlier = forcedCardParked
-    if (player.dead) return {
+    if (readPlayer.dead) return {
       id: entry.ability.id,
       playerId: entry.ability.playerId,
       label: entry.ability.label,
       overflowShivs: 0,
     }
-    const planningPlayer = player
     // Slayer Pack: Planned behind an ability that takes this Power out of play.
-    if (entry.source?.powerUid && !player.powers.some((power) => power.uid === entry.source!.powerUid)) {
+    if (entry.source?.powerUid && !readPlayer.powers.some((power) => power.uid === entry.source!.powerUid)) {
       return { ...entry.ability, targets: undefined, players: undefined, overflowShivs: 0 }
     }
-    const plannedEnemies = simulationState.enemies
-    const targetOptions = () => plannedEnemies.filter((enemy) => !enemy.dead)
-      .map((enemy) => ({ uid: enemy.uid, label: enemyLabel(plannedEnemies, enemy) }))
     const choice = choiceById.get(id)
     if (!entry.source) {
       if (entry.guardianModeShiftPlayerId && choice?.guardianModeShift) {
+        const simulationState = clone(plannedState)
+        const planningPlayer = findPlayer(simulationState, entry.ability.playerId)!
         planningPlayer.guardianMode = shiftGuardianMode(planningPlayer.guardianMode!)
         plannedState = simulationState
       }
-      const enemy = entry.enemyUid && plannedEnemies.find((candidate) => candidate.uid === entry.enemyUid)
-      if (!planningBlocked && enemy) {
+      if (!planningBlocked && entry.enemyUid &&
+        plannedState.enemies.some((candidate) => candidate.uid === entry.enemyUid)) {
+        const simulationState = clone(plannedState)
+        const enemy = simulationState.enemies.find((candidate) => candidate.uid === entry.enemyUid)!
         if (entry.enemyAction) applyEnemyAction(simulationState, enemy, entry.enemyAction)
         else enemy.block = gainBlock(enemy.block, entry.enemyBlock ?? 0)
         plannedState = simulationState
@@ -398,29 +562,44 @@ export function startTurnAbilitiesFor(
     }
     const players = entry.ability.players
       ? plannedState === state ? entry.ability.players
-        : startTurnTriggerPlayers(simulationState, planningPlayer, entry.source)
+        : startTurnTriggerPlayers(plannedState, readPlayer, entry.source)
       : undefined
     const playerTargetStale = Boolean(players &&
       !players.some((candidate) => candidate.id === choice?.targetPlayerId))
     if (playerTargetStale) planningBlocked = true
     const shivs = entry.source.effects.reduce((sum, effect) => sum + (
-      effect.kind === 'gainShiv' && effectIsActive(effect, plannedState, player) ? effect.amount : 0
+      effect.kind === 'gainShiv' && effectIsActive(effect, plannedState, readPlayer) ? effect.amount : 0
     ), 0)
     const gained = Math.min(Math.max(0, CAPS.shivs - plannedShivs), shivs)
     const overflowShivs = shivs - gained
     plannedShivs += gained
     const targets = entry.ability.targets
       ? plannedState === state ? entry.ability.targets
-        : startTurnTriggerTargets(simulationState, planningPlayer, entry.source!)
+        : startTurnTriggerTargets(plannedState, readPlayer, entry.source!)
       : undefined
     const enemyTargetStale = Boolean(targets?.length && choice?.enemyUid !== undefined &&
       !targets.some((target) => target.uid === choice.enemyUid))
     if (entry.ability.targets && targets!.length > 0 &&
       (choice?.enemyUid === undefined || enemyTargetStale)) planningBlocked = true
+    let simulationState: CombatState | undefined
+    let planningPlayer = readPlayer
+    const ensureSimulation = () => {
+      if (!simulationState) {
+        simulationState = clone(plannedState)
+        planningPlayer = findPlayer(simulationState, entry.ability.playerId)!
+      }
+      return simulationState
+    }
+    const currentState = () => simulationState ?? plannedState
+    const targetOptions = () => {
+      const enemies = currentState().enemies
+      return enemies.filter((enemy) => !enemy.dead)
+        .map((enemy) => ({ uid: enemy.uid, label: enemyLabel(enemies, enemy) }))
+    }
     let staleShivIndex: number | undefined
     let shivTargets: StartTurnAbility['shivTargets']
     let shivEndedCombat = false
-    if (!planningBlocked) {
+    if (!planningBlocked && overflowShivs > 0) {
       const chosenShivs = choice?.shivEnemyUids ?? []
       for (let index = 0; !planningBlocked && index < overflowShivs; index++) {
         if (index >= chosenShivs.length) {
@@ -431,7 +610,7 @@ export function startTurnAbilitiesFor(
         }
         const uid = chosenShivs[index]
         if (uid == null) continue
-        const target = plannedEnemies.find((enemy) => !enemy.dead && enemy.uid === uid)
+        const target = currentState().enemies.find((enemy) => !enemy.dead && enemy.uid === uid)
         if (!target) {
           if (targetOptions().length === 0) continue
           staleShivIndex = index
@@ -439,7 +618,8 @@ export function startTurnAbilitiesFor(
           planningBlocked = true
           break
         }
-        resolveShivAttack(simulationState, planningPlayer, uid, 1 + planningPlayer.shivDamageBonus,
+        const sim = ensureSimulation()
+        resolveShivAttack(sim, planningPlayer, uid, 1 + planningPlayer.shivDamageBonus,
           { enemyUid: uid, playerId: null })
         if (planningPlayer.dead || targetOptions().length === 0) {
           shivEndedCombat = true
@@ -456,14 +636,15 @@ export function startTurnAbilitiesFor(
     let evokeEndedCombat = false
     let evokePlanOrbs: (OrbType | null)[] | undefined
     if (!planningBlocked) {
-      const plan = effectEvokePlan(entry.source.effects, planningPlayer, choice?.evokeSlots ?? [], simulationState.die)
+      const plan = effectEvokePlan(entry.source.effects, planningPlayer, choice?.evokeSlots ?? [], currentState().die)
       evokeOrbs = plan.chosen
       if (plan.chosen.length > 0 || plan.next) evokePlanOrbs = plan.orbs
       for (let index = 0; index < plan.chosen.length; index++) {
         const orb = plan.chosen[index]
         if (orb === 'frost') continue
+        const sim = ensureSimulation()
         const damageTargets = orbDamageTargets(
-          simulationState, planningPlayer, orb!, choice?.evokeEnemyUids?.[index],
+          sim, planningPlayer, orb!, choice?.evokeEnemyUids?.[index],
         )
         if (!damageTargets && targetOptions().length === 0) {
           // The last enemy fell but its Summons are pending, so the combat goes on with nothing to hit.
@@ -473,17 +654,17 @@ export function startTurnAbilitiesFor(
         if (!damageTargets) {
           evokeTargetIndex = index
           evokeTargets = orb === 'lightning'
-            ? lightningTargetOptions(simulationState, planningPlayer)
+            ? lightningTargetOptions(sim, planningPlayer)
             : targetOptions()
           planningBlocked = true
           break
         }
         for (const target of damageTargets) {
-          damageEnemy(simulationState, target, (orb === 'lightning' ? 2 :
-            3 + player.powers.length + (player.darkOrbEvokeBonus ?? 0)) +
-            (player.orbEvokeBonus ?? 0))
+          damageEnemy(sim, target, (orb === 'lightning' ? 2 :
+            3 + planningPlayer.powers.length + (planningPlayer.darkOrbEvokeBonus ?? 0)) +
+            (planningPlayer.orbEvokeBonus ?? 0))
         }
-        if (combatIsOver(simulationState)) {
+        if (combatIsOver(sim)) {
           evokeEndedCombat = true
           break
         }
@@ -494,7 +675,6 @@ export function startTurnAbilitiesFor(
           evokeTargets = targetOptions()
           planningBlocked = true
         } else {
-          planningPlayer.orbs = plan.orbs
           evokePlanComplete = true
         }
       }
@@ -530,7 +710,7 @@ export function startTurnAbilitiesFor(
     return {
       ...entry.ability, targets, enemyTargetStale, players,
       exhaustCards: entry.source.effects.some((effect) => effect.kind === 'exhaustFromHand')
-        ? planningPlayer.hand.length > 0 ? planningPlayer.hand : undefined
+        ? planningPlayer.hand.length > 0 ? clone(planningPlayer.hand) : undefined
         : undefined,
       overflowShivs: shivEndedCombat ? choice?.shivEnemyUids.length ?? 0 : overflowShivs,
       staleShivIndex, shivTargets,
@@ -556,10 +736,12 @@ export function defaultStartTurnChoicesForOrder(
   choicePlayers?: Set<string>,
   enemyTargets?: ReadonlyMap<string, string>,
   committedChoices: readonly StartTurnChoice[] = [],
+  knownSources?: readonly StartTurnSource[],
 ): StartTurnChoice[] {
+  const sources = knownSources ?? pendingStartTurnSources(state)
   const committedById = new Map(committedChoices.map((choice) => [choice.id, choice]))
   let lastEnemyUid: string | undefined
-  const choices = startTurnAbilities(state, order).map((ability) => {
+  const choices = startTurnAbilitiesFor(state, sources, order).map((ability) => {
     const committed = committedById.get(ability.id)
     return committed ? {
       ...committed,
@@ -578,7 +760,7 @@ export function defaultStartTurnChoicesForOrder(
     }
   })
   while (true) {
-    const abilities = startTurnAbilities(state, order, choices)
+    const abilities = startTurnAbilitiesFor(state, sources, order, choices)
     for (const ability of abilities) if (
       (ability.exhaustCards?.length ?? 0) > 1 || ability.overflowShivs > 0 || ability.guardianModeShift ||
       (ability.targets?.length ?? 0) > 1 || (ability.players?.length ?? 0) > 1 ||
@@ -672,10 +854,12 @@ export function startTurnOrderChoicePlayerIdWithResolver(
   state: CombatState,
   resolveStart: (state: CombatState, choices: readonly StartTurnChoice[]) => CombatState,
   knownAbilities?: readonly StartTurnAbility[],
+  knownSources?: readonly StartTurnSource[],
 ): string | undefined {
-  const abilities = knownAbilities ?? startTurnAbilities(state)
+  if (knownAbilities && knownAbilities.length < 2) return undefined
+  const entries = knownSources ?? pendingStartTurnSources(state)
+  const abilities = knownAbilities ?? startTurnAbilitiesFor(state, entries)
   if (abilities.length < 2) return undefined
-  const entries = pendingStartTurnSources(state)
   const entriesById = new Map(entries.map((entry) => [entry.ability.id, entry]))
   const sources = new Map(entries.map((entry) => [entry.ability.id, entry.source]))
   const candidateIds = new Set<string>()
@@ -868,12 +1052,20 @@ export function startTurnOrderChoicePlayerIdWithResolver(
   const order = abilities.map((ability) => ability.id)
   const maxExactSimulations = abilities.length <= 2 ? Number.POSITIVE_INFINITY : 32
   let simulations = 0
-  const outcome = (ids: readonly string[], targets?: ReadonlyMap<string, string>) => {
+  type OrderOutcome = { resolved: CombatState; choicePlayers: string[] }
+  const outcome = (ids: readonly string[], targets?: ReadonlyMap<string, string>): OrderOutcome => {
     simulations += 1
     const choicePlayers = new Set<string>()
     const resolved = resolveStart(state,
-      defaultStartTurnChoicesForOrder(state, ids, choicePlayers, targets))
-    return `${gameplaySignature(resolved)}|${[...choicePlayers].sort().join(',')}`
+      defaultStartTurnChoicesForOrder(state, ids, choicePlayers, targets, [], entries))
+    return { resolved, choicePlayers: [...choicePlayers].sort() }
+  }
+  const outcomesEqual = (left: OrderOutcome, right: OrderOutcome): boolean => {
+    if (left.choicePlayers.length !== right.choicePlayers.length) return false
+    for (let index = 0; index < left.choicePlayers.length; index++) {
+      if (left.choicePlayers[index] !== right.choicePlayers[index]) return false
+    }
+    return gameplayStatesEqual(left.resolved, right.resolved)
   }
   const canonical = outcome(order)
   for (const id of candidateIds) {
@@ -885,7 +1077,7 @@ export function startTurnOrderChoicePlayerIdWithResolver(
       }
       const moved = order.filter((candidate) => candidate !== id)
       moved.splice(to, 0, id)
-      if (outcome(moved) !== canonical) return abilities.find((ability) => ability.id === id)?.playerId
+      if (!outcomesEqual(outcome(moved), canonical)) return abilities.find((ability) => ability.id === id)?.playerId
       const focus = enemyAffecting.find((ability) => ability.id === id)
       if (!focus) continue
       for (const other of enemyAffecting) {
@@ -893,7 +1085,7 @@ export function startTurnOrderChoicePlayerIdWithResolver(
         for (const left of focus.targets ?? []) for (const right of other.targets ?? []) {
           if (simulations + 2 > maxExactSimulations) return focus.playerId
           const targets = new Map([[focus.id, left.uid], [other.id, right.uid]])
-          if (outcome(moved, targets) !== outcome(order, targets)) return focus.playerId
+          if (!outcomesEqual(outcome(moved, targets), outcome(order, targets))) return focus.playerId
         }
       }
     }

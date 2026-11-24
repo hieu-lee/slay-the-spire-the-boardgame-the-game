@@ -24,13 +24,13 @@ import { slimeDef } from '../downfall/slime-boss.ts'
  * out, Dual Cast silently aimed at the first living enemy and the Defect could
  * not direct their biggest starter card.
  */
-const ENEMY_EFFECTS = [
+const ENEMY_EFFECTS = new Set<string>([
   'hit', 'rowHit', 'damage', 'loseHp', 'applyVulnerable', 'applyWeak', 'poison', 'multiplyPoison',
   'evoke', 'recurseOrb', 'fission', 'clearTargetBlock', 'hitPerExhaust', 'execute', 'attachBounty', 'goldenBullet', 'roulette',
   'evokeAll',
   'damagePerDiscard',
   'attachToTarget',
-]
+])
 
 /**
  * Whether this clause can reach an enemy at all, for this player.
@@ -49,7 +49,7 @@ export function reachesEnemy(
 ): boolean {
   // A branch holds hits on either side; a hit inside one still needs its target.
   if (effect.kind === 'branch') return [...effect.effects, ...effect.otherwise].some((nested) => reachesEnemy(nested, actor, energySpent))
-  if (!ENEMY_EFFECTS.includes(effect.kind)) return false
+  if (!ENEMY_EFFECTS.has(effect.kind)) return false
   if (actor && effect.when?.kind === 'inStance' && actor.stance !== effect.when.stance) return false
   if (actor && effect.when?.kind === 'notInStance' && actor.stance === effect.when.stance) return false
   if (effect.kind === 'hitPerExhaust') return !actor || actor.hand === null || actor.hand.length > 1

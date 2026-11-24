@@ -7,7 +7,7 @@ import { createEnemyDecks, rollActBoss } from './encounters.ts'
 import { grantNeowGold } from './neow.ts'
 import { grantHeirlooms } from './rewards.ts'
 import { MAX_HP, hasModifier, hasPendingRelicAcquisition, nextRunUid } from './rules.ts'
-import { colorlessCardsAvailable, mirrorItemSupplies } from './supplies.ts'
+import { cloneItemDecks, colorlessCardsAvailable, mirrorItemSupplies } from './supplies.ts'
 import type { PartyMember, RunState } from './types.ts'
 import { addCard, characterRewardDeck, createItemDecks } from '../acquisition.ts'
 import { createCampaignProgress, createSpireKeys, isActIVUnlocked, isColorlessUnlocked } from '../campaign.ts'
@@ -350,7 +350,7 @@ export function beginCatchUp(state: RunState, members: readonly PartyMember[]): 
     new Set(members.map((member) => member.id)).size !== members.length ||
     new Set(members.map((member) => member.character)).size !== members.length) return state
   const rng = { ...state.rng }
-  const itemDecks = structuredClone(state.itemDecks)
+  const itemDecks = cloneItemDecks(state.itemDecks)
   instanceCounter = nextRunUid(state.players) - 1
   let newPlayers = members.map((member, index) => {
     const cardRewards = itemDecks.characterCards[member.character]

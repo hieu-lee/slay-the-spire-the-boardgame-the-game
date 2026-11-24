@@ -6,11 +6,12 @@
 // this layer "what is there".
 import type { CombatState, EndTurnAbility, PlayContext } from './types.ts'
 import { cardDef, faceOf } from '../cards.ts'
-import type { Effect, TargetScope } from '../cards.ts'
+import type { TargetScope } from '../cards.ts'
+import { clone } from '../clone.ts'
 import { enemyDef } from '../enemies.ts'
 import type { Enemy, OrbType, Player } from '../types.ts'
 
-export const clone = <T,>(value: T): T => structuredClone(value)
+export { clone }
 
 export function livingEnemies(state: CombatState): Enemy[] {
   return state.enemies.filter((enemy) => !enemy.dead)
@@ -27,14 +28,18 @@ export function findPlayer(state: CombatState, playerId: string): Player | undef
 
 /** Public remaining HP-loss allowance from Apparition and persistent Powers. */
 export function remainingRoundHpLoss(player: Player): number | undefined {
-  const powerLimit = player.powers.flatMap((held) =>
-    faceOf(cardDef(held.defId), held.upgraded).persistentEffects ?? [])
-    .filter((effect): effect is Extract<Effect, { kind: 'limitRoundHpLoss' }> =>
-      effect.kind === 'limitRoundHpLoss')
-    .reduce<number | undefined>((limit, effect) => Math.min(limit ?? effect.amount, effect.amount), undefined)
-  const limit = powerLimit === undefined
-    ? player.hpLossLimitThisRound
-    : Math.min(player.hpLossLimitThisRound ?? powerLimit, powerLimit)
+  let limit = player.hpLossLimitThisRound
+  for (let index = 0; index < player.powers.length; index++) {
+    const held = player.powers[index]!
+    const effects = faceOf(cardDef(held.defId), held.upgraded).persistentEffects
+    if (!effects) continue
+    for (let effectIndex = 0; effectIndex < effects.length; effectIndex++) {
+      const effect = effects[effectIndex]!
+      if (effect.kind === 'limitRoundHpLoss') {
+        limit = limit === undefined ? effect.amount : Math.min(limit, effect.amount)
+      }
+    }
+  }
   return limit === undefined ? undefined : Math.max(0, limit - (player.hpLostThisRound ?? 0))
 }
 
@@ -158,26 +163,37 @@ export function resolveEnemyTargets(
  */
 type LabeledEnemy = Pick<Enemy, 'uid' | 'defId' | 'row' | 'ascension' | 'copy'>
 
-const sameNameAs = (enemies: readonly LabeledEnemy[], name: string) =>
-  enemies.filter((other) => enemyDef(other.defId).name === name)
-
 // Enemies present from the start count by position among themselves; a summon
 // carries the number it was given, since it can be inserted before the boss.
-function enemyNumber(sameName: readonly LabeledEnemy[], enemy: LabeledEnemy): number {
-  return enemy.copy ?? sameName.filter((other) => other.copy === undefined)
-    .findIndex((other) => other.uid === enemy.uid) + 1
-}
-
 export function nextEnemyCopy(enemies: readonly LabeledEnemy[], name: string): number {
-  const sameName = sameNameAs(enemies, name)
-  return Math.max(0, ...sameName.map((other) => enemyNumber(sameName, other))) + 1
+  let maxNumber = 0
+  let uncopiedIndex = 0
+  for (let index = 0; index < enemies.length; index++) {
+    const other = enemies[index]!
+    if (enemyDef(other.defId).name !== name) continue
+    const num = other.copy ?? ++uncopiedIndex
+    if (num > maxNumber) maxNumber = num
+  }
+  return maxNumber + 1
 }
 
 export function enemyLabel(enemies: readonly LabeledEnemy[], enemy: LabeledEnemy): string {
   const name = enemyDef(enemy.defId, enemy.ascension).name
-  const sameName = sameNameAs(enemies, name)
-  if (sameName.length <= 1) return name
-  return `${name} #${enemyNumber(sameName, enemy)}`
+  let sameCount = 0
+  let uncopiedBefore = 0
+  let found = false
+  for (let index = 0; index < enemies.length; index++) {
+    const other = enemies[index]!
+    if (enemyDef(other.defId).name !== name) continue
+    sameCount++
+    if (!found && other.copy === undefined) {
+      uncopiedBefore++
+      if (other.uid === enemy.uid) found = true
+    }
+  }
+  if (sameCount <= 1) return name
+  const num = enemy.copy ?? (found ? uncopiedBefore : 0)
+  return `${name} #${num}`
 }
 
 /**
