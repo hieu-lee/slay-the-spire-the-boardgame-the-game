@@ -21,7 +21,7 @@ prepare_release() {
     cleanup_candidate() { rm -rf -- "$candidate"; }
     trap cleanup_candidate EXIT
     git -C "$root" archive HEAD -- package.json scripts/room-server.mjs \
-      scripts/lib/rooms.mjs scripts/lib/rooms scripts/lib/leaderboard.mjs scripts/lib/stats.mjs scripts/lib/codex-deck-classifier.mjs \
+      scripts/lib/rooms.mjs scripts/lib/rooms scripts/lib/server scripts/lib/leaderboard.mjs scripts/lib/stats.mjs scripts/lib/codex-deck-classifier.mjs \
       scripts/lib/codex-deck-worker.sh scripts/lib/deck-type.schema.json scripts/lib/profiles.mjs scripts/lib/mail.mjs \
       scripts/lib/coin-grants.mjs scripts/lib/account-wallets.mjs scripts/lib/daily-coins.mjs \
       src/game src/wallet.ts infra/systemd/sts-room-server.service infra/validate-room-store.mjs | tar -x -C "$candidate"

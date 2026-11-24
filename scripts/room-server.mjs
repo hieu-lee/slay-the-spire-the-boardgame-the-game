@@ -1,17 +1,12 @@
 #!/usr/bin/env node
-import { claimProfile, loginProfile, syncAscension } from './lib/profiles.mjs'
-import { claimCoinGrant, confirmCoinGrant } from './lib/coin-grants.mjs'
-import { syncAccountWallet } from './lib/account-wallets.mjs'
-import { MAX_MAIL_CHARACTERS, WELCOME_LETTER, announceToPlayers, developerInbox, developerUnread, ownerOf, playerInbox, sendDeveloperReply, sendPlayerLetter } from './lib/mail.mjs'
+import { MAX_MAIL_CHARACTERS } from './lib/mail.mjs'
 import { createServer as createHttpServer } from 'node:http'
 import { existsSync, writeFileSync } from 'node:fs'
-import { timingSafeEqual } from 'node:crypto'
 import { basename } from 'node:path'
-import { WebSocketServer } from 'ws'
 import { classifyDeckType, codexReady } from './lib/codex-deck-classifier.mjs'
-import { addLeaderboardRun, dailyLeaderboard, leaderboardSnapshot, personalStats, roomLeaderboardRun, winningDecksPage } from './lib/leaderboard.mjs'
-import { backfillDailyCoins, creditRecordedDailyCoins } from './lib/daily-coins.mjs'
-import { deckHash, HERO_NAMES, SPECIFIC_ARCHETYPE_FLOOR, otherDeckType, randomDeck, recordDeckClassification, soloDeck, statsSnapshot, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
+import { addLeaderboardRun, roomLeaderboardRun } from './lib/leaderboard.mjs'
+import { backfillDailyCoins } from './lib/daily-coins.mjs'
+import { deckHash, HERO_NAMES, SPECIFIC_ARCHETYPE_FLOOR, otherDeckType, recordDeckClassification, soloDeck, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
 import {
   apply,
   chooseAscension,
@@ -31,102 +26,43 @@ import {
   startRun,
   selectCampaign,
 } from './lib/rooms.mjs'
+import {
+  applyCors,
+  codeOf,
+  consume,
+  createRestrictionPolicy,
+  pruneRateMap,
+  readJson,
+  requestIdOf,
+  send,
+  sourceOf,
+  tokenOf,
+} from './lib/server/http.mjs'
+import { createWsLayer } from './lib/server/ws.mjs'
+import { createMetaRoutes } from './lib/server/routes-meta.mjs'
 
-const JSON_HEADERS = {
-  'content-type': 'application/json; charset=utf-8',
-  'cache-control': 'no-store',
-}
-const MAX_BODY = 64 * 1024
 const MULTIPLAYER_PROTOCOL_VERSION = 1
 const MAX_ROOMS = 100
 const ROOM_TTL_MS = 24 * 60 * 60 * 1000
 const TURN_CREDENTIAL_TTL_SECONDS = 6 * 60 * 60
-const HEARTBEAT_MS = 30_000
 const releaseDirectory = basename(process.cwd())
 const RELEASE_SHA = /^[0-9a-f]{40}$/.test(releaseDirectory) ? releaseDirectory : null
-const MAX_BUFFERED_BYTES = 2 * 1024 * 1024
 const MESSAGE_WINDOW_MS = 10_000
 const MAX_MESSAGES_PER_WINDOW = 300
 const MAX_READS_PER_WINDOW = 600
 const MAX_VOICE_MESSAGES_PER_WINDOW = 600
-const MAX_ABUSIVE_MESSAGES_PER_WINDOW = 3_000
 const CREATE_WINDOW_MS = 60_000
 const MAX_PROFILE_CLAIMS_PER_WINDOW = 30
-const MAX_LOGINS_PER_WINDOW = 10
-const LOGIN_FAILURE_WINDOW_MS = 10 * 60_000
-const MAX_LOGIN_FAILURES_PER_NAME = 8
 const MAX_CREATES_PER_WINDOW = 10
 const MAX_JOINS_PER_WINDOW = 30
-const MAX_LEADERBOARD_WRITES_PER_WINDOW = 6
-const MAX_DECK_READS_PER_WINDOW = 30
-const MAX_STATS_READS_PER_WINDOW = 120
-const MAX_RESTRICTED_NETWORKS = 256
-const MAX_MAIL_READS_PER_WINDOW = 60
-const MAIL_SEND_WINDOW_MS = 10 * 60_000
-const MAX_MAIL_SENDS_PER_WINDOW = 5
-const MAX_MAIL_SENDS_PER_SOURCE = 20
-const MAX_MAIL_ADMIN_REPLIES_PER_WINDOW = 60
-const MAX_MAIL_ADMIN_FAILURES_PER_WINDOW = 10
-const DECK_PAGE_CACHE_LIMIT = 64
-const DECK_QUERY_KEYS = new Set(['sort', 'direction', 'character', 'ascension', 'cursor'])
 const CLASSIFICATION_DAY_MS = 24 * 60 * 60 * 1000
 const MAX_UPGRADES_PER_WINDOW = 120
-const MAX_RATE_KEYS = 1024
 const MAX_ROOMS_PER_IP = 10
 export const MAX_CONNECTIONS = 50
 const MAX_PENDING_AUTH = MAX_CONNECTIONS
-const MAX_PENDING_AUTH_PER_IP = 8
 const STORE_SAVE_DELAY_MS = 1_000
 const CATCH_UP_RESERVATION_MS = 30_000
 const DEFAULT_ICE_SERVERS = [{ urls: 'stun:stun.cloudflare.com:3478' }]
-
-function send(response, status, body) {
-  response.writeHead(status, JSON_HEADERS)
-  response.end(JSON.stringify(body))
-}
-
-async function readJson(request) {
-  const chunks = []
-  let size = 0
-  for await (const chunk of request) {
-    size += chunk.length
-    if (size > MAX_BODY) throw Object.assign(new Error('Request body is too large'), { status: 413 })
-    chunks.push(chunk)
-  }
-  if (chunks.length === 0) return {}
-  try {
-    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
-    if (!body || Array.isArray(body) || typeof body !== 'object') throw new Error('JSON body must be an object')
-    return body
-  } catch {
-    throw Object.assign(new Error('JSON body must be an object'), { status: 400 })
-  }
-}
-
-const tokenOf = (request) => request.headers['x-room-token']?.toString()
-const codeOf = (value) => value.trim().toUpperCase()
-const requestIdOf = (value) => {
-  if (value === undefined) return undefined
-  if (typeof value === 'string' && /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) return value
-  throw Object.assign(new Error('Invalid request ID'), { status: 400 })
-}
-const sourceOf = (request) => request.headers['cf-connecting-ip']?.toString()
-  ?? request.socket.remoteAddress
-  ?? 'unknown'
-
-const SPIRE_REJECTION = 'Spire rejects room-temperature IQ'
-
-/** Groups an IPv6 address by its /64, which one household's rotating addresses share. */
-function networkOf(source) {
-  // A dual-stack socket reports IPv4 clients as ::ffff:a.b.c.d.
-  if (source.toLowerCase().startsWith('::ffff:')) source = source.slice(7)
-  if (!source.includes(':') || source.includes('.')) return source
-  const [head, tail] = source.split('::')
-  const before = head ? head.split(':') : []
-  const after = tail ? tail.split(':') : []
-  const groups = tail === undefined ? before : [...before, ...Array(Math.max(0, 8 - before.length - after.length)).fill('0'), ...after]
-  return groups.slice(0, 4).map((group) => Number.parseInt(group, 16).toString(16)).join(':')
-}
 
 export function createRoomServer({
   turnKeyId = process.env.CLOUDFLARE_TURN_KEY_ID,
@@ -162,43 +98,16 @@ export function createRoomServer({
     store.deckClassifierRelease = releaseDirectory
     store.statsStateDirty = true
   }
-  const sockets = new Map()
   const roomActivity = new Map()
   const roomOwners = new Map()
-  const profileRates = new Map()
-  const loginRates = new Map()
-  const loginFailures = new Map()
   const createRates = new Map()
   const joinRates = new Map()
   const entryRetryRates = new Map()
-  const leaderboardRates = new Map()
-  const deckReadRates = new Map()
-  const dailyReadRates = new Map()
-  const statsRates = new Map()
-  const mailReadRates = new Map()
-  const mailSendRates = new Map()
-  const mailProfileRates = new Map()
-  const mailAdminReplyRates = new Map()
-  const mailAdminFailures = new Map()
-  const deckPages = new Map()
-  let deckPagesRevision = store.leaderboardRevision
-  let leaderboardSummary
-  let leaderboardSummaryRevision = -1
-  const dailyBoards = new Map()
-  let dailyBoardsRevision = -1
-  const upgradeRates = new Map()
-  const invalidUpgradeRates = new Map()
   const actionRates = new Map()
   const readRates = new Map()
   const voiceRates = new Map()
-  const pendingAuth = new Map()
-  const wss = new WebSocketServer({
-    noServer: true,
-    maxPayload: MAX_BODY,
-    perMessageDeflate: { threshold: 1024, serverNoContextTakeover: true },
-  })
+
   let saveTimer
-  let preserveRoomsOnClose = false
   let saveError = null
   const applyAndRecord = (room, token, action) => {
     const finalized = room.run?.campaign.finalized === true
@@ -415,6 +324,9 @@ export function createRoomServer({
 
   for (const [code, room] of store.rooms) roomActivity.set(code, room.lastActivityAt ?? Date.now())
 
+  const restrictions = createRestrictionPolicy({ restrictedUsernames })
+  const { isRestrictedName, rejectRestricted, seatRestricted } = restrictions
+
   const touch = (room) => {
     room.lastActivityAt = Date.now()
     roomActivity.set(room.code, room.lastActivityAt)
@@ -436,42 +348,6 @@ export function createRoomServer({
     }
   }
 
-  function consume(map, key, windowMs, maximum, now = Date.now()) {
-    const rate = map.get(key)
-    if (!rate || now - rate.startedAt >= windowMs) {
-      if (!rate && map.size >= MAX_RATE_KEYS) return false
-      map.set(key, { startedAt: now, count: 1 })
-      return true
-    }
-    rate.count += 1
-    return rate.count <= maximum
-  }
-
-  const mailAdminKey = typeof mailAdminToken === 'string' && mailAdminToken.length >= 24 ? Buffer.from(`Bearer ${mailAdminToken}`) : null
-  if (mailAdminToken && !mailAdminKey) console.warn('Mail replies disabled: STS_MAIL_ADMIN_TOKEN must be at least 24 characters')
-  const delegatedMailOwners = new Set((typeof mailAdminOwners === 'string' ? mailAdminOwners.split(',') : mailAdminOwners ?? [])
-    .map((value) => String(value).trim().toLowerCase()).filter((value) => /^[0-9a-f]{64}$/.test(value)))
-  const delegatedMailProfile = (token) => {
-    const profile = typeof token === 'string' ? store.profiles.find((entry) => entry.token === token) : undefined
-    return profile && delegatedMailOwners.has(ownerOf(profile.token)) ? profile : undefined
-  }
-  // STS_RESTRICTED_USERNAMES (comma separated) names accounts the Spire turns away: no room to
-  // create or join, and no new account from the network they were last seen on. The networks
-  // are remembered only while the process runs; the account's own browser reports in on load.
-  const restrictedNames = new Set((typeof restrictedUsernames === 'string' ? restrictedUsernames.split(',') : restrictedUsernames ?? [])
-    .map((value) => String(value).normalize('NFKC').trim().toLowerCase()).filter(Boolean))
-  const restrictedNetworks = new Set()
-  // Seats keep the first 24 characters of whatever name they were sent, so match on those.
-  const isRestrictedName = (name) => name !== undefined && restrictedNames.has(String(name).slice(0, 24).normalize('NFKC').trim().toLowerCase())
-  const noteRestrictedSource = (request) => {
-    const network = networkOf(sourceOf(request))
-    // Re-adding moves a known network to the back; the cap keeps probing from many addresses from growing the list without end.
-    restrictedNetworks.delete(network)
-    restrictedNetworks.add(network)
-    if (restrictedNetworks.size > MAX_RESTRICTED_NETWORKS) restrictedNetworks.delete(restrictedNetworks.values().next().value)
-  }
-  const rejectRestricted = () => { throw Object.assign(new Error(SPIRE_REJECTION), { status: 403 }) }
-  const seatRestricted = (room, token) => isRestrictedName(findSeat(room, token)?.name)
   for (const [code, quorum] of store.reconnectQuorums) {
     const room = store.rooms.get(code)
     for (const seat of room?.seats ?? []) if (isRestrictedName(seat.name)) quorum.playerIds.delete(seat.playerId)
@@ -479,28 +355,6 @@ export function createRoomServer({
       store.reconnectQuorums.delete(code)
       if (room) settleRestrictedSeats(room)
     }
-  }
-  // Failures are always counted: when the table is full the oldest source makes
-  // room, so a flood of fresh addresses cannot switch the lockout off.
-  const mailAdminAuthorized = (request, now = Date.now()) => {
-    const source = sourceOf(request)
-    const failures = mailAdminFailures.get(source)
-    const current = failures && now - failures.startedAt < CREATE_WINDOW_MS ? failures : undefined
-    const offered = Buffer.from(request.headers.authorization?.toString() ?? '')
-    const matches = offered.length === mailAdminKey.length && timingSafeEqual(offered, mailAdminKey)
-    if (matches && (current?.count ?? 0) < MAX_MAIL_ADMIN_FAILURES_PER_WINDOW) return true
-    if (!matches) {
-      if (!current && mailAdminFailures.size >= MAX_RATE_KEYS) mailAdminFailures.delete(mailAdminFailures.keys().next().value)
-      mailAdminFailures.delete(source)
-      mailAdminFailures.set(source, { startedAt: current?.startedAt ?? now, count: (current?.count ?? 0) + 1 })
-    }
-    return false
-  }
-  const saveMail = (undo) => {
-    store.mailDirty = true
-    if (attemptSave()) return true
-    undo()
-    return false
   }
 
   const mayAct = (room, token) => consume(
@@ -513,27 +367,73 @@ export function createRoomServer({
     voiceRates, `${room.code}:${token}`, MESSAGE_WINDOW_MS, MAX_VOICE_MESSAGES_PER_WINDOW,
   )
 
+  function roomOrThrow(code) {
+    const room = store.rooms.get(codeOf(code))
+    if (!room) throw Object.assign(new Error('Room not found'), { status: 404 })
+    return room
+  }
+
+  // A refused action can still have changed the room — endTurn resolves an
+  // abandoned card preview before failing, resolveEndTurn republishes a stale
+  // ability list — so both transports reconcile what the throw left behind.
+  // Reporting the refusal matters more, so this never throws on its own.
+  // Callers pass the refused seat's token when that client learns of the refusal
+  // out of band (the HTTP 4xx): a snapshot frame would clear the error banner
+  // holding the recovery copy, and that client refetches for itself anyway.
+  const reconcileRefusal = (room, version, actorToken) => {
+    if (!room || room.version === version) return
+    try {
+      touch(room)
+      queueSave()
+      publish(room, actorToken)
+    } catch {}
+  }
+
+  const ws = createWsLayer({
+    store,
+    allowedOrigin,
+    restartRecovery,
+    maxConnections,
+    maxPendingAuth: MAX_PENDING_AUTH,
+    maxUpgradesPerWindow,
+    createWindowMs: CREATE_WINDOW_MS,
+    messageWindowMs: MESSAGE_WINDOW_MS,
+    mayAct,
+    maySignalVoice,
+    roomOrThrow,
+    isRestrictedName,
+    recoveringRestart,
+    finishRestartRecovery,
+    applyAndRecord,
+    reconcileRefusal,
+    touch,
+    queueSave,
+    onSlowOperation,
+  })
+  const { sockets, publish } = ws
+
+  const metaRoutes = createMetaRoutes({
+    store,
+    attemptSave,
+    queueSave,
+    scheduleClassification,
+    restrictions,
+    mailAdminToken,
+    mailAdminOwners,
+    maxMailCharacters,
+    createWindowMs: CREATE_WINDOW_MS,
+    maxProfileClaimsPerWindow: MAX_PROFILE_CLAIMS_PER_WINDOW,
+  })
+
   function sweepRooms(now = Date.now()) {
-    for (const [key, rate] of profileRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) profileRates.delete(key)
-    for (const [key, rate] of loginRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) loginRates.delete(key)
-    for (const [key, rate] of loginFailures) if (now - rate.startedAt >= LOGIN_FAILURE_WINDOW_MS) loginFailures.delete(key)
-    for (const [key, rate] of createRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) createRates.delete(key)
-    for (const [key, rate] of joinRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) joinRates.delete(key)
-    for (const [key, rate] of entryRetryRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) entryRetryRates.delete(key)
-    for (const [key, rate] of leaderboardRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) leaderboardRates.delete(key)
-    for (const [key, rate] of deckReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) deckReadRates.delete(key)
-    for (const [key, rate] of dailyReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) dailyReadRates.delete(key)
-    for (const [key, rate] of statsRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) statsRates.delete(key)
-    for (const [key, rate] of mailReadRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) mailReadRates.delete(key)
-    for (const [key, rate] of mailSendRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailSendRates.delete(key)
-    for (const [key, rate] of mailProfileRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailProfileRates.delete(key)
-    for (const [key, rate] of mailAdminReplyRates) if (now - rate.startedAt >= MAIL_SEND_WINDOW_MS) mailAdminReplyRates.delete(key)
-    for (const [key, rate] of mailAdminFailures) if (now - rate.startedAt >= CREATE_WINDOW_MS) mailAdminFailures.delete(key)
-    for (const [key, rate] of upgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) upgradeRates.delete(key)
-    for (const [key, rate] of invalidUpgradeRates) if (now - rate.startedAt >= CREATE_WINDOW_MS) invalidUpgradeRates.delete(key)
-    for (const [key, rate] of actionRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) actionRates.delete(key)
-    for (const [key, rate] of readRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) readRates.delete(key)
-    for (const [key, rate] of voiceRates) if (now - rate.startedAt >= MESSAGE_WINDOW_MS) voiceRates.delete(key)
+    metaRoutes.sweepRates(now)
+    ws.sweepRates(now)
+    pruneRateMap(createRates, CREATE_WINDOW_MS, now)
+    pruneRateMap(joinRates, CREATE_WINDOW_MS, now)
+    pruneRateMap(entryRetryRates, CREATE_WINDOW_MS, now)
+    pruneRateMap(actionRates, MESSAGE_WINDOW_MS, now)
+    pruneRateMap(readRates, MESSAGE_WINDOW_MS, now)
+    pruneRateMap(voiceRates, MESSAGE_WINDOW_MS, now)
     for (const [code, quorum] of store.reconnectQuorums) {
       if (now < quorum.expiresAt) continue
       const room = store.rooms.get(code)
@@ -563,37 +463,13 @@ export function createRoomServer({
         if (room?.run?.campaign.finalized) {
           try { addLeaderboardRun(store, roomLeaderboardRun(room)) } catch {}
         }
-        for (const [socket, client] of sockets) if (client.code === code) socket.close(4004, 'Room expired')
+        ws.closeRoomSockets(code, 4004, 'Room expired')
         store.rooms.delete(code)
         store.reconnectQuorums.delete(code)
         roomActivity.delete(code)
         roomOwners.delete(code)
         queueSave()
       }
-    }
-  }
-
-  function roomOrThrow(code) {
-    const room = store.rooms.get(codeOf(code))
-    if (!room) throw Object.assign(new Error('Room not found'), { status: 404 })
-    return room
-  }
-
-  function publish(room, skipToken) {
-    const startedAt = Date.now()
-    const sharedSnapshot = {}
-    for (const [socket, client] of sockets) {
-      if (client.code !== room.code || socket.readyState !== 1) continue
-      if (skipToken !== undefined && client.token === skipToken) continue
-      if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
-        socket.terminate()
-        continue
-      }
-      socket.send(JSON.stringify({ type: 'snapshot', snapshot: snapshotFor(room, client.token, sharedSnapshot) }))
-    }
-    const durationMs = Date.now() - startedAt
-    if (durationMs >= 100) {
-      try { onSlowOperation({ kind: 'broadcast', roomCode: room.code, durationMs }) } catch {}
     }
   }
 
@@ -618,39 +494,10 @@ export function createRoomServer({
     }
   }
 
-  // A refused action can still have changed the room — endTurn resolves an
-  // abandoned card preview before failing, resolveEndTurn republishes a stale
-  // ability list — so both transports reconcile what the throw left behind.
-  // Reporting the refusal matters more, so this never throws on its own.
-  // Callers pass the refused seat's token when that client learns of the refusal
-  // out of band (the HTTP 4xx): a snapshot frame would clear the error banner
-  // holding the recovery copy, and that client refetches for itself anyway.
-  const reconcileRefusal = (room, version, actorToken) => {
-    if (!room || room.version === version) return
-    try {
-      touch(room)
-      queueSave()
-      publish(room, actorToken)
-    } catch {}
-  }
-
   const server = createHttpServer(async (request, response) => {
     let acted = null
     try {
-      if (allowedOrigin && request.headers.origin === allowedOrigin) {
-        response.setHeader('access-control-allow-origin', allowedOrigin)
-        response.setHeader('access-control-allow-methods', 'GET, POST, OPTIONS')
-        response.setHeader('access-control-allow-headers', 'content-type, x-room-token')
-        response.setHeader('access-control-max-age', '600')
-        response.setHeader('vary', 'Origin')
-      }
-      if (request.method === 'OPTIONS') {
-        response.writeHead(allowedOrigin && request.headers.origin === allowedOrigin ? 204 : 403)
-        return response.end()
-      }
-      if (allowedOrigin && request.headers.origin && request.headers.origin !== allowedOrigin) {
-        return send(response, 403, { error: 'Origin not allowed' })
-      }
+      if (applyCors(request, response, allowedOrigin)) return
       const url = new URL(request.url ?? '/', 'http://localhost')
       if (request.method === 'GET' && url.pathname === '/api/health') {
         return send(response, 200, {
@@ -660,325 +507,7 @@ export function createRoomServer({
           accountWallets: true, accountAscensions: true,
         })
       }
-      if (request.method === 'POST' && url.pathname === '/api/profile') {
-        if (!consume(profileRates, sourceOf(request), CREATE_WINDOW_MS, MAX_PROFILE_CLAIMS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many name requests. Please try again shortly.' })
-        }
-        const body = await readJson(request)
-        // A restricted network only loses new accounts; a known token may still set or confirm its password.
-        if (restrictedNetworks.has(networkOf(sourceOf(request))) && !store.profiles.some((entry) => entry.token === body.token)) rejectRestricted()
-        const profile = await claimProfile(store.profiles, body)
-        if (!attemptSave()) {
-          queueSave()
-          return send(response, 503, { error: 'Could not save your account. Please try again.' })
-        }
-        return send(response, 200, { username: profile.username })
-      }
-      if (request.method === 'POST' && url.pathname === '/api/login') {
-        if (!consume(loginRates, sourceOf(request), CREATE_WINDOW_MS, MAX_LOGINS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many log in attempts. Please try again shortly.' })
-        }
-        const body = await readJson(request)
-        const failureKey = typeof body.username === 'string' ? body.username.normalize('NFKC').trim().toLowerCase().slice(0, 64) : ''
-        // Guessing is capped per name as well as per source, so a name can be locked for a
-        // while by anyone who knows it. That trade is accepted: the cap is what stops a
-        // botnet guessing one account's password.
-        // The attempt is counted before the slow hash, so a burst of parallel guesses cannot
-        // all pass the check; a login that is not a wrong password gives its slot back.
-        const now = Date.now()
-        const failures = loginFailures.get(failureKey)
-        const attempts = failures && now - failures.startedAt < LOGIN_FAILURE_WINDOW_MS ? failures : { startedAt: now, count: 0 }
-        if (attempts.count >= MAX_LOGIN_FAILURES_PER_NAME) {
-          return send(response, 429, { error: 'Too many wrong passwords for this name. Please try again later.' })
-        }
-        // As with mail admin failures, a full table evicts its oldest name instead of skipping the count.
-        if (!failures && loginFailures.size >= MAX_RATE_KEYS) loginFailures.delete(loginFailures.keys().next().value)
-        attempts.count += 1
-        loginFailures.delete(failureKey)
-        loginFailures.set(failureKey, attempts)
-        let profile
-        try { profile = await loginProfile(store.profiles, body) } catch (error) {
-          if (error.status !== 401) attempts.count -= 1
-          throw error
-        }
-        loginFailures.delete(failureKey)
-        const restricted = isRestrictedName(profile.username)
-        if (restricted) noteRestrictedSource(request)
-        return send(response, 200, { username: profile.username, token: profile.token, ...(restricted ? { restricted } : {}) })
-      }
-      if (request.method === 'POST' && url.pathname === '/api/profile/status') {
-        if (!consume(statsRates, `status:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
-        }
-        const body = await readJson(request)
-        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
-        const restricted = Boolean(profile) && isRestrictedName(profile.username)
-        if (restricted) noteRestrictedSource(request)
-        return send(response, 200, { restricted })
-      }
-      if (request.method === 'POST' && url.pathname === '/api/profile/stats') {
-        if (!consume(statsRates, `profile:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
-        }
-        const body = await readJson(request)
-        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
-        if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
-        return send(response, 200, personalStats(store.leaderboardRuns, profile.username))
-      }
-      if (request.method === 'POST' && url.pathname === '/api/profile/ascension') {
-        if (!consume(statsRates, `ascension:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
-        }
-        const body = await readJson(request)
-        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
-        if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
-        const previous = profile.highestAscension
-        const reply = syncAscension(profile, store.leaderboardRuns, body.highestAscension)
-        if (previous !== reply.highestAscension) store.ascensionsDirty = true
-        if (store.ascensionsDirty) {
-          if (!attemptSave()) {
-            queueSave()
-            return send(response, 503, { error: 'Could not save your Ascension. Please try again.' })
-          }
-          store.ascensionsDirty = false
-        }
-        return send(response, 200, reply)
-      }
-      if (request.method === 'POST' && url.pathname === '/api/profile/wallet') {
-        if (!consume(statsRates, `wallet:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
-        }
-        const body = await readJson(request)
-        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
-        if (!profile) return send(response, 200, { registered: false })
-        const reply = syncAccountWallet(store, profile, body)
-        if (store.walletsDirty) {
-          if (!attemptSave()) {
-            queueSave()
-            return send(response, 503, { error: 'Could not save your wallet. Please try again.' })
-          }
-          store.walletsDirty = false
-        }
-        return send(response, 200, reply)
-      }
-      if (request.method === 'POST' && (url.pathname === '/api/profile/coins' || url.pathname === '/api/profile/coins/confirm')) {
-        if (!consume(statsRates, `coins:${sourceOf(request)}`, CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many requests. Please try again shortly.' })
-        }
-        const body = await readJson(request)
-        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
-        // An unregistered or anonymous player simply has no grant: no error for a first visit to log.
-        if (!profile) return send(response, 200, url.pathname === '/api/profile/coins' ? { coins: 0 } : { claimed: false })
-        const reply = url.pathname === '/api/profile/coins'
-          ? claimCoinGrant(store, profile.username, body.claimId)
-          : confirmCoinGrant(store, profile.username, body.claimId, body.grantId)
-        if (store.coinGrantsChanged) {
-          // The reservation or the spend must be on disk before the client acts on it.
-          if (!attemptSave()) {
-            queueSave()
-            return send(response, 503, { error: 'Could not save. Please try again.' })
-          }
-          store.coinGrantsChanged = false
-        }
-        return send(response, 200, reply)
-      }
-      if (request.method === 'POST' && (url.pathname === '/api/mail' || url.pathname === '/api/mail/send')) {
-        const sending = url.pathname === '/api/mail/send'
-        if (!consume(sending ? mailSendRates : mailReadRates, sourceOf(request), sending ? MAIL_SEND_WINDOW_MS : CREATE_WINDOW_MS,
-          sending ? MAX_MAIL_SENDS_PER_SOURCE : MAX_MAIL_READS_PER_WINDOW)) {
-          return send(response, 429, { error: sending ? 'You have sent a lot of letters. Please wait a little.' : 'Too many mail requests' })
-        }
-        const body = await readJson(request)
-        const profile = typeof body.token === 'string' ? store.profiles.find((entry) => entry.token === body.token) : undefined
-        if (!sending) {
-          // An unknown profile simply has no letters yet: a first visit reads an
-          // empty mailbox rather than an error.
-          if (!profile) return send(response, 200, { letters: [], unread: 0, admin: false })
-          const admin = delegatedMailOwners.has(ownerOf(profile.token))
-          const readOptions = { markRead: body.markRead === true, readThroughAt: body.readThroughAt }
-          let inbox = playerInbox(store.mail, profile, readOptions)
-          if (!admin && inbox.letters.length === 0) {
-            try {
-              const { undo } = sendDeveloperReply(store.mail, profile.username, WELCOME_LETTER, store.profiles, { maxCharacters: maxMailCharacters })
-              if (saveMail(undo)) inbox = playerInbox(store.mail, profile, readOptions)
-            } catch {}
-          }
-          if (inbox.changed) {
-            store.mailDirty = true
-            queueSave()
-          }
-          return send(response, 200, {
-            letters: inbox.letters,
-            unread: admin ? developerUnread(store.mail, profile.username) : inbox.unread,
-            personalUnread: inbox.unread,
-            admin,
-          })
-        }
-        if (!profile) return send(response, 409, { error: 'Your name is not registered on this server.', code: 'profile' })
-        if (delegatedMailOwners.has(ownerOf(profile.token))) return send(response, 403, { error: 'Server mailbox accounts only reply to player letters.' })
-        if (!consume(mailProfileRates, profile.username, MAIL_SEND_WINDOW_MS, MAX_MAIL_SENDS_PER_WINDOW)) {
-          return send(response, 429, { error: 'You have sent a lot of letters. Please wait a little.' })
-        }
-        // A letter that is refused or cannot be saved does not count against the allowance.
-        const refund = () => { const rate = mailProfileRates.get(profile.username); if (rate) rate.count -= 1 }
-        let sent
-        try { sent = sendPlayerLetter(store.mail, profile, body.body, { maxCharacters: maxMailCharacters }) } catch (error) {
-          refund()
-          throw error
-        }
-        if (!saveMail(sent.undo)) {
-          refund()
-          return send(response, 503, { error: 'Could not send your letter. Please try again.' })
-        }
-        return send(response, 201, { letters: sent.letters, unread: sent.unread })
-      }
-      if (request.method === 'POST' && (url.pathname === '/api/mail/desk' || url.pathname === '/api/mail/desk/reply')) {
-        const source = sourceOf(request)
-        if (!consume(url.pathname.endsWith('/reply') ? mailSendRates : mailReadRates, source,
-          url.pathname.endsWith('/reply') ? MAIL_SEND_WINDOW_MS : CREATE_WINDOW_MS,
-          url.pathname.endsWith('/reply') ? MAX_MAIL_SENDS_PER_SOURCE : MAX_MAIL_READS_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many mail requests' })
-        }
-        const body = await readJson(request)
-        const profile = delegatedMailProfile(body.token)
-        if (!profile) return send(response, 403, { error: 'This account cannot manage server mail.' })
-        if (url.pathname === '/api/mail/desk') {
-          const inbox = developerInbox(store.mail, store.profiles, {
-            username: typeof body.username === 'string' ? body.username : undefined,
-            markRead: body.markRead === true,
-            readThroughAt: body.readThroughAt,
-            excludeUsername: profile.username,
-          })
-          if (inbox.changed) {
-            store.mailDirty = true
-            queueSave()
-          }
-          return send(response, 200, { threads: inbox.threads, unread: inbox.unread })
-        }
-        const incoming = developerInbox(store.mail, store.profiles, { username: body.username, excludeUsername: profile.username }).threads[0]
-        if (!incoming?.letters.some((letter) => letter.from === 'player')) {
-          return send(response, 404, { error: 'No player letter to answer.' })
-        }
-        if (!consume(mailAdminReplyRates, ownerOf(profile.token), MAIL_SEND_WINDOW_MS, MAX_MAIL_ADMIN_REPLIES_PER_WINDOW)) {
-          return send(response, 429, { error: 'You have sent a lot of replies. Please wait a little.' })
-        }
-        const { undo, ...reply } = sendDeveloperReply(store.mail, body.username, body.body, store.profiles, { maxCharacters: maxMailCharacters })
-        if (!saveMail(undo)) return send(response, 503, { error: 'Could not save the reply. Please try again.' })
-        const updated = developerInbox(store.mail, store.profiles, { username: reply.username, excludeUsername: profile.username })
-        return send(response, 201, { ...reply, threads: updated.threads, unread: updated.unread })
-      }
-      if (url.pathname === '/api/mail/admin' || url.pathname === '/api/mail/admin/reply' || url.pathname === '/api/mail/admin/announce') {
-        if (!mailAdminKey) return send(response, 404, { error: 'Not found' })
-        if (!mailAdminAuthorized(request)) return send(response, 401, { error: 'Unauthorized' })
-        if (request.method === 'GET' && url.pathname === '/api/mail/admin') {
-          const inbox = developerInbox(store.mail, store.profiles, {
-            username: url.searchParams.get('username') ?? undefined, markRead: url.searchParams.get('markRead') === 'true',
-          })
-          if (inbox.changed) {
-            store.mailDirty = true
-            queueSave()
-          }
-          return send(response, 200, { threads: inbox.threads })
-        }
-        if (request.method === 'POST' && url.pathname === '/api/mail/admin/reply') {
-          const body = await readJson(request)
-          const { undo, ...reply } = sendDeveloperReply(store.mail, body.username, body.body, store.profiles, { maxCharacters: maxMailCharacters })
-          if (!saveMail(undo)) return send(response, 503, { error: 'Could not save the reply. Please try again.' })
-          return send(response, 201, reply)
-        }
-        if (request.method === 'POST' && url.pathname === '/api/mail/admin/announce') {
-          // One letter to every registered player except the delegated mailbox accounts.
-          const body = await readJson(request)
-          // A flag that is not a real boolean must not turn a rehearsal into a live send to everyone.
-          if (body.dryRun !== undefined && typeof body.dryRun !== 'boolean') return send(response, 400, { error: 'dryRun must be true or false.' })
-          const dryRun = body.dryRun === true
-          const { undo, ...announced } = announceToPlayers(store.mail, store.profiles, body.body, {
-            excludeOwners: delegatedMailOwners, dryRun, maxCharacters: maxMailCharacters,
-          })
-          if (announced.sent > 0 && !saveMail(undo)) return send(response, 503, { error: 'Could not save the announcement. Please try again.' })
-          return send(response, dryRun ? 200 : 201, announced)
-        }
-        return send(response, 405, { error: 'Method not allowed' })
-      }
-      if (request.method === 'GET' && url.pathname === '/api/leaderboard/decks') {
-        if (!consume(deckReadRates, sourceOf(request), CREATE_WINDOW_MS, MAX_DECK_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many deck requests' })
-        if ([...url.searchParams.keys()].some((name) => !DECK_QUERY_KEYS.has(name) ||
-            name !== 'character' && url.searchParams.getAll(name).length > 1)) return send(response, 400, { error: 'Invalid winning deck query' })
-        if (deckPagesRevision !== store.leaderboardRevision) {
-          deckPages.clear()
-          deckPagesRevision = store.leaderboardRevision
-        }
-        const key = JSON.stringify([url.searchParams.get('sort') ?? 'recordedAt', url.searchParams.get('direction') ?? 'desc',
-          url.searchParams.getAll('character').sort(), url.searchParams.get('ascension') ?? 'all', url.searchParams.get('cursor')])
-        let page = deckPages.get(key)
-        if (!page) {
-          page = winningDecksPage(store.leaderboardRuns, url.searchParams)
-          if (deckPages.size >= DECK_PAGE_CACHE_LIMIT) deckPages.clear()
-          deckPages.set(key, page)
-        }
-        return send(response, 200, page)
-      }
-      if (request.method === 'GET' && url.pathname === '/api/stats') {
-        if (!consume(statsRates, sourceOf(request), CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many stats requests' })
-        return send(response, 200, statsSnapshot(store.statsRuns, url.searchParams))
-      }
-      if (request.method === 'GET' && url.pathname === '/api/stats/deck') {
-        if (!consume(statsRates, sourceOf(request), CREATE_WINDOW_MS, MAX_STATS_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many stats requests' })
-        return send(response, 200, randomDeck(store.statsRuns, url.searchParams))
-      }
-      if (request.method === 'GET' && url.pathname === '/api/leaderboard/daily') {
-        if (!consume(dailyReadRates, sourceOf(request), CREATE_WINDOW_MS, MAX_DECK_READS_PER_WINDOW)) return send(response, 429, { error: 'Too many daily ranking requests' })
-        if ([...url.searchParams.keys()].some((name) => name !== 'date' && name !== 'character') ||
-            url.searchParams.getAll('date').length !== 1) return send(response, 400, { error: 'Invalid daily ranking query' })
-        const date = url.searchParams.get('date')
-        const characters = [...new Set(url.searchParams.getAll('character'))].sort()
-        const key = JSON.stringify([date, characters])
-        if (dailyBoardsRevision !== store.leaderboardRevision) {
-          dailyBoards.clear()
-          dailyBoardsRevision = store.leaderboardRevision
-        }
-        let board = dailyBoards.get(key)
-        if (!board) {
-          board = dailyLeaderboard(store.leaderboardRuns, date, characters)
-          if (dailyBoards.size >= DECK_PAGE_CACHE_LIMIT) dailyBoards.clear()
-          dailyBoards.set(key, board)
-        }
-        return send(response, 200, board)
-      }
-      if (request.method === 'GET' && url.pathname === '/api/leaderboard') {
-        if (leaderboardSummaryRevision !== store.leaderboardRevision) {
-          leaderboardSummary = leaderboardSnapshot(store.leaderboardRuns)
-          leaderboardSummaryRevision = store.leaderboardRevision
-        }
-        return send(response, 200, leaderboardSummary)
-      }
-      if (request.method === 'POST' && url.pathname === '/api/leaderboard') {
-        const source = sourceOf(request)
-        if (!consume(leaderboardRates, source, CREATE_WINDOW_MS, MAX_LEADERBOARD_WRITES_PER_WINDOW)) {
-          return send(response, 429, { error: 'Too many leaderboard submissions' })
-        }
-        const body = await readJson(request)
-        if (typeof body.id === 'string' && body.id.startsWith('room:')) {
-          return send(response, 400, { error: 'Run id is reserved for room results' })
-        }
-        const profile = store.profiles.find((entry) => entry.token === body.profileToken)
-        if (body.profileToken && !profile) return send(response, 409, { error: 'Profile unavailable' })
-        const { winningDecks: _, ...submission } = body
-        const added = addLeaderboardRun(store, { ...submission, username: profile?.username })
-        const recorded = store.leaderboardRuns.find((run) => run.id === body.id)
-        if (recorded?.dailyDate !== undefined) {
-          creditRecordedDailyCoins(store, recorded, profile)
-          if (store.walletsDirty) {
-            if (!attemptSave()) {
-              queueSave()
-              return send(response, 503, { error: 'Could not save your Daily Climb coins. Please try again.' })
-            }
-            store.walletsDirty = false
-          }
-        }
-        if (added) { queueSave(); scheduleClassification() }
-        return send(response, added ? 201 : 200, { ok: true, added, floorsClearedAccepted: true, finalDeckAccepted: true, profileAccepted: true, dailyDateAccepted: true, dailyCoinsAccepted: true })
-      }
+      if (await metaRoutes.handle(request, response, url)) return
       if (request.method === 'POST' && url.pathname === '/api/rooms') {
         sweepRooms()
         const source = sourceOf(request)
@@ -1059,7 +588,7 @@ export function createRoomServer({
         if (recoveringRestart(room) && !findSeat(room, token)) {
           return send(response, 409, { error: 'Waiting for every player to reconnect' })
         }
-        const live = [...sockets.values()].some((client) => client.code === room.code && client.token === token)
+        const live = ws.isSeatConnected(room.code, token)
         const beforeVersion = room.version
         const seat = joinRoom(room, {
           name: body.name, character: body.character, skin: body.skin, campaignProgress: body.campaignProgress, cardPacks: body.cardPacks,
@@ -1099,12 +628,7 @@ export function createRoomServer({
       }
       else if (operation === 'leave') {
         removeSeat(room, token)
-        for (const [socket, client] of sockets) {
-          if (client.code === room.code && client.token === token) {
-            sockets.delete(socket)
-            socket.close(1000, 'Left room')
-          }
-        }
+        ws.closeSeatSockets(room.code, token, 1000, 'Left room')
         touch(room)
         publish(room)
         if (room.seats.length === 0) {
@@ -1147,213 +671,8 @@ export function createRoomServer({
     }
   })
 
-  server.on('upgrade', (request, socket, head) => {
-    try {
-      const url = new URL(request.url ?? '/', 'http://localhost')
-      if (url.pathname !== '/ws') throw new Error('Not found')
-      if (allowedOrigin && request.headers.origin && request.headers.origin !== allowedOrigin) throw new Error('Origin not allowed')
-      const source = sourceOf(request)
-      const code = codeOf(url.searchParams.get('room') ?? '')
-      const room = store.rooms.get(code)
-      if (!room) {
-        const status = consume(invalidUpgradeRates, source, CREATE_WINDOW_MS, maxUpgradesPerWindow) ? 401 : 429
-        socket.write(`HTTP/1.1 ${status} ${status === 401 ? 'Unauthorized' : 'Too Many Requests'}\r\nConnection: close\r\n\r\n`)
-        return socket.destroy()
-      }
-      const roomScopedSource = restartRecovery
-      const sourceKey = roomScopedSource ? `${source}:${code}` : source
-      const tooManyPending = pendingAuth.size >= MAX_PENDING_AUTH
-        || [...pendingAuth.values()].filter((pendingSource) => pendingSource === sourceKey).length >= MAX_PENDING_AUTH_PER_IP
-      if (tooManyPending || !consume(upgradeRates, sourceKey, CREATE_WINDOW_MS, maxUpgradesPerWindow)) {
-        socket.write('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n')
-        return socket.destroy()
-      }
-      wss.handleUpgrade(request, socket, head, (webSocket) => {
-        wss.emit('connection', webSocket, { code: room.code, source: sourceKey })
-      })
-    } catch {
-      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n')
-      socket.destroy()
-    }
-  })
+  ws.attachUpgrade(server)
 
-  wss.on('connection', (socket, context) => {
-    pendingAuth.set(socket, context.source)
-    socket.isAlive = true
-    socket.on('pong', () => { socket.isAlive = true })
-    const authTimer = setTimeout(() => {
-      if (!sockets.has(socket)) socket.close(4003, 'Authentication required')
-    }, 5000)
-    authTimer.unref?.()
-    socket.on('message', (raw) => {
-      try {
-        let client = sockets.get(socket)
-        let room
-        let message
-        try {
-          message = JSON.parse(raw.toString())
-          if (!message || typeof message !== 'object' || Array.isArray(message)) throw new Error('Invalid message')
-        } catch {
-          return socket.close(4002, 'Invalid message')
-        }
-        if (client) {
-          room = roomOrThrow(client.code)
-          const now = Date.now()
-          if (!client.messageWindowStartedAt || now - client.messageWindowStartedAt >= MESSAGE_WINDOW_MS) {
-            client.messageWindowStartedAt = now
-            client.messageCount = 0
-          }
-          client.messageCount += 1
-          if (client.messageCount > MAX_ABUSIVE_MESSAGES_PER_WINDOW) {
-            return socket.close(4008, 'Abusive traffic limit exceeded')
-          }
-          const allowed = message.type === 'voice'
-            ? maySignalVoice(room, client.token)
-            : mayAct(room, client.token)
-          if (!allowed) {
-            if (socket.bufferedAmount > MAX_BUFFERED_BYTES) return socket.terminate()
-            if (message.type !== 'action') {
-              return socket.send(JSON.stringify({ type: 'error', status: 429, error: 'Rate limit exceeded' }))
-            }
-            let requestId
-            try { requestId = requestIdOf(message.requestId) } catch {}
-            return socket.send(JSON.stringify({
-              type: 'error', requestId, status: 429, error: 'Rate limit exceeded',
-              snapshot: snapshotFor(room, client.token),
-            }))
-          }
-        }
-        if (!client) {
-          if (message.type !== 'authenticate' || typeof message.token !== 'string') {
-            return socket.close(4003, 'Authentication required')
-          }
-          room = roomOrThrow(context.code)
-          let seat = findSeat(room, message.token)
-          if (!seat) return socket.close(4003, 'Unknown seat')
-          if (isRestrictedName(seat.name)) return socket.close(4003, SPIRE_REJECTION)
-          const replacedSockets = [...sockets].filter(([, other]) =>
-            other.code === room.code && other.token === message.token)
-          if (replacedSockets.length === 0 && sockets.size >= maxConnections) {
-            return socket.close(4009, 'Server connection capacity reached')
-          }
-          seat = joinRoom(room, {
-            token: message.token, campaignProgress: message.campaignProgress, cardPacks: message.cardPacks,
-            settle: !recoveringRestart(room),
-          })
-          finishRestartRecovery(room, seat)
-          client = {
-            code: room.code,
-            token: message.token,
-            playerId: seat.playerId,
-          }
-          sockets.set(socket, client)
-          pendingAuth.delete(socket)
-          clearTimeout(authTimer)
-          for (const [otherSocket] of replacedSockets) {
-            sockets.delete(otherSocket)
-            otherSocket.close(4001, 'Seat opened elsewhere')
-          }
-          touch(room)
-          queueSave()
-          publish(room)
-          return
-        }
-        if (message.type === 'action') {
-          const requestId = requestIdOf(message.requestId)
-          const versionBefore = room.version
-          try {
-            if (recoveringRestart(room)) {
-              throw Object.assign(new Error('Waiting for every player to reconnect'), { status: 409 })
-            }
-            const result = applyAndRecord(room, client.token, message.action)
-            if (result.changed) {
-              touch(room)
-              queueSave()
-              publish(room, requestId ? client.token : undefined)
-            }
-            if (requestId) {
-              if (socket.bufferedAmount > MAX_BUFFERED_BYTES) socket.terminate()
-              else socket.send(JSON.stringify({ type: 'snapshot', requestId, snapshot: result.snapshot }))
-            }
-          } catch (error) {
-            reconcileRefusal(room, versionBefore, requestId ? client.token : undefined)
-            if (!requestId) throw error
-            if (socket.bufferedAmount > MAX_BUFFERED_BYTES) socket.terminate()
-            else socket.send(JSON.stringify({
-              type: 'error', requestId,
-              status: error.status ?? (error.name === 'RoomError' ? 409 : 500),
-              error: error instanceof Error ? error.message : 'Bad message',
-              snapshot: snapshotFor(room, client.token),
-            }))
-          }
-        } else if (message.type === 'voice') {
-          if (!message.signal || typeof message.signal !== 'object' || Array.isArray(message.signal)) {
-            throw new Error('Invalid voice signal')
-          }
-          if (JSON.stringify(message.signal).length > 32 * 1024) throw new Error('Voice signal is too large')
-          const target = room.seats.find((seat) => seat.playerId === message.to)
-          if (!target) throw new Error('Unknown voice peer')
-          for (const [peer, peerClient] of sockets) {
-            if (peerClient.code === room.code && peerClient.playerId === target.playerId && peer.readyState === 1) {
-              if (peer.bufferedAmount > MAX_BUFFERED_BYTES) {
-                peer.terminate()
-                continue
-              }
-              peer.send(JSON.stringify({
-                type: 'voice',
-                from: client.playerId,
-                signal: message.signal,
-              }))
-            }
-          }
-        } else {
-          throw new Error('Unknown message type')
-        }
-      } catch (error) {
-        if (!sockets.has(socket)) socket.close(4003, 'Authentication required')
-        else if (socket.readyState === 1) {
-          if (socket.bufferedAmount > MAX_BUFFERED_BYTES) socket.terminate()
-          else socket.send(JSON.stringify({ type: 'error', error: error instanceof Error ? error.message : 'Bad message' }))
-        }
-      }
-    })
-    socket.on('error', () => socket.terminate())
-    socket.on('close', () => {
-      clearTimeout(authTimer)
-      pendingAuth.delete(socket)
-      const client = sockets.get(socket)
-      sockets.delete(socket)
-      if (!client || preserveRoomsOnClose) return
-      if ([...sockets.values()].some((other) => other.code === client.code && other.token === client.token)) return
-      const room = store.rooms.get(client.code)
-      if (room) {
-        const quorum = store.reconnectQuorums.get(room.code)
-        if (quorum) {
-          const seat = findSeat(room, client.token)
-          if (seat?.connected) {
-            seat.connected = false
-            room.version += 1
-          }
-          if (seat) quorum.playerIds.add(seat.playerId)
-        } else markDisconnected(room, client.token)
-        touch(room)
-        queueSave()
-        publish(room)
-      }
-    })
-  })
-
-  wss.on('error', () => {})
-  const heartbeat = setInterval(() => {
-    for (const socket of wss.clients) {
-      if (socket.isAlive === false) socket.terminate()
-      else {
-        socket.isAlive = false
-        socket.ping()
-      }
-    }
-  }, HEARTBEAT_MS)
-  heartbeat.unref()
   const sweeper = setInterval(() => sweepRooms(), 60_000)
   sweeper.unref()
   let closePromise
@@ -1364,7 +683,7 @@ export function createRoomServer({
     sweepRooms,
     touch,
     dropConnection(code, token) {
-      for (const [socket, client] of sockets) if (client.code === code && client.token === token) socket.terminate()
+      ws.dropConnection(code, token)
     },
     publishRoom(code) {
       const room = store.rooms.get(code)
@@ -1385,17 +704,11 @@ export function createRoomServer({
       classifierClosed = true
       if (classifierTimer) clearTimeout(classifierTimer)
       classifierAbort?.abort()
-      preserveRoomsOnClose = preserveRooms
-      clearInterval(heartbeat)
       clearInterval(sweeper)
+      const disconnected = ws.close({ preserveRooms })
       const stopped = server.listening
         ? new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
         : Promise.resolve()
-      const disconnected = Promise.all([...wss.clients].map((socket) => new Promise((resolve) => {
-        if (socket.readyState === socket.CLOSED) return resolve()
-        socket.once('close', resolve)
-        socket.terminate()
-      })))
       closePromise = Promise.all([stopped, disconnected, classificationTask]).then(() => {
         flushSave()
         if (markerFile) writeFileSync(markerFile, 'ok\n', { mode: 0o600 })
