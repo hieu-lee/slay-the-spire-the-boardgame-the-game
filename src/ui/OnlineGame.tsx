@@ -1,7 +1,7 @@
 import { TreasureEffects } from "./TreasureEffects.tsx"
 import { savedProfile } from '../profile.ts'
 import { PlayerTitle } from './PlayerTitle.tsx'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { cardDef, faceOf } from '../game/cards.ts'
 import { assetPath, preloadImages, releasePreloadedImages } from '../game/assets.ts'
 import type { CombatState } from '../game/combat.ts'
@@ -9,30 +9,19 @@ import { ASCENSION_RULES, canGiveUpRun, hasPendingRelicAcquisition, victoryIsTer
 import { relicDef } from '../game/relics.ts'
 import { useRoomSession } from '../multiplayer/useRoomSession.ts'
 import { useVoiceChat } from '../multiplayer/useVoiceChat.ts'
-import { CombatScreen } from './CombatScreen.tsx'
 import { IconValue } from './Icon.tsx'
 import { CampaignSelect } from './CampaignSelect.tsx'
-import { MapScreen } from './MapScreen.tsx'
-import { MapOverlay } from './MapOverlay.tsx'
 import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
-import { OnlineCampfireScreen } from './OnlineCampfireScreen.tsx'
-import { OnlineRewardScreen } from './OnlineRewardScreen.tsx'
 import { OutsidePotionBar } from './OutsidePotionBar.tsx'
 import { PotionSlots } from './PotionSlots.tsx'
 import { RelicBar } from './RelicChip.tsx'
-import { RunSummary } from './RunSummary.tsx'
 import { CardMorph, CardMorphAnnouncement } from './CardMorph.tsx'
 import { useCardMorphs } from './useCardMorphs.ts'
-import { GuardianSocketPanel, RelicResolvePanel } from './RelicResolvePanel.tsx'
 import { wingBootUses } from './wing-boots.ts'
 import { CourierPanel, CourierPeek, courierPeekPhase } from './CourierPanel.tsx'
-import { RoomScreen } from './RoomScreen.tsx'
 import { ACT_IV_UNLOCK_BOXES } from '../game/campaign.ts'
-import { NeowScreen } from './NeowScreen.tsx'
-import { QuickSetupScreen } from './QuickSetupScreen.tsx'
 import { currentQuickSetupStep, DAILY_MODIFIERS } from '../game/meta.ts'
 import { MetaRunOptions } from './MetaRunOptions.tsx'
-import { CompendiumScreen } from './CompendiumScreen.tsx'
 import { GiveUpPanel } from './GiveUpPanel.tsx'
 import { shouldAnimateOnlineOpeningHand } from './board-signals.ts'
 import { usePrefersReducedMotion } from './combat-screen/hooks.ts'
@@ -62,6 +51,19 @@ import {
 } from './online/adapters.ts'
 
 export { pendingCardCopyLabel } from './online/adapters.ts'
+
+const CombatScreen = lazy(() => import('./CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
+const CompendiumScreen = lazy(() => import('./CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
+const GuardianSocketPanel = lazy(() => import('./RelicResolvePanel.tsx').then((module) => ({ default: module.GuardianSocketPanel })))
+const MapOverlay = lazy(() => import('./MapOverlay.tsx').then((module) => ({ default: module.MapOverlay })))
+const MapScreen = lazy(() => import('./MapScreen.tsx').then((module) => ({ default: module.MapScreen })))
+const NeowScreen = lazy(() => import('./NeowScreen.tsx').then((module) => ({ default: module.NeowScreen })))
+const OnlineCampfireScreen = lazy(() => import('./OnlineCampfireScreen.tsx').then((module) => ({ default: module.OnlineCampfireScreen })))
+const OnlineRewardScreen = lazy(() => import('./OnlineRewardScreen.tsx').then((module) => ({ default: module.OnlineRewardScreen })))
+const QuickSetupScreen = lazy(() => import('./QuickSetupScreen.tsx').then((module) => ({ default: module.QuickSetupScreen })))
+const RelicResolvePanel = lazy(() => import('./RelicResolvePanel.tsx').then((module) => ({ default: module.RelicResolvePanel })))
+const RoomScreen = lazy(() => import('./RoomScreen.tsx').then((module) => ({ default: module.RoomScreen })))
+const RunSummary = lazy(() => import('./RunSummary.tsx').then((module) => ({ default: module.RunSummary })))
 
 type Props = {
   onLocal: () => void
@@ -538,7 +540,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             </CardCollectionOverlay>
           ) : null}
           {run.phase !== 'map' && run.phase !== 'setup' ? (
-            <MapOverlay map={run.map} act={run.act} bossDefId={run.actBossDefId} />
+            <Suspense fallback={null}>
+              <MapOverlay map={run.map} act={run.act} bossDefId={run.actBossDefId} />
+            </Suspense>
           ) : null}
           <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
             onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
@@ -644,7 +648,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       <div className="online-mutations" inert={mutationsLocked || undefined}
         aria-disabled={mutationsLocked || undefined}>
       {run.phase === 'combat' && combat ? (
-        <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
+        <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><Suspense fallback={null}><CombatScreen
           key={combatResyncs}
           state={combat}
           act={run.act}
@@ -686,9 +690,9 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           autoAdvance={!compendiumOpen && !pauseOpen && !settingsOpen && !giveUpStartPending && !soloGiveUpOpen && !giveUpVote && !run.courier.offer && room.connection === 'connected' && snapshot.seats.find((seat) => seat.connected &&
             !combat.players.find((player) => player.id === seat.playerId)?.dead)?.playerId === snapshot.you.playerId}
           onAction={room.act}
-        /></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} offer={run.courier.offer} pledge={snapshot.courierPledge} online onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
+        /></Suspense></div><CourierPanel players={combat.players} viewerId={snapshot.you.playerId} ascension={run.ascension} offer={run.courier.offer} pledge={snapshot.courierPledge} online onResolve={(decision, payments, discardPotionId) => room.act({ kind: 'courierResolve', playerId: run.courier.offer?.playerId, decision, payments, discardPotionId })} /></>
       ) : null}
-      {run.phase === 'map' ? <><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
+      {run.phase === 'map' ? <Suspense fallback={null}><MapScreen map={run.map} choices={pendingAcquisition ? [] : choices(run.map)}
         blocked={pendingAcquisition} bossDefId={run.actBossDefId}
         disabled={giveUpStartPending || room.connection !== 'connected' || foreignInteractionLock}
         canRerollBoss={!pendingAcquisition && run.canRerollDownfallSelfBoss}
@@ -697,7 +701,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         wingChoices={pendingAcquisition ? [] : wingTargets}
         wingUses={wingBootUses(viewer)}
         onEnter={(roomId) => room.act(wingTargets.some((target) => target.id === roomId)
-          ? { kind: 'enterRoom', roomId, useWingBoots: true } : { kind: 'enterRoom', roomId })} /></> : null}
+          ? { kind: 'enterRoom', roomId, useWingBoots: true } : { kind: 'enterRoom', roomId })} /></Suspense> : null}
       {!pendingAcquisition && !mapSelectionPending && viewer && canSwitchRowsHere &&
       run.players.filter((player) => !player.dead).length > 1 ? <section className="map-row-switch">
         <label>Switch your row before the next combat
@@ -706,7 +710,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           </select>
         </label>
       </section> : null}
-      {snapshot.pendingRelic && viewer?.deck ? <RelicResolvePanel key={`${snapshot.pendingRelic.id}:${JSON.stringify(snapshot.pendingRelic.rewardIndices ?? {})}`}
+      {snapshot.pendingRelic && viewer?.deck ? <Suspense fallback={null}><RelicResolvePanel key={`${snapshot.pendingRelic.id}:${JSON.stringify(snapshot.pendingRelic.rewardIndices ?? {})}`}
         pending={snapshot.pendingRelic} player={playerForUi(viewer)}
         potion={run.rewards.find((offer) => offer.playerId === snapshot.you.playerId)?.potion}
         ascension={run.ascension}
@@ -716,11 +720,13 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         })}
         onResolve={(cardUids, rewardIndices) => room.act({
           kind: 'resolvePendingRelic', pendingRelicId: snapshot.pendingRelic!.id, cardUids, rewardIndices,
-        })} /> : null}
+        })} /></Suspense> : null}
       {pendingSocket && pendingSocket.playerId === snapshot.you.playerId && viewer?.deck ? (
-        <GuardianSocketPanel key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
-          pending={pendingSocket} deck={viewer.deck}
-          onResolve={(gemId) => room.act({ kind: 'resolveGuardianSocket', cardUid: pendingSocket.cardUid, gemId })} />
+        <Suspense fallback={null}>
+          <GuardianSocketPanel key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
+            pending={pendingSocket} deck={viewer.deck}
+            onResolve={(gemId) => room.act({ kind: 'resolveGuardianSocket', cardUid: pendingSocket.cardUid, gemId })} />
+        </Suspense>
       ) : pendingSocket && pendingSocketOwner ? <section className="room-screen" role="status">
         Waiting for {pendingSocketOwner.name} to socket a Guardian Gem.
       </section> : null}
@@ -729,7 +735,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         Waiting for {snapshot.pendingRelicStatus.playerName} to resolve{' '}
         {relicDef(snapshot.pendingRelicStatus.relicId).name}.
       </section> : null}
-      {run.phase === 'neow' && run.neow ? <NeowScreen
+      {run.phase === 'neow' && run.neow ? <Suspense fallback={null}><NeowScreen
         players={run.players}
         progress={run.neow.players}
         viewerId={snapshot.you.playerId}
@@ -759,8 +765,8 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           kind: 'neow', stage: 'option', optionIndex, cardUids: decision.cardUids ?? [],
         })}
         onArmCardGain={morph.armGain}
-      /> : null}
-      {run.phase === 'setup' && run.setup && !pendingAcquisition ? <QuickSetupScreen
+      /></Suspense> : null}
+      {run.phase === 'setup' && run.setup && !pendingAcquisition ? <Suspense fallback={null}><QuickSetupScreen
         setup={run.setup}
         players={run.players.map(playerForUi)}
         currentStep={currentQuickSetupStep(run.setup)}
@@ -770,15 +776,17 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
           ? 'Reconnecting… setup progress is preserved.'
           : `Waiting for ${snapshot.seats.find((seat) => seat.playerId === run.setup?.playerIds[run.setup.playerIndex])?.name ?? 'the active player'}.`}
         onAdvance={(cardUids) => room.act({ kind: 'setupStep', cardUids: cardUids ?? [] })}
-      /> : null}
+      /></Suspense> : null}
       {run.phase === 'reward' && !pendingAcquisition ? (
-        <OnlineRewardScreen
-          run={run}
-          viewerId={snapshot.you.playerId}
-          waitingForTeammate={Boolean(snapshot.pendingTeammateAcquisitionPlayerId)}
-          locked={mutationsLocked}
-          onAction={room.act}
-        />
+        <Suspense fallback={null}>
+          <OnlineRewardScreen
+            run={run}
+            viewerId={snapshot.you.playerId}
+            waitingForTeammate={Boolean(snapshot.pendingTeammateAcquisitionPlayerId)}
+            locked={mutationsLocked}
+            onAction={room.act}
+          />
+        </Suspense>
       ) : null}
       {run.phase === 'betweenCombat' ? (
         <section className="room-screen between-combat">
@@ -795,42 +803,46 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       ) : null}
       {run.phase === 'room' && roomKind === 'campfire' && viewer
         && !pendingAcquisition && !run.roomState ? (
-        <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats.filter((seat) => !run.players.find((candidate) => candidate.id === seat.playerId)?.dead)} onAction={room.act}
-          rubyAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.ruby}
-          restAllowed={!run.meta.modifierIds.includes('night_terrors')}
-          ruleset={run.meta.ruleset} transformAvailable={snapshot.campfireTransformAvailable} />
+        <Suspense fallback={null}>
+          <OnlineCampfireScreen player={viewer} saved={snapshot.campfireChoice} decided={snapshot.campfireDecided} seats={snapshot.seats.filter((seat) => !run.players.find((candidate) => candidate.id === seat.playerId)?.dead)} onAction={room.act}
+            rubyAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.ruby}
+            restAllowed={!run.meta.modifierIds.includes('night_terrors')}
+            ruleset={run.meta.ruleset} transformAvailable={snapshot.campfireTransformAvailable} />
+        </Suspense>
       ) : null}
       {waitingForCatchUpMerchant ? <section className="room-screen" role="status">Waiting for the Catch Up players to finish their Merchant visit.</section> : null}
       {run.phase === 'room' && run.roomState && viewer
         && !pendingAcquisition && !waitingForCatchUpMerchant ? (
-        <RoomScreen
-          room={run.roomState}
-          players={run.players.map(playerForUi)}
-          viewerId={snapshot.you.playerId}
-          ascension={run.ascension}
-          onPurchase={(purchase) => room.act({ kind: 'merchantPurchase', purchase })}
-          onRemove={(playerId, cardUid, payments) => room.act({ kind: 'merchantRemove', playerId, cardUid, payments })}
-          onResumeMerchant={() => room.act({ kind: 'merchantResume' })}
-          onFinishMerchant={() => room.act({ kind: 'merchantFinish' })}
-          onRelic={(playerId, decision) => room.act({ kind: 'relicReward', playerId, decision })}
-          onEvent={(playerId, decision) => room.act({ kind: 'event', playerId, decision })}
-          onPreparedHermitSetup={(cardUid, enemyUid) => room.act({ kind: 'resolveHermitSetupLoad', cardUid, enemyUid })}
-          onPreparedStartTurnScryOrder={(order) => room.act({ kind: 'orderStartTurnScries', order })}
-          onPreparedStartTurnScry={(sourceId, discardUids) => room.act({ kind: 'resolveStartTurnScry', sourceId, discardUids })}
-          eventCanSkip={snapshot.eventCanSkip}
-          unavailableEventOptionIds={snapshot.unavailableEventOptionIds}
-          onSkipEvent={(playerId) => room.act({ kind: 'eventSkip', playerId })}
-          sapphireAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.sapphire}
-          merchantPledges={snapshot.merchantPledges}
-          merchantReady={snapshot.merchantReady}
-          connectedPlayerIds={snapshot.seats.filter((seat) => seat.connected).map((seat) => seat.playerId)}
-          onWithdraw={(key) => room.act({ kind: 'merchantWithdraw', key })}
-          eventMap={run.map}
-          eventBossDefId={run.actBossDefId}
-          eventPledge={snapshot.eventPledge}
-          onCancelEventPayment={() => room.act({ kind: 'eventCancel' })}
-          onArmCardGain={morph.armGain}
-        />
+        <Suspense fallback={null}>
+          <RoomScreen
+            room={run.roomState}
+            players={run.players.map(playerForUi)}
+            viewerId={snapshot.you.playerId}
+            ascension={run.ascension}
+            onPurchase={(purchase) => room.act({ kind: 'merchantPurchase', purchase })}
+            onRemove={(playerId, cardUid, payments) => room.act({ kind: 'merchantRemove', playerId, cardUid, payments })}
+            onResumeMerchant={() => room.act({ kind: 'merchantResume' })}
+            onFinishMerchant={() => room.act({ kind: 'merchantFinish' })}
+            onRelic={(playerId, decision) => room.act({ kind: 'relicReward', playerId, decision })}
+            onEvent={(playerId, decision) => room.act({ kind: 'event', playerId, decision })}
+            onPreparedHermitSetup={(cardUid, enemyUid) => room.act({ kind: 'resolveHermitSetupLoad', cardUid, enemyUid })}
+            onPreparedStartTurnScryOrder={(order) => room.act({ kind: 'orderStartTurnScries', order })}
+            onPreparedStartTurnScry={(sourceId, discardUids) => room.act({ kind: 'resolveStartTurnScry', sourceId, discardUids })}
+            eventCanSkip={snapshot.eventCanSkip}
+            unavailableEventOptionIds={snapshot.unavailableEventOptionIds}
+            onSkipEvent={(playerId) => room.act({ kind: 'eventSkip', playerId })}
+            sapphireAvailable={snapshot.campaignProgress.actIV >= ACT_IV_UNLOCK_BOXES && !run.campaign.keys.sapphire}
+            merchantPledges={snapshot.merchantPledges}
+            merchantReady={snapshot.merchantReady}
+            connectedPlayerIds={snapshot.seats.filter((seat) => seat.connected).map((seat) => seat.playerId)}
+            onWithdraw={(key) => room.act({ kind: 'merchantWithdraw', key })}
+            eventMap={run.map}
+            eventBossDefId={run.actBossDefId}
+            eventPledge={snapshot.eventPledge}
+            onCancelEventPayment={() => room.act({ kind: 'eventCancel' })}
+            onArmCardGain={morph.armGain}
+          />
+        </Suspense>
       ) : null}
       {run.phase === 'room' && roomKind !== 'campfire' && !pendingAcquisition && !run.roomState ? (
         <section className="room-screen">
@@ -842,8 +854,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
       {run.phase === 'victory' && !pendingAcquisition && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
-          <RunSummary act={run.act} roomsCleared={roomsCleared}
-            ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} coins={summaryCoins} />
+          <Suspense fallback={null}>
+            <RunSummary act={run.act} roomsCleared={roomsCleared}
+              ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} coins={summaryCoins} />
+          </Suspense>
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
@@ -854,7 +868,7 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
             onClick={() => room.act({ kind: 'finishRun' })}>Stop and record result</button>
         </section>
       ) : null}
-      {run.phase === 'defeat' && !run.campaign.finalized ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2><RunSummary act={run.act} roomsCleared={roomsCleared} ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} coins={summaryCoins} /><button type="button" onClick={() => room.act({ kind: 'finishRun' })}>Record campaign result</button></section> : null}
+      {run.phase === 'defeat' && !run.campaign.finalized ? <section className="room-screen"><h2 className="room-screen__defeat">The party has fallen</h2><Suspense fallback={null}><RunSummary act={run.act} roomsCleared={roomsCleared} ascension={run.ascension} seats={run.players.map(onlineSummarySeat)} coins={summaryCoins} /></Suspense><button type="button" onClick={() => room.act({ kind: 'finishRun' })}>Record campaign result</button></section> : null}
 
       {run.campaign.finalized ? <section className="campaign-end"><span>Campaign journal</span><h2>Marks earned</h2><p>{snapshot.campaignProgress.unspentMarks} shared mark{snapshot.campaignProgress.unspentMarks === 1 ? '' : 's'} remain. {snapshot.seats[0]?.playerId === snapshot.you.playerId ? 'Assign them before the next run.' : `Waiting for ${snapshot.seats[0]?.name ?? 'the journal keeper'}.`}</p>{snapshot.seats[0]?.playerId === snapshot.you.playerId ? <div>{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.colorless < 3 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 1, actIV: 0, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Colorless · {snapshot.campaignProgress.colorless}/3</button> : null}{snapshot.campaignProgress.unspentMarks > 0 && snapshot.campaignProgress.actIV < 5 ? <button type="button" onClick={() => room.act({ kind: 'allocateCampaign', colorless: 0, actIV: 1, expectedUnspentMarks: snapshot.campaignProgress.unspentMarks, expectedRunId: run.campaign.runId })}>Mark Act IV · {snapshot.campaignProgress.actIV}/5</button> : null}{snapshot.campaignProgress.unspentMarks === 0 ? <button type="button" onClick={() => room.act({ kind: 'returnToLobby' })}>Prepare next run →</button> : null}</div> : null}</section> : null}
 
@@ -881,10 +895,10 @@ export function OnlineGame({ onLocal, settings, onSettings }: Props) {
         request={morph.current} name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
     </SkinProvider>
-    {compendiumOpen ? <CompendiumScreen onBack={() => {
+    {compendiumOpen ? <Suspense fallback={null}><CompendiumScreen onBack={() => {
       setCompendiumOpen(false)
       requestAnimationFrame(() => runShell.current?.focus())
-    }} backLabel="Back to run" /> : null}
+    }} backLabel="Back to run" /></Suspense> : null}
     </>
   )
 }

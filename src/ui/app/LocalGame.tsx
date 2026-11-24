@@ -1,4 +1,4 @@
-import { lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { flushSync } from 'react-dom'
 import { CAMPAIGN_EVENT, campaignKey, savedCampaign, saveCampaign } from '../../campaign-storage.ts'
 import { assetPath, preloadImages, releasePreloadedImages } from '../../game/assets.ts'
@@ -69,7 +69,6 @@ import { isRestricted, onProfileChange, PROFILE_KEY, savedProfile, SPIRE_REJECTI
 import { preferredSkin } from '../../skin-preference.ts'
 import { soloRunKey } from '../../wallet.ts'
 import { ACCOUNT_WALLETS, creditRunCoins, currentWalletKey, savedWallet, syncAccountWallet } from '../../wallet-storage.ts'
-import { CampfireScreen } from '../CampfireScreen.tsx'
 import { CardCollectionOverlay } from '../CardCollectionOverlay.tsx'
 import { CardMorph, CardMorphAnnouncement } from '../CardMorph.tsx'
 import { CoinGainToast, type CoinGain } from '../Coins.tsx'
@@ -84,19 +83,10 @@ import type { GameSettings } from '../game-settings.ts'
 import { GiveUpPanel } from '../GiveUpPanel.tsx'
 import { IconValue } from '../Icon.tsx'
 import { LeaderboardScreen } from '../LeaderboardScreen.tsx'
-import { MapOverlay } from '../MapOverlay.tsx'
-import { MapScreen } from '../MapScreen.tsx'
-import { NeowScreen } from '../NeowScreen.tsx'
 import { OutsidePotionBar } from '../OutsidePotionBar.tsx'
 import { PlayerTitle } from '../PlayerTitle.tsx'
 import { PotionSlots } from '../PotionSlots.tsx'
-import { ProfileScreen } from '../ProfileScreen.tsx'
-import { QuickSetupScreen } from '../QuickSetupScreen.tsx'
 import { RelicBar } from '../RelicChip.tsx'
-import { GuardianSocketPanel, RelicResolvePanel } from '../RelicResolvePanel.tsx'
-import { ReplayBar } from '../ReplayBar.tsx'
-import { RewardScreen } from '../RewardScreen.tsx'
-import { RoomScreen } from '../RoomScreen.tsx'
 import {
   discardRunLog,
   downloadRunLog,
@@ -106,16 +96,14 @@ import {
   type RunLog,
 } from '../run-log.ts'
 import { ReplaySession } from '../run-replay.ts'
-import { RunSummary, summarySeat } from '../RunSummary.tsx'
+import { summarySeat } from '../run-summary-data.ts'
 import { SettingsDialog } from '../SettingsDialog.tsx'
 import { playSoundEffect, useCombatMusic, useRunOutcomeSound, useVictoryMusic } from '../sfx.ts'
 import { SkinProvider } from '../skin-context.tsx'
 import { StartMenu } from '../StartMenu.tsx'
 import { StatsScreen } from '../StatsScreen.tsx'
 import { TreasureEffects } from '../TreasureEffects.tsx'
-import { tutorialChapters, tutorialSeed } from '../tutorial/index.ts'
-import { createTutorialRun, enterTutorialRoom } from '../tutorial/run.ts'
-import { TutorialCoach } from '../TutorialCoach.tsx'
+import type { TutorialChapter } from '../tutorial/types.ts'
 import { useCardMorphs } from '../useCardMorphs.ts'
 import { useUtcDay } from '../useUtcDay.ts'
 import { wingBootUses } from '../wing-boots.ts'
@@ -133,9 +121,22 @@ import {
   type SoloRunSave,
 } from './solo-save.ts'
 
+const CampfireScreen = lazy(() => import('../CampfireScreen.tsx').then((module) => ({ default: module.CampfireScreen })))
 const CombatScreen = lazy(() => import('../CombatScreen.tsx').then((module) => ({ default: module.CombatScreen })))
 const CompendiumScreen = lazy(() => import('../CompendiumScreen.tsx').then((module) => ({ default: module.CompendiumScreen })))
+const GuardianSocketPanel = lazy(() => import('../RelicResolvePanel.tsx').then((module) => ({ default: module.GuardianSocketPanel })))
+const MapOverlay = lazy(() => import('../MapOverlay.tsx').then((module) => ({ default: module.MapOverlay })))
+const MapScreen = lazy(() => import('../MapScreen.tsx').then((module) => ({ default: module.MapScreen })))
+const NeowScreen = lazy(() => import('../NeowScreen.tsx').then((module) => ({ default: module.NeowScreen })))
+const ProfileScreen = lazy(() => import('../ProfileScreen.tsx').then((module) => ({ default: module.ProfileScreen })))
+const QuickSetupScreen = lazy(() => import('../QuickSetupScreen.tsx').then((module) => ({ default: module.QuickSetupScreen })))
+const RelicResolvePanel = lazy(() => import('../RelicResolvePanel.tsx').then((module) => ({ default: module.RelicResolvePanel })))
+const ReplayBar = lazy(() => import('../ReplayBar.tsx').then((module) => ({ default: module.ReplayBar })))
+const RewardScreen = lazy(() => import('../RewardScreen.tsx').then((module) => ({ default: module.RewardScreen })))
+const RoomScreen = lazy(() => import('../RoomScreen.tsx').then((module) => ({ default: module.RoomScreen })))
+const RunSummary = lazy(() => import('../RunSummary.tsx').then((module) => ({ default: module.RunSummary })))
 const ShopScreen = lazy(() => import('../ShopScreen.tsx').then((module) => ({ default: module.ShopScreen })))
+const TutorialCoach = lazy(() => import('../TutorialCoach.tsx').then((module) => ({ default: module.TutorialCoach })))
 
 type StsDebugBridge = {
   getRun: () => RunState
@@ -234,11 +235,11 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
   // parked here and restored on exit, and while it lasts nothing is written to
   // the solo checkpoint, the campaign journal, the run log or the leaderboard.
   // `attempt` restarts the coach when the same hero's tutorial is tried again.
-  const [tutorial, setTutorial] = useState<{ character: CharacterId; seed: string; attempt: number } | null>(null)
+  const [tutorial, setTutorial] = useState<{ character: CharacterId; seed: string; attempt: number; chapters: readonly TutorialChapter[] } | null>(null)
   const [tutorialTipsHidden, setTutorialTipsHidden] = useState(false)
   const tutorialReturn = useRef<{ run: RunState; viewerId: string } | null>(null)
-  const tutorialCharacter = tutorial?.character
-  const tutorialChapterList = useMemo(() => tutorialCharacter ? tutorialChapters(tutorialCharacter) : [], [tutorialCharacter])
+  const tutorialRunModule = useRef<typeof import('../tutorial/run.ts') | null>(null)
+  const tutorialChapterList = tutorial?.chapters ?? []
   const { available: runLogAvailable, discard: discardLog, load: loadRunLog } = useRunLog(
     run, active && open && !replayLog && !tutorial, viewerId,
   )
@@ -389,15 +390,20 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
     setRun(next)
   }
 
-  const startTutorial = (character: CharacterId) => {
+  const startTutorial = async (character: CharacterId) => {
+    const [{ tutorialChapters, tutorialSeed }, tutorialRun] = await Promise.all([
+      import('../tutorial/index.ts'),
+      import('../tutorial/run.ts'),
+    ])
+    tutorialRunModule.current = tutorialRun
     if (!tutorialReturn.current) tutorialReturn.current = { run, viewerId }
     setViewerId('p1')
     setPauseOpen(false)
     setGiveUpOpen(false)
     setTutorialTipsHidden(false)
     const seed = tutorialSeed(character)
-    setTutorial((current) => ({ character, seed, attempt: (current?.attempt ?? 0) + 1 }))
-    setRun(createTutorialRun(character, ROSTER.find((entry) => entry.character === character)!.name, seed))
+    setTutorial((current) => ({ character, seed, attempt: (current?.attempt ?? 0) + 1, chapters: tutorialChapters(character) }))
+    setRun(tutorialRun.createTutorialRun(character, ROSTER.find((entry) => entry.character === character)!.name, seed))
     onOpen()
   }
 
@@ -727,11 +733,11 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
   }
 
   if (!open) {
-    if (compendium) return <CompendiumScreen onBack={() => setCompendium(false)} />
+    if (compendium) return <Suspense fallback={null}><CompendiumScreen onBack={() => setCompendium(false)} /></Suspense>
     if (leaderboard) return <LeaderboardScreen onBack={() => setLeaderboard(false)} />
     if (stats) return <StatsScreen onBack={() => setStats(false)} />
-    if (profileOpen) return <ProfileScreen onBack={() => setProfileOpen(false)} onShop={() => { setProfileOpen(false); setShop('skins') }} />
-    if (shop) return <ShopScreen initialTab={shop} onBack={() => setShop(false)} />
+    if (profileOpen) return <Suspense fallback={null}><ProfileScreen onBack={() => setProfileOpen(false)} onShop={() => { setProfileOpen(false); setShop('skins') }} /></Suspense>
+    if (shop) return <Suspense fallback={null}><ShopScreen initialTab={shop} onBack={() => setShop(false)} /></Suspense>
     return <StartMenu
       characters={characters}
       ascension={ascension}
@@ -769,7 +775,7 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
         else restart(1, seedText, ascension, false, false, characters, { ...metaOptions, campaign })
         onOpen()
       }}
-      onTutorial={() => startTutorial(characters[0] ?? 'ironclad')}
+      onTutorial={() => void startTutorial(characters[0] ?? 'ironclad')}
       onResume={resume ? resumeSoloRun : undefined}
       onOnline={onOnline}
       onLeaderboard={() => setLeaderboard(true)}
@@ -834,7 +840,9 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
             </CardCollectionOverlay>
           ) : null}
           {run.phase !== 'map' && run.phase !== 'setup' ? (
-            <MapOverlay map={seenMap} act={run.act} bossDefId={run.actBossDefId} />
+            <Suspense fallback={null}>
+              <MapOverlay map={seenMap} act={run.act} bossDefId={run.actBossDefId} />
+            </Suspense>
           ) : null}
           <button type="button" className="game-settings game-settings__summary" aria-label="Settings"
             onClick={() => { setSettingsReturnToPause(false); setSettingsOpen(true) }}>
@@ -891,7 +899,7 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
       </dialog>
 
       {!allocatingCampaignMarks && run.phase === 'combat' && run.combat ? (
-        <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><CombatScreen
+        <><div className="courier-combat-lock" inert={Boolean(run.courier.offer) || undefined} aria-disabled={Boolean(run.courier.offer) || undefined}><Suspense fallback={null}><CombatScreen
           state={run.combat}
           act={run.act}
           viewerId={viewerId}
@@ -904,29 +912,29 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
           onCourierReveal={run.courier.offer ? undefined : revealLocalCourier}
           mutationsEnabled={!run.courier.offer}
           onChange={updateCombat}
-        /></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} offer={run.courier.offer} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
+        /></Suspense></div><CourierPanel players={run.combat.players} viewerId={viewerId} ascension={run.ascension} offer={run.courier.offer} onResolve={(decision, payments = {}, discardPotionId) => setRun((current) => decideCourier(current, current.courier.offer?.playerId ?? viewerId, decision, payments, discardPotionId))} /></>
       ) : null}
-      {pendingPreview ? <RelicResolvePanel key={`${pendingPreview.id}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
+      {pendingPreview ? <Suspense fallback={null}><RelicResolvePanel key={`${pendingPreview.id}:${JSON.stringify(pendingPreview.rewardIndices ?? {})}`}
         pending={pendingPreview}
         player={viewer!} potion={run.rewards.find((offer) => offer.playerId === viewerId)?.potion}
         ascension={run.ascension}
         onPotion={(decision) => setRun((current) => resolvePotionReward(current, viewerId, decision))}
         onRewardChoice={(reward, choice) => setRun((current) =>
           choosePendingRelicReward(current, viewerId, reward, choice))} onResolve={(cardUids, rewardIndices) => setRun((current) =>
-          resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /> : null}
-      {pendingSocket && pendingSocketOwner ? <GuardianSocketPanel
+          resolvePendingRelic(current, viewerId, cardUids, rewardIndices))} /></Suspense> : null}
+      {pendingSocket && pendingSocketOwner ? <Suspense fallback={null}><GuardianSocketPanel
         key={`${pendingSocket.playerId}-${pendingSocket.cardUid}`}
         pending={pendingSocket}
         deck={pendingSocketOwner.deck}
         onResolve={(gemId) => setRun((current) => finishRewardsIfComplete(resolveGuardianSocket(
           current, pendingSocket.playerId, pendingSocket.cardUid, gemId,
-        )))} /> : null}
+        )))} /></Suspense> : null}
       {run.phase !== 'neow' && run.phase !== 'reward' && run.phase !== 'combat' && pendingOwner && pendingRelic && pendingOwner.id !== viewerId ? <section className="room-screen" role="status">
         Waiting for {pendingOwner.name} to resolve {relicDef(pendingRelic.defId).name}.
         <button type="button" onClick={() => setViewerId(pendingOwner.id)}>Switch to {pendingOwner.name}</button>
       </section> : null}
 
-      {!allocatingCampaignMarks && run.phase === 'neow' && run.neow ? <NeowScreen
+      {!allocatingCampaignMarks && run.phase === 'neow' && run.neow ? <Suspense fallback={null}><NeowScreen
         players={run.players}
         progress={Object.fromEntries(Object.keys(run.neow.players).map((id) => [id, neowPreview(run, id)]))}
         viewerId={viewerId}
@@ -941,17 +949,17 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
         onEffect={(playerId, gain, decision) => setRun((current) => resolveNeowEffect(current, playerId, gain, decision))}
         onChoose={(playerId, optionIndex, decision) => setRun((current) => chooseNeow(current, playerId, optionIndex, decision))}
         onArmCardGain={morph.armGain}
-      /> : null}
+      /></Suspense> : null}
 
-      {!allocatingCampaignMarks && run.phase === 'setup' && run.setup && !pendingAcquisition ? <QuickSetupScreen
+      {!allocatingCampaignMarks && run.phase === 'setup' && run.setup && !pendingAcquisition ? <Suspense fallback={null}><QuickSetupScreen
         setup={run.setup}
         players={run.players}
         currentStep={currentQuickSetupStep(run.setup)}
         onAdvance={(cardUids) => setRun((current) => advanceQuickSetup(current, cardUids))}
-      /> : null}
+      /></Suspense> : null}
 
       {!allocatingCampaignMarks && run.phase === 'map' ? (
-        <>
+        <Suspense fallback={null}>
           <MapScreen map={seenMap} choices={pendingAcquisition ? [] : roomChoices({ ...run, map: seenMap })} blocked={pendingAcquisition}
             bossDefId={run.actBossDefId}
             canRerollBoss={!pendingAcquisition && canRerollDownfallSelfBoss(run)}
@@ -961,8 +969,8 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
             wingUses={wingBootUses(run.players.find((player) => player.id === viewerId))}
             onEnter={(roomId) => setRun((current) => wingChoices.some((room) => room.id === roomId)
               ? enterRoom(current, roomId, viewerId)
-              : tutorial ? enterTutorialRoom(current, roomId, tutorial.seed) : enterRoom(current, roomId))} />
-        </>
+              : tutorial && tutorialRunModule.current ? tutorialRunModule.current.enterTutorialRoom(current, roomId, tutorial.seed) : enterRoom(current, roomId))} />
+        </Suspense>
       ) : null}
 
       {!pendingAcquisition && !mapSelectionPending && canSwitchRowsHere &&
@@ -977,19 +985,21 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
       </section> : null}
 
       {!allocatingCampaignMarks && run.phase === 'reward' && !pendingAcquisition ? (
-        <RewardScreen
-          players={run.players}
-          rewards={run.rewards}
-          onReveal={(playerId, sources) => setRun((current) => revealCardReward(current, playerId, sources))}
-          onGold={(playerId, gain) => setRun((current) => resolveGoldReward(current, playerId, gain))}
-          onPotion={(playerId, decision) => setRun((current) => resolvePotionReward(current, playerId, decision))}
-          onRelic={(playerId, choice) => setRun((current) => resolveRelicReward(current, playerId, choice === 'gain'))}
-          onBossRelic={(playerId, relicId) => setRun((current) => resolveBossRelicReward(current, playerId, relicId))}
-          onTransform={(playerId, cardUid) => setRun((current) => resolveTransformReward(current, playerId, cardUid))}
-          onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
-          ascension={run.ascension}
-          act={run.act}
-        />
+        <Suspense fallback={null}>
+          <RewardScreen
+            players={run.players}
+            rewards={run.rewards}
+            onReveal={(playerId, sources) => setRun((current) => revealCardReward(current, playerId, sources))}
+            onGold={(playerId, gain) => setRun((current) => resolveGoldReward(current, playerId, gain))}
+            onPotion={(playerId, decision) => setRun((current) => resolvePotionReward(current, playerId, decision))}
+            onRelic={(playerId, choice) => setRun((current) => resolveRelicReward(current, playerId, choice === 'gain'))}
+            onBossRelic={(playerId, relicId) => setRun((current) => resolveBossRelicReward(current, playerId, relicId))}
+            onTransform={(playerId, cardUid) => setRun((current) => resolveTransformReward(current, playerId, cardUid))}
+            onResolve={(decisions) => setRun((current) => resolveCardRewards(current, decisions))}
+            ascension={run.ascension}
+            act={run.act}
+          />
+        </Suspense>
       ) : null}
 
       {!allocatingCampaignMarks && run.phase === 'betweenCombat' ? (
@@ -1011,57 +1021,61 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
 
       {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room'
         && roomKind === 'campfire' && !run.roomState ? (
-        <CampfireScreen
-          players={run.players}
-          rubyAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.ruby}
-          restAllowed={!run.meta.modifierIds.includes('night_terrors')}
-          ruleset={run.meta.ruleset}
-          onResolve={(choices) => setRun((current) => resolveCampfire(current, choices))}
-        />
+        <Suspense fallback={null}>
+          <CampfireScreen
+            players={run.players}
+            rubyAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.ruby}
+            restAllowed={!run.meta.modifierIds.includes('night_terrors')}
+            ruleset={run.meta.ruleset}
+            onResolve={(choices) => setRun((current) => resolveCampfire(current, choices))}
+          />
+        </Suspense>
       ) : null}
 
       {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room' && run.roomState ? (
-        <RoomScreen
-          room={run.roomState}
-          players={run.players}
-          viewerId={viewerId}
-          ascension={run.ascension}
-          onPurchase={(purchase) => setRun((current) => purchaseAtMerchant(current, purchase))}
-          onRemove={(playerId, cardUid, payments) => setRun((current) => removeAtCurrentMerchant(current, playerId, cardUid, payments))}
-          onFinishMerchant={() => setRun((current) => finishMerchant(current))}
-          onRelic={(playerId, decision) => setRun((current) => chooseRelicReward(current, playerId, decision))}
-          onEvent={(playerId, decision) => setRun((current) => chooseEvent(current, playerId, decision))}
-          onPreparedHermitSetup={(cardUid, enemyUid) => setRun((current) => {
-            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
-            const preparedCombat = resolveHermitSetupLoad(current.roomState.preparedCombat, viewerId, cardUid, enemyUid, true)
-            return preparedCombat === current.roomState.preparedCombat ? current : {
-              ...current, roomState: { ...current.roomState, preparedCombat },
-            }
-          })}
-          onPreparedStartTurnScryOrder={(order) => setRun((current) => {
-            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
-            const preparedCombat = orderStartTurnScries(current.roomState.preparedCombat, order)
-            return preparedCombat === current.roomState.preparedCombat ? current : {
-              ...current, roomState: { ...current.roomState, preparedCombat },
-            }
-          })}
-          onPreparedStartTurnScry={(sourceId, discardUids) => setRun((current) => {
-            if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
-            const preparedCombat = resolveStartTurnScry(
-              current.roomState.preparedCombat, viewerId, sourceId, discardUids,
-            )
-            return preparedCombat === current.roomState.preparedCombat ? current : {
-              ...current, roomState: { ...current.roomState, preparedCombat },
-            }
-          })}
-          eventCanSkip={canSkipEvent(run, viewerId)}
-          unavailableEventOptionIds={unavailableEventOptionIds(run, viewerId)}
-          onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
-          sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
-          eventMap={seenMap}
-          eventBossDefId={run.actBossDefId}
-          onArmCardGain={morph.armGain}
-        />
+        <Suspense fallback={null}>
+          <RoomScreen
+            room={run.roomState}
+            players={run.players}
+            viewerId={viewerId}
+            ascension={run.ascension}
+            onPurchase={(purchase) => setRun((current) => purchaseAtMerchant(current, purchase))}
+            onRemove={(playerId, cardUid, payments) => setRun((current) => removeAtCurrentMerchant(current, playerId, cardUid, payments))}
+            onFinishMerchant={() => setRun((current) => finishMerchant(current))}
+            onRelic={(playerId, decision) => setRun((current) => chooseRelicReward(current, playerId, decision))}
+            onEvent={(playerId, decision) => setRun((current) => chooseEvent(current, playerId, decision))}
+            onPreparedHermitSetup={(cardUid, enemyUid) => setRun((current) => {
+              if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+              const preparedCombat = resolveHermitSetupLoad(current.roomState.preparedCombat, viewerId, cardUid, enemyUid, true)
+              return preparedCombat === current.roomState.preparedCombat ? current : {
+                ...current, roomState: { ...current.roomState, preparedCombat },
+              }
+            })}
+            onPreparedStartTurnScryOrder={(order) => setRun((current) => {
+              if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+              const preparedCombat = orderStartTurnScries(current.roomState.preparedCombat, order)
+              return preparedCombat === current.roomState.preparedCombat ? current : {
+                ...current, roomState: { ...current.roomState, preparedCombat },
+              }
+            })}
+            onPreparedStartTurnScry={(sourceId, discardUids) => setRun((current) => {
+              if (current.roomState?.kind !== 'event' || !current.roomState.preparedCombat) return current
+              const preparedCombat = resolveStartTurnScry(
+                current.roomState.preparedCombat, viewerId, sourceId, discardUids,
+              )
+              return preparedCombat === current.roomState.preparedCombat ? current : {
+                ...current, roomState: { ...current.roomState, preparedCombat },
+              }
+            })}
+            eventCanSkip={canSkipEvent(run, viewerId)}
+            unavailableEventOptionIds={unavailableEventOptionIds(run, viewerId)}
+            onSkipEvent={(playerId) => setRun((current) => skipEvent(current, playerId))}
+            sapphireAvailable={isActIVUnlocked(run.campaignProgress) && !run.campaign.keys.sapphire}
+            eventMap={seenMap}
+            eventBossDefId={run.actBossDefId}
+            onArmCardGain={morph.armGain}
+          />
+        </Suspense>
       ) : null}
 
       {!allocatingCampaignMarks && !pendingAcquisition && run.phase === 'room' && roomKind !== 'campfire' && !run.roomState ? (
@@ -1078,13 +1092,15 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
           <h2 id="tutorial-end-title" className={run.phase === 'defeat' ? 'room-screen__defeat' : undefined}>
             {run.phase === 'victory' ? 'Tutorial complete' : 'The tutorial run has ended'}
           </h2>
-          <RunSummary act={run.act} roomsCleared={roomsCleared}
-            ascension={run.ascension} seats={run.players.map(summarySeat)} />
+          <Suspense fallback={null}>
+            <RunSummary act={run.act} roomsCleared={roomsCleared}
+              ascension={run.ascension} seats={run.players.map(summarySeat)} />
+          </Suspense>
           <p>{run.phase === 'victory'
             ? 'You defeated the Act I boss. You know the basics now: start a Single Player run to climb all three Acts and unlock new cards.'
             : 'Every run teaches something. Try again with the same hero, or start a Single Player run when you are ready.'}</p>
           <div className="room-screen__actions">
-            {run.phase === 'defeat' ? <button type="button" onClick={() => startTutorial(tutorial.character)}>Try again</button> : null}
+            {run.phase === 'defeat' ? <button type="button" onClick={() => void startTutorial(tutorial.character)}>Try again</button> : null}
             <button type="button" onClick={exitTutorial}>Return to main menu</button>
           </div>
         </section>
@@ -1093,9 +1109,11 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
       {!tutorial && !allocatingCampaignMarks && !pendingAcquisition && run.phase === 'victory' && !run.campaign.finalized ? (
         <section className="room-screen">
           <h2>{run.act >= 4 ? 'The Spire is conquered' : `Act ${run.act} complete`}</h2>
-          <RunSummary act={run.act} roomsCleared={roomsCleared}
-            ascension={run.ascension} seats={run.players.map(summarySeat)} coins={coinsOwed(run.campaign.bossCoins)}
-            coinsClaimed={Boolean(replayLog) || resultRecorded} />
+          <Suspense fallback={null}>
+            <RunSummary act={run.act} roomsCleared={roomsCleared}
+              ascension={run.ascension} seats={run.players.map(summarySeat)} coins={coinsOwed(run.campaign.bossCoins)}
+              coinsClaimed={Boolean(replayLog) || resultRecorded} />
+          </Suspense>
           {run.lastStand && run.players.some((player) => player.dead) && run.act < 4 ? (
             <p role="status">Last Stand won the Act, but a fallen hero means the party cannot continue to the next Act.</p>
           ) : null}
@@ -1127,9 +1145,9 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
           <h2 className="room-screen__defeat">{lostToSpire ? SPIRE_REJECTION : 'The party has fallen'}</h2>
           {lostToSpire ? <div className="room-screen__actions">
             <button type="button" onClick={() => { discardSoloRun(); onClose() }}>Return to main menu</button>
-          </div> : <RunSummary act={run.act} roomsCleared={roomsCleared}
+          </div> : <Suspense fallback={null}><RunSummary act={run.act} roomsCleared={roomsCleared}
             ascension={run.ascension} seats={run.players.map(summarySeat)} coins={coinsOwed(run.campaign.bossCoins)}
-            coinsClaimed={Boolean(replayLog) || resultRecorded} />}
+            coinsClaimed={Boolean(replayLog) || resultRecorded} /></Suspense>}
           {!lostToSpire && !run.campaign.finalized && !replayLog ? <><div className="room-screen__actions">
             <button type="button" onClick={recordRunResult} disabled={extractingRunLog} data-run-log-control>Record campaign result</button>
             <button type="button" onClick={() => void extractRunLog()} disabled={!runLogAvailable || extractingRunLog}
@@ -1146,8 +1164,8 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
         <p id="run-replay-banner-message" role={runLogMessage ? 'alert' : 'status'}>{runLogMessage ?? 'Replay finished'}</p>
         <button type="button" autoFocus={!document.activeElement?.closest('.replay-bar')} aria-describedby="run-replay-banner-message" onClick={() => { leaveReplay(); onClose() }}>Return to main menu</button>
       </section> : null}
-      {tutorial && !pauseOpen && !settingsOpen && !compendium ? <TutorialCoach key={tutorial.attempt}
-        chapters={tutorialChapterList} run={run} hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} /> : null}
+      {tutorial && !pauseOpen && !settingsOpen && !compendium ? <Suspense fallback={null}><TutorialCoach key={tutorial.attempt}
+        chapters={tutorialChapterList} run={run} hidden={tutorialTipsHidden} onHide={() => setTutorialTipsHidden(true)} /></Suspense> : null}
       {morph.current ? <CardMorph request={morph.current} onDone={morph.dismiss} /> : null}
       <CoinGainToast gain={coinGain} onDone={clearCoinGain} />
       {/* `aria-live` rather than `role="status"`: the run already has status
@@ -1160,12 +1178,12 @@ export function LocalGame({ onOnline, settings, onSettings, active, seedText, se
         name={(card) => faceOf(cardDef(card.defId), card.upgraded).name} />
     </main>
     </SkinProvider>
-    {replayLog && replaySession && !compendium ? <ReplayBar session={replaySession} onSeek={seekReplay}
-      onExit={() => { leaveReplay(); onClose() }} /> : null}
-    {compendium ? <CompendiumScreen onBack={() => {
+    {replayLog && replaySession && !compendium ? <Suspense fallback={null}><ReplayBar session={replaySession} onSeek={seekReplay}
+      onExit={() => { leaveReplay(); onClose() }} /></Suspense> : null}
+    {compendium ? <Suspense fallback={null}><CompendiumScreen onBack={() => {
       setCompendium(false)
       requestAnimationFrame(() => runShell.current?.focus())
-    }} backLabel="Back to run" /> : null}
+    }} backLabel="Back to run" /></Suspense> : null}
     </>
   )
 }
