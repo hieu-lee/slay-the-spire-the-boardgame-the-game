@@ -121,6 +121,11 @@ export function SmokeTrail({ path, bounds }: { path: string; bounds: Bounds }) {
     data-texture-ready={Boolean(texture)}>{artwork}</div> : artwork
 }
 
+interface WindowWithIdleCallback {
+  requestIdleCallback?: (callback: () => void, options: { timeout: number }) => number
+  cancelIdleCallback?: (handle: number) => void
+}
+
 /** Prepare the three public pile routes before the player plays their first card. */
 export function warmSmokeTrails(character: string) {
   let cancelled = false
@@ -133,10 +138,7 @@ export function warmSmokeTrails(character: string) {
   const color = getComputedStyle(probe).getPropertyValue('--flight-trace').trim()
   probe.remove()
   const destinations = ['discard', 'draw', 'exhaust'] as const
-  const idleWindow = window as unknown as {
-    requestIdleCallback?: (callback: () => void, options: { timeout: number }) => number
-    cancelIdleCallback?: (handle: number) => void
-  }
+  const idleWindow: WindowWithIdleCallback = window
   let timer = 0
   let idle = 0
   const schedule = (callback: () => void) => {

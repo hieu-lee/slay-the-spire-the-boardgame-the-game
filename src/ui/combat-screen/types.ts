@@ -276,3 +276,16 @@ export type Pending = {
   /** Slayer Pack: The Power in play Metamorphosis attaches to; unset until chosen. */
   metamorphosisPowerUid?: string
 }
+
+export type ChamberReturnFlight = {
+  card: CardInstance
+  left: number
+  top: number
+  width: number
+  height: number
+  x: number
+  y: number
+  index: number
+}
+
+export type SlimeCardZoom = { card: CardInstance; x: number; y: number }

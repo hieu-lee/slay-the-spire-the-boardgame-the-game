@@ -1,32 +1,43 @@
-import { SmokeTrail, warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
-import heroArtHeads from './hero-art-head.json'
-import { animateCardFlight, cardFlightPath } from './combat-screen/card-flight.ts'
+import { warmSmokeTrails } from './combat-screen/SmokeTrail.tsx'
+import { cardFlightPath } from './combat-screen/card-flight.ts'
 import { unknownPowerRefreshDecision } from './combat-screen/unknown-power.ts'
-import { HermitTriggerChoice } from './combat-screen/HermitTriggerChoice.tsx'
-import { StartTurnOrder } from './combat-screen/StartTurnOrder.tsx'
-// The combat screen: the board, the hand, and every prompt a fight puts up.
-//
-// One component, because the fight is one interaction — a card being dragged
-// knows about the enemy under the pointer, the Energy it would spend, and the
-// prompt it would open, and splitting that across components would mean passing
-// the same twenty things back and forth. What CAN stand outside it does:
-// combat-screen/types.ts for the shapes, helpers.ts for the questions it asks
-// of the board, hooks.ts for the senses that watch the board change, and
-// vfx.tsx for the effect overlay a play puts on it.
-import rigMetadata from './rig-animation-metadata.json' with { type: 'json' }
-import { enemyAbilities, enemyDef } from '../game/enemies.ts'
-import { hasStagedAttack, playerVisualId, skinTraits, type VisualId } from '../game/skins.ts'
+import { CombatBar } from './combat-screen/CombatBar.tsx'
+import { CombatChoiceDialogs, CombatPotionDialogs, PlayerChoiceDiscardDialog } from './combat-screen/CombatDialogs.tsx'
+import { CombatStage, GroundedCombatVfx } from './combat-screen/CombatStage.tsx'
+import { FloatingOverlays } from './combat-screen/FloatingOverlays.tsx'
+import { HandArea } from './combat-screen/HandArea.tsx'
+import { slimeAssetSlug } from './combat-screen/portraits.tsx'
 import {
-  PHASE_LABEL,
+  beforeDrawPrompt as deriveBeforeDrawPrompt,
+  dieRelicPrompt as deriveDieRelicPrompt,
+  enemyPrompt as deriveEnemyPrompt,
+  forcedPrompt as deriveForcedPrompt,
+  playWindowPrompt as derivePlayWindowPrompt,
+  playerChoicePrompt as derivePlayerChoicePrompt,
+  plunderPrompt as derivePlunderPrompt,
+  prompt as derivePrompt,
+  startTurnPrompt as deriveStartTurnPrompt,
+  triggerPrompt as deriveTriggerPrompt,
+} from './combat-screen/prompts.ts'
+import { useAttackPosePreload } from './combat-screen/useAttackPosePreload.ts'
+import { useCombatDrag } from './combat-screen/useCombatDrag.ts'
+import { useModalDialog } from './combat-screen/useModalDialog.ts'
+import { useStageLayout } from './combat-screen/useStageLayout.ts'
+// The combat screen: orchestrates combat state, actions, and presentation while
+// delegating layout, drag interactions, asset preloading, modal lifecycle,
+// prompt derivation, and UI regions to cohesive modules under combat-screen/.
+import { enemyAbilities, enemyDef } from '../game/enemies.ts'
+import { hasStagedAttack, playerVisualId, skinTraits } from '../game/skins.ts'
+import {
   canAfford,
   cardShivsOnPlay,
-  describeSeat,
-  fanOf,
+  chargedCardEnergy,
   gainedShivs,
   pendingFor,
   requirementsOf,
-  revealViewerRow,
   rowsOf,
+  stageHermitChamberViewer,
+  targetPresentationTiming,
 } from './combat-screen/helpers.ts'
 import {
   useCardHints,
@@ -37,45 +48,31 @@ import {
   useReducedEffects,
   useStruck,
 } from './combat-screen/hooks.ts'
-import type { TargetContactDeadline } from './combat-screen/hooks.ts'
 import type {
   ActiveCombatVfx,
-  CardDrag,
-  CardDragStart,
   CardFlight,
+  ChamberReturnFlight,
   CharacterAttackMotion,
   CombatScreenProps,
-  EndTurnEffectDrag,
   MotionKey,
   MotionSnapshot,
   Pending,
   PendingStartChoice,
+  SlimeCardZoom,
   UnknownCardAction,
   UnknownPotionAction,
   UnknownPowerAction,
 } from './combat-screen/types.ts'
 import {
   CombatVfx,
-  DefectEvokeVfx,
-  HermitBullets,
-  splitAttackWeights,
-  StagedImpacts,
-  isStagedAttackAsset,
-  stagedAttackAssets,
   stagedAttackOf,
-  stagedIdleAsset,
-  stagedPoseAsset,
   characterAttackContactMs,
   isCharacterAttack,
-  latestTargetPresentationEvent,
   ORB_END_TURN_STAGGER_MS,
   isEndTurnLightning,
 } from './combat-screen/vfx.tsx'
-import type { StagedAttackSpec } from './combat-screen/staged-attacks.ts'
-import { assetPath, potionIconPath, relicIconPath } from '../game/assets.ts'
-import { CombatAnimation, combatVideoPath, preloadCombatVideo, useSafariCombatVideo } from './CombatAnimation.tsx'
-import { cardCost, cardDef, cardIsCurse, faceOf } from '../game/cards.ts'
-import type { CardDef } from '../game/cards.ts'
+import { assetPath, relicIconPath } from '../game/assets.ts'
+import { cardDef, faceOf } from '../game/cards.ts'
 import {
   activeCardPlayWindow,
   activatePotion,
@@ -96,7 +93,6 @@ import {
   cardPlayerChoiceCount,
   cardReferencesGuardianMode,
   cardShivChoiceCount,
-  chooseDistilledCard,
   chosenEvokeOrbs,
   evokePlan,
   chooseEndTurnTarget,
@@ -146,7 +142,6 @@ import {
   reachedTimeWarpLimit,
   slimeChoiceIsAvailable,
   slimeCommandEnemyChoiceLabels,
-  remainingRoundHpLoss,
   resolvePendingTrigger,
   resolveEndTurnAbility,
   resolvePendingDieRelicChoice,
@@ -160,10 +155,8 @@ import {
   resolveStartPlayerTurn,
   resolveStartTurnDiscard,
   resolveStartTurnScry,
-  spendMiracle,
   spendShiv,
   spendSoulburn,
-  spendVigor,
   startPlayerTurnWithChoices,
   startTurnAbilities,
   startTurnChoicePending,
@@ -180,7 +173,6 @@ import {
 } from '../game/combat.ts'
 import type {
   CardDamagePreview,
-  CombatPresentationEvent,
   CombatState,
   DiscardOrders,
   EndTurnAbility,
@@ -193,303 +185,36 @@ import type {
 import { chosenDieRelicAbilities, potionDef, relicDef } from '../game/relics.ts'
 import { DieRelicChoiceList, dieRelicChoices } from './DieRelicChoices.tsx'
 import { CAPS, DOWNFALL_CHARACTER_IDS } from '../game/types.ts'
-import type { CardInstance, DownfallCharacterId, Enemy, Player } from '../game/types.ts'
+import type { CardInstance, Enemy, Player } from '../game/types.ts'
 import type { ActionOutcome, VisiblePlayer } from '../multiplayer/useRoomSession.ts'
-import { Card, slimeCommandText } from './Card.tsx'
+import { Card } from './Card.tsx'
 import { relicTooltipText } from './RelicChip.tsx'
-import { CardCollectionOverlay } from './CardCollectionOverlay.tsx'
-import { EnemyCard } from './EnemyCard.tsx'
-import { Icon, IconValue, StatusIcon, dieIcon } from './Icon.tsx'
-import { PotionIcon, PotionTooltipAnchor } from './PotionIcon.tsx'
+import { PotionTooltipAnchor } from './PotionIcon.tsx'
 import {
-  PowerGlyph,
-  PowerRow,
   registerCardZoomCloser,
   releaseCardZoom,
   tryClaimCardZoom,
 } from './PowerRow.tsx'
-import { OrbRow, TokenRow } from './TokenRow.tsx'
 import {
   STAGE_GAP_REM,
   STAGE_MARGIN_REM,
   cardMotionDestination,
-  displayedEnemies,
   drawnCardUids,
-  healthBand,
   livingEnemiesInStageOrder,
   pendingUiSurvivesContext,
   shouldDisarmCardFlight,
-  stageScaleFor,
 } from './board-signals.ts'
 import { enemyAttackTargetPlayerIds, enemyAttackArrivalMsFor, cardVfxRecipe, orbVfxRecipe, potionVfxRecipe, shivVfxRecipe, turnEffectVfxRecipe } from './combat-vfx.ts'
 import { combatBodyPoint } from './combat-geometry.ts'
 import { playSoundEffect } from './sfx.ts'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { CourierPeek, courierPeekPhase, courierReady } from './CourierPanel.tsx'
-import { createPortal } from 'react-dom'
-
-function targetPresentationTiming(
-  state: CombatState,
-  targetId: string,
-  contacts: ReadonlyMap<string, TargetContactDeadline>,
-): { event?: CombatPresentationEvent; contact: number } {
-  const event = latestTargetPresentationEvent(state.presentationEvents, targetId)
-  if (!event) return { contact: 0 }
-  const scheduled = contacts.get(targetId)
-  if (!scheduled || scheduled.throughSeq < event.seq) return { event, contact: -1 }
-  const outstanding = Math.max(0, scheduled.at - performance.now())
-  if (outstanding > 0) return { event, contact: outstanding }
-  const slimeAnimation = event.kind === 'slime' ||
-    event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
-  return {
-    event,
-    contact: slimeAnimation ? -1 : characterAttackContactMs(state, targetId, event),
-  }
-}
+import { courierReady } from './CourierPanel.tsx'
 
 // Weighted alpha PCA of watcher-meteor.webp: tail-to-nose y/x.
 const WATCHER_METEOR_FALL_SLOPE = 0.70505085 / 0.70915675
 const CHAMBER_RETURN_MS = 460
 const CHAMBER_RETURN_STAGGER_MS = 35
 const CHAMBER_REFLOW_MS = 420
-
-const isMonogatariVisual = (visual: string | undefined) =>
-  visual === 'monogatari_ironclad' || visual === 'monogatari_defect'
-const monogatariPoseAsset = (visual: string, pose: string) =>
-  assetPath(`combat/characters/${visual}-${pose}.webp`)
-
-const slimeAssetSlug = (defId: string): string => defId
-  .replace(/^slime_boss_/, '')
-  .replace(/_slime$/, '')
-  .replace(/_/g, '-')
-
-const slimeFallbackAsset = (defId: string): string => {
-  if (defId.includes('spike')) return 'combat/enemies/spike_slime.webp'
-  if (defId.includes('massive') || defId.includes('armored') || defId.includes('royal')) {
-    return 'combat/enemies/large_slime.webp'
-  }
-  if (defId.includes('leeching') || defId.includes('sticky') || defId.includes('spreading')) {
-    return 'combat/enemies/acid_slime.webp'
-  }
-  return 'combat/enemies/small_slime.webp'
-}
-
-type ChamberReturnFlight = {
-  card: CardInstance
-  left: number
-  top: number
-  width: number
-  height: number
-  x: number
-  y: number
-  index: number
-}
-
-type SlimeCardZoom = { card: CardInstance; x: number; y: number }
-
-function downfallEnergyOrbLayers(character: DownfallCharacterId, empty: boolean) {
-  const layers = character === 'guardian' ? ['6', '1', '2', '3', '4', '5', '7'] : ['1', '2', '3', '4', '5', '6']
-  const base = character === 'guardian' ? '7' : '6'
-  return layers.map((layer) => ({
-    layer,
-    src: assetPath(`combat/energy-orbs/${character}/layer${layer}${empty && layer !== base ? 'd' : ''}.png`),
-  }))
-}
-
-function stageHermitChamberViewer(player: Player, card: CardInstance, free = false) {
-  const stagedCard = { ...card, hermitDeadOn: true, ...(free ? { freeThisTurn: true } : {}) }
-  return {
-    card: stagedCard,
-    player: {
-      ...player,
-      chamber: player.chamber.filter((held) => held.uid !== card.uid),
-      hand: [...player.hand, stagedCard],
-    },
-  }
-}
-
-function chargedCardEnergy(def: CardDef, player: Player, card: CardInstance): number | undefined {
-  const cost = playCost(def, player, card)
-  return typeof cost === 'number' ? cost : undefined
-}
-
-// Alpha bounds locate the painted edge rather than transparent sprite padding.
-function paintedLeft(image: HTMLImageElement): number {
-  const canvas = document.createElement('canvas')
-  canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
-  const context = canvas.getContext('2d')!
-  context.drawImage(image, 0, 0)
-  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-  let left = canvas.width
-  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < left; x++) {
-    if (pixels[(y * canvas.width + x) * 4 + 3]! > 32) { left = x; break }
-  }
-  return left / canvas.width
-}
-
-function CharacterAttackPose({ asset, assetPath: sourceAsset, fallbackAsset, attackSeq, hermitEvent, firing = true }: {
-  asset?: Blob | true
-  assetPath: string
-  fallbackAsset: string
-  attackSeq: number
-  hermitEvent?: ActiveCombatVfx['event']
-  firing?: boolean
-}) {
-  const [replayAsset] = useState(asset)
-  const sourceFallback = useSafariCombatVideo && !replayAsset
-  const [src, setSrc] = useState<string | undefined>(() => replayAsset === true || sourceFallback
-    ? sourceAsset : replayAsset ? undefined : fallbackAsset)
-  const [loaded, setLoaded] = useState(false)
-  useEffect(() => {
-    if (!(replayAsset instanceof Blob)) return
-    const url = URL.createObjectURL(replayAsset)
-    setSrc(url)
-    return () => URL.revokeObjectURL(url)
-  }, [replayAsset])
-  if (!src) return null
-  const logicalSrc = replayAsset ? sourceAsset : fallbackAsset
-  return (
-    <span
-      className={['character-attack__pose', 'character-attack__pose--rig',
-        replayAsset || sourceFallback ? '' : 'is-fallback', loaded ? 'is-loaded' : ''].filter(Boolean).join(' ')}
-      data-attack-asset={sourceAsset}
-      data-attack-seq={attackSeq}
-    >
-      <CombatAnimation
-        src={sourceFallback ? sourceAsset : logicalSrc}
-        mediaSrc={replayAsset instanceof Blob ? src : undefined}
-        forceWebp={sourceFallback}
-        loop={!replayAsset}
-        hidden={!firing}
-        onReady={() => setLoaded(true)}
-      />
-      {loaded && (replayAsset || sourceFallback) && hermitEvent ? <HermitBullets event={hermitEvent} /> : null}
-    </span>
-  )
-}
-
-// Complete registered drawings share the travel/impact clock, including WebKit.
-function StagedAttackPose({ visual, spec, ready }: { visual: VisualId; spec: StagedAttackSpec; ready: boolean }) {
-  return ready ? <>{spec.poses.map(pose => (
-    <span key={pose} className={`character-attack__pose character-attack__pose--rig is-loaded character-attack__pose--${visual}-${pose}`}>
-      <img src={stagedPoseAsset(visual, pose)} alt="" />
-    </span>
-  ))}</> : <span className="character-attack__pose character-attack__pose--rig is-loaded is-fallback">
-    <CombatAnimation src={stagedIdleAsset(visual)} />
-  </span>
-}
-
-function MonogatariAttackPose({ visual, ready }: { visual: string; ready: boolean }) {
-  const poses = visual === 'monogatari_ironclad' ? ['ready', 'impact'] : ['charge', 'release']
-  return <>
-    <span className={`character-attack__pose character-attack__pose--rig is-loaded ${ready ? 'monogatari-pose--idle' : 'is-fallback'}`}>
-      <img src={ready ? monogatariPoseAsset(visual, 'hero') : assetPath(`combat/characters/animated/${visual}-idle.webp`)} alt="" />
-    </span>
-    {ready ? poses.map(pose => <span key={pose} className={`character-attack__pose character-attack__pose--rig is-loaded monogatari-pose--${pose}`}>
-      <img src={monogatariPoseAsset(visual, pose)} alt="" />
-    </span>) : null}
-  </>
-}
-
-function MonogatariEvokePose({ event, holdCast }: {
-  event: Extract<CombatPresentationEvent, { kind: 'orb' }>
-  holdCast: boolean
-}) {
-  const root = useRef<HTMLSpanElement>(null)
-  const [ready, setReady] = useState(false)
-  const [settled, setSettled] = useState(false)
-  const checkMountedImages = () => {
-    // These assets are already predecoded, but newly mounted DOM images can
-    // still need a load event before acquiring their intrinsic dimensions.
-    const images = root.current?.querySelectorAll('img')
-    if (images?.length && [...images].every(image => image.complete && image.naturalWidth > 0)) setReady(true)
-  }
-  useLayoutEffect(checkMountedImages, [])
-  if (settled) return null
-  return <span ref={root} onLoadCapture={checkMountedImages}
-    className={`monogatari-evoke${ready ? ' is-loaded' : ''}${holdCast ? ' monogatari-evoke--holding-cast' : ''}`}
-    data-evoke-pose-seq={event.seq} data-evoke-hold-cast={holdCast} aria-hidden="true">
-    {(['focus', 'cast', 'recover'] as const).map(phase => <span key={phase}
-      onAnimationEnd={phase === 'recover' ? () => setSettled(true) : undefined}
-      className={`character-attack__pose monogatari-evoke__pose--${phase}`} data-evoke-phase={phase}>
-      <img src={monogatariPoseAsset('monogatari_defect', phase === 'cast' || phase === 'focus' && holdCast ? 'release' : 'hero')} alt="" />
-    </span>)}
-    {(['focus', 'cast'] as const).map(phase => <img key={phase}
-      className={`monogatari-evoke__orb monogatari-evoke__orb--${phase}`}
-      data-evoke-orb={event.orb} data-evoke-orb-phase={phase}
-      src={assetPath(`combat/vfx/actions/${event.orb}-channel.webp`)} alt="" />)}
-  </span>
-}
-
-function GuardianPortrait({ mode, animate, restartKey }: {
-  mode: 'attack' | 'defense'
-  animate: boolean
-  restartKey: number | string
-}) {
-  const previousMode = useRef(mode)
-  const transitionTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [transition, setTransition] = useState<'to-attack' | 'to-defense' | null>(null)
-  useEffect(() => {
-    for (const direction of ['attack', 'defense']) {
-      const image = new Image()
-      image.src = assetPath(`combat/characters/guardian-to-${direction}.webp`)
-    }
-    return () => {
-      if (transitionTimer.current) clearTimeout(transitionTimer.current)
-    }
-  }, [])
-  useLayoutEffect(() => {
-    if (transitionTimer.current) clearTimeout(transitionTimer.current)
-    const previous = previousMode.current
-    previousMode.current = mode
-    if (!animate || previous === mode) {
-      setTransition(null)
-      return
-    }
-    setTransition(mode === 'defense' ? 'to-defense' : 'to-attack')
-  }, [animate, mode])
-  const file = transition
-    ? `guardian-${transition}.webp`
-    : mode === 'defense' ? 'guardian-defense.webp' : 'guardian-hero.webp'
-  const data = {
-    'data-guardian-mode': mode,
-    'data-guardian-transition': transition ?? undefined,
-    'data-vfx-seq': typeof restartKey === 'number' ? restartKey : undefined,
-  } as const
-  return animate && !transition
-    ? <CombatAnimation
-        {...data}
-        key={mode}
-        src={assetPath(`combat/rigged/hero-${mode === 'defense' ? 'guardian-defense' : 'guardian'}-idle.webp`)}
-        onError={(image) => { image.style.display = 'none' }}
-      />
-    : <img
-        {...data}
-        key={transition ?? mode}
-        src={assetPath(`combat/characters/${file}`)}
-        alt=""
-        onLoad={() => {
-          if (!transition) return
-          transitionTimer.current = setTimeout(() => setTransition(null), 600)
-        }}
-        onError={(event) => { event.currentTarget.style.display = 'none' }}
-      />
-}
-
-function FlyingCard({ flight, character }: { flight: CardFlight; character: string }) {
-  const element = useRef<HTMLDivElement>(null)
-  useLayoutEffect(() => {
-    if (!element.current) return undefined
-    const animation = animateCardFlight(element.current, flight.motionFrames)
-    return () => animation.cancel()
-  }, [flight.beat, flight.motionFrames])
-  return <div ref={element}
-    className={`card-flight card-flight--${flight.destination} card-flight--${character}`}
-  >
-    <Card card={flight.card} playable={false} immediateArt />
-  </div>
-}
-
 const START_TURN_STUCK_MS = 15_000
 
 function CombatScreenView({
@@ -576,8 +301,6 @@ function CombatScreenView({
   const [discardTops, setDiscardTops] = useState<Record<string, string>>({})
   const [retainedCards, setRetainedCards] = useState<Record<string, string[]>>({})
   const [discardOrders, setDiscardOrders] = useState<DiscardOrders>({})
-  const [endTurnEffectDrag, setEndTurnEffectDrag] = useState<EndTurnEffectDrag | null>(null)
-  const [armedEndTurnAbilityId, setArmedEndTurnAbilityId] = useState<string | null>(null)
   /** Slayer Pack: Companion's owner also Exhausts it with the next chosen enemy. */
   const [endTurnSelfExhaust, setEndTurnSelfExhaust] = useState(false)
   const [slimeCardZoom, setSlimeCardZoom] = useState<SlimeCardZoom | null>(null)
@@ -615,43 +338,14 @@ function CombatScreenView({
   }, [triggerHermitStep])
   const [triggerSlimeUids, setTriggerSlimeUids] = useState<string[]>([])
   const [triggerSlimeEnemyUids, setTriggerSlimeEnemyUids] = useState<string[]>([])
-  const [{ scale: stageScale, enemySlots: stageEnemySlots }, setStageLayout] = useState({
-    scale: 1, enemySlots: livingEnemies(state).length,
-  })
-  const [stageMotionReady, setStageMotionReady] = useState(false)
-  const fittedStage = useRef<{ combatId: typeof state.combatId; restoration: number | undefined } | null>(null)
   const reducedMotion = useReducedEffects()
 
   useEffect(() => registerCardZoomCloser(closeSlimeCardZoom.current), [])
   const prefersReducedMotion = reducedMotion
-  const boardRef = useRef<HTMLDivElement | null>(null)
-  const combatBarRef = useRef<HTMLElement | null>(null)
-  useLayoutEffect(() => {
-    const bar = combatBarRef.current
-    const combat = bar?.parentElement
-    if (!bar || !combat) return
-    const measure = () => {
-      combat.style.setProperty('--combat-bar-bottom', `${bar.offsetTop + bar.offsetHeight}px`)
-      combat.style.setProperty('--combat-bar-viewport-bottom', `${bar.getBoundingClientRect().bottom}px`)
-    }
-    measure()
-    const observer = typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(measure)
-    observer?.observe(bar)
-    observer?.observe(combat)
-    window.addEventListener('resize', measure)
-    return () => {
-      observer?.disconnect()
-      window.removeEventListener('resize', measure)
-    }
-  }, [state.combatId])
   const choiceDialogRef = useRef<HTMLDialogElement | null>(null)
   const itemDialogRef = useRef<HTMLDialogElement | null>(null)
   const startTurnScryDialogRef = useRef<HTMLDialogElement | null>(null)
   const startTurnDiscardDialogRef = useRef<HTMLDialogElement | null>(null)
-  const viewerRowRef = useRef<HTMLDivElement | null>(null)
-  const followViewerRow = useRef(true)
-  const programmaticScroll = useRef<{ left: number; top: number } | null>(null)
-  const manualBoardScroll = useRef(false)
   const potionActionPending = useRef(false)
   const powerActionPending = useRef(false)
   const cardActionPending = useRef(false)
@@ -660,14 +354,6 @@ function CombatScreenView({
   const unknownPowerAction = useRef<UnknownPowerAction | null>(null)
   const unknownCardAction = useRef<UnknownCardAction | null>(null)
   const armedCardFlight = useRef<{ card: CardInstance; chamber: boolean } | null>(null)
-  const cardDragStart = useRef<CardDragStart | null>(null)
-  const cardDragLive = useRef<CardDrag | null>(null)
-  const cardDragFrame = useRef<number | null>(null)
-  const cardDragMove = useRef<{ x: number; y: number } | null>(null)
-  const cardDragOverlay = useRef<HTMLDivElement | null>(null)
-  const cardDragArrow = useRef<SVGPathElement | null>(null)
-  const cardDragArrowShadow = useRef<SVGPathElement | null>(null)
-  const suppressCardClick = useRef<string | null>(null)
   const chamberCloseTimer = useRef<number | null>(null)
   const chamberContactTimer = useRef<number | null>(null)
   const chamberReflowFrame = useRef<number | null>(null)
@@ -676,15 +362,6 @@ function CombatScreenView({
   const handScrollRef = useRef<HTMLDivElement | null>(null)
   const handRef = useRef<HTMLDivElement | null>(null)
   const chamberViewerId = useRef(viewerId)
-  const endTurnEffectDragStart = useRef<EndTurnEffectDrag | null>(null)
-  const endTurnEffectDragLive = useRef<EndTurnEffectDrag | null>(null)
-  const endTurnEffectDragFrame = useRef<number | null>(null)
-  const endTurnEffectDragMove = useRef<{ x: number; y: number } | null>(null)
-  const endTurnEffectDragOverlay = useRef<HTMLDivElement | null>(null)
-  const endTurnEffectDragArrow = useRef<SVGPathElement | null>(null)
-  const endTurnEffectDragArrowShadow = useRef<SVGPathElement | null>(null)
-  const suppressEndTurnEffectClick = useRef<string | null>(null)
-  const suppressEndTurnOrbClick = useRef<string | null>(null)
   const motionBaseline = useRef<MotionSnapshot | null>(null)
   const motionRestoration = useRef(authoritativeRestoration)
   const motionConnected = useRef(authoritativeConnected)
@@ -693,7 +370,6 @@ function CombatScreenView({
   const flightBeat = useRef(0)
   const [drawnCards, setDrawnCards] = useState<Set<string>>(new Set())
   const [cardFlights, setCardFlights] = useState<CardFlight[]>([])
-  const [cardDrag, setCardDrag] = useState<CardDrag | null>(null)
   const [motionActive, setMotionActive] = useState<Set<MotionKey>>(new Set())
   const [motionBeats, setMotionBeats] = useState<Record<MotionKey, number>>({
     energy: 0,
@@ -731,22 +407,7 @@ function CombatScreenView({
   // Hand Attacks show what they would deal now: to the enemy being dragged onto or last
   // pointed at, to the only enemy left, otherwise to a plain stand-in enemy.
   const [pointedEnemyUid, setPointedEnemyUid] = useState<string | null>(null)
-  const previewEnemyUid = (() => {
-    const living = livingEnemies(state)
-    if (living.length === 1) return living[0]!.uid
-    const picked = cardDrag?.targetUid ?? pointedEnemyUid
-    return living.some((enemy) => enemy.uid === picked) ? picked : null
-  })()
   const cardHints = useCardHints()
-  const cardDamage = useMemo(() => {
-    const previews = new Map<string, CardDamagePreview>()
-    if (!cardHints || !viewer || viewer.dead || state.phase !== 'player') return previews
-    for (const card of viewer.hand) {
-      const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction))
-      if (preview) previews.set(card.uid, preview)
-    }
-    return previews
-  }, [cardHints, state, viewer, previewEnemyUid, onAction])
   const courierAvailable = Boolean(onCourierReveal) && courierReady(viewer, courierUsedBy ?? [])
   const canUsePotionNow = (potionId: string) => Boolean(viewer &&
     canActivatePotion(state, viewer, potionId) && !(partyStartTurnPostRollLocked &&
@@ -761,121 +422,6 @@ function CombatScreenView({
     window.addEventListener('resize', resize)
     return () => { cancel(); window.removeEventListener('resize', resize) }
   }, [viewer?.character, reducedMotion])
-  const [characterAttackBlobs, setCharacterAttackBlobs] = useState<Map<string, Blob | true>>(() => new Map())
-  // Each staged attack decides once whether its registered drawings were decoded in time.
-  // The pose layer and the travel share that answer, so the idle fallback never parks at blade reach.
-  // Presentation seqs restart each combat, so the combat id is part of the key.
-  const stagedPosesReadyByAttack = useRef(new Map<string, boolean>())
-  const stagedPosesReady = (visual: VisualId, spec: StagedAttackSpec, seq: number) => {
-    const key = `${state.combatId}:${seq}`
-    const latched = stagedPosesReadyByAttack.current.get(key)
-    if (latched !== undefined) return latched
-    const ready = spec.poses.every(pose => characterAttackBlobs.has(stagedPoseAsset(visual, pose)))
-    stagedPosesReadyByAttack.current.set(key, ready)
-    return ready
-  }
-  const stagedAssetsOf = (player: CombatState['players'][number]) => {
-    const spec = stagedAttackOf(playerVisualId(player))
-    return spec && stagedAttackAssets(playerVisualId(player), spec)
-  }
-  // Pose and cast origin share a latch: late artwork never re-aims a cold projectile.
-  const monogatariPosesReadyByAttack = useRef(new Map<string, boolean>())
-  const monogatariPosesReady = (visual: string, seq: number) => {
-    const key = `${state.combatId}:${seq}`
-    const latched = monogatariPosesReadyByAttack.current.get(key)
-    if (latched !== undefined) return latched
-    const poses = visual === 'monogatari_ironclad' ? ['hero', 'ready', 'impact'] : ['hero', 'charge', 'release']
-    const ready = poses.every(pose => characterAttackBlobs.has(monogatariPoseAsset(visual, pose)))
-    monogatariPosesReadyByAttack.current.set(key, ready)
-    return ready
-  }
-  const monogatariEvokesReadyByEvent = useRef(new Map<string, {
-    ready: boolean; bornAt: number; holdCast: boolean; actorId: string
-  }>())
-  const monogatariEvokeReady = (event: Extract<CombatPresentationEvent, { kind: 'orb' }>) => {
-    const key = `${state.combatId}:${event.seq}`
-    const latched = monogatariEvokesReadyByEvent.current.get(key)
-    if (latched !== undefined) return latched.ready
-    const ready = ['hero', 'release'].every(pose =>
-      characterAttackBlobs.has(monogatariPoseAsset('monogatari_defect', pose))) &&
-      characterAttackBlobs.has(assetPath(`combat/vfx/actions/${event.orb}-channel.webp`))
-    const bornAt = performance.now()
-    // A queued focus must not retract the hand beneath an older, still-live beam.
-    const holdCast = [...monogatariEvokesReadyByEvent.current].some(([olderKey, older]) =>
-      olderKey.startsWith(`${state.combatId}:`) && older.actorId === event.actorId && older.ready &&
-      bornAt - older.bornAt > 16 && bornAt - older.bornAt < 760)
-    monogatariEvokesReadyByEvent.current.set(key, { ready, bornAt, holdCast, actorId: event.actorId })
-    return ready
-  }
-  const characterAttackAssets = prefersReducedMotion ? '' : [...new Set(state.players.filter((player) => !player.dead).flatMap((player) =>
-    stagedAssetsOf(player)
-      ?? (isMonogatariVisual(playerVisualId(player))
-        ? [...['hero', ...(player.character === 'ironclad' ? ['ready', 'impact'] : ['charge', 'release'])]
-          .map(pose => monogatariPoseAsset(playerVisualId(player), pose)),
-          ...(player.character === 'defect' ? ['lightning', 'dark']
-            .map(orb => assetPath(`combat/vfx/actions/${orb}-channel.webp`)) : [])]
-      : player.character === 'hexaghost'
-      ? [assetPath(`combat/rigged/hero-hexaghost-heat-${Math.max(0, Math.min(6, player.heat))}-attack.webp`)]
-      : player.character === 'guardian'
-        ? ['guardian', 'guardian-defense'].map((id) => assetPath(`combat/rigged/hero-${id}-attack.webp`))
-        : player.character === 'watcher' || player.character === 'ironclad'
-          ? ['ready', player.character === 'watcher' ? 'thrust' : 'impact']
-            .map((pose) => assetPath(`combat/characters/${player.character}-${pose}.webp`))
-          : [assetPath(`combat/rigged/hero-${player.character}-attack.webp`),
-            ...(player.character === 'hermit' ? ['hermit-bullet', 'hermit-impact'].map(name => assetPath(`combat/vfx/actions/${name}.webp`)) : [])])))].sort().join('|')
-  useEffect(() => {
-    const controller = new AbortController()
-    const assets = characterAttackAssets.split('|').filter(Boolean)
-    if (useSafariCombatVideo) {
-      setCharacterAttackBlobs((current) => new Map(assets
-        .filter((src) => current.has(src))
-        .map((src) => [src, current.get(src)!])))
-      const cancels = assets.filter((src) => !characterAttackBlobs.has(src)).map((src) => {
-        const video = combatVideoPath(src)
-        if (video !== src) return preloadCombatVideo(video, success => {
-          if (success && !controller.signal.aborted) setCharacterAttackBlobs((current) => new Map(current).set(src, true))
-        })
-        const image = new Image()
-        image.src = src
-        void image.decode().then(() => {
-          if (!controller.signal.aborted) setCharacterAttackBlobs((current) => new Map(current).set(src, true))
-        }, () => undefined)
-        return () => { image.src = '' }
-      })
-      return () => { controller.abort(); cancels.forEach(cancel => cancel()) }
-    }
-    setCharacterAttackBlobs((current) => new Map(assets
-      .filter((src) => current.has(src))
-      .map((src) => [src, current.get(src)!])))
-    void Promise.all(assets.filter((src) => !characterAttackBlobs.has(src)).map(async (src) => {
-      try {
-        if (isStagedAttackAsset(src) || src.includes('/characters/monogatari_') ||
-          /\/(lightning|dark)-channel\.webp$/.test(src)) {
-          const image = new Image()
-          image.src = src
-          await image.decode()
-          return [src, true] as const
-        }
-        const response = await fetch(src, { signal: controller.signal })
-        if (!response.ok) return
-        const blob = await response.blob()
-        const decodeUrl = URL.createObjectURL(blob)
-        try {
-          const image = new Image()
-          image.src = decodeUrl
-          await image.decode?.()
-        } finally {
-          URL.revokeObjectURL(decodeUrl)
-        }
-        return [src, blob] as const
-      } catch {}
-    })).then((loaded) => {
-      if (controller.signal.aborted) return
-      const ready = loaded.filter((entry): entry is readonly [string, Blob | true] => Boolean(entry))
-      if (ready.length) setCharacterAttackBlobs((current) => new Map([...current, ...ready]))
-    })
-    return () => controller.abort()
-  }, [characterAttackAssets])
   const hermitSetupPending = state.pendingHermitSetupLoads?.[0]?.playerId === viewerId
   const hermitSetupOwner = state.players.find((player) => player.id === state.pendingHermitSetupLoads?.[0]?.playerId)
   const hermitStrengthPending = state.pendingHermitStrengthRewards?.[0]?.playerId === viewerId
@@ -905,10 +451,7 @@ function CombatScreenView({
   }
 
   useEffect(() => { setPlayerChoiceDiscarding(false) }, [viewerPlayerChoice?.id])
-  useEffect(() => {
-    const dialog = playerChoiceDialogRef.current
-    if (playerChoiceDiscarding && dialog && !dialog.open) dialog.showModal()
-  }, [playerChoiceDiscarding, viewerPlayerChoice?.id])
+  useModalDialog(playerChoiceDialogRef, playerChoiceDiscarding, viewerPlayerChoice?.id)
 
   function submitPlayerChoice(answer: Omit<PlayerChoiceAnswer, 'choiceId'>) {
     if (!viewerPlayerChoice || usingPlayerChoice) return
@@ -1338,13 +881,21 @@ function CombatScreenView({
     }
     return resolved
   }, [livePresentationEvents, state.players])
-  useEffect(() => {
-    const running = new Set(activeVfx.filter(({ event }) => event.kind === 'orb' && event.sourceId === 'orb-evoke')
-      .map(({ event }) => `${state.combatId}:${event.seq}`))
-    for (const key of monogatariEvokesReadyByEvent.current.keys()) {
-      if (prefersReducedMotion || !running.has(key)) monogatariEvokesReadyByEvent.current.delete(key)
-    }
-  }, [activeVfx, prefersReducedMotion, state.combatId])
+  const {
+    characterAttackBlobs,
+    characterAttackAssets,
+    stagedPosesReadyByAttack,
+    stagedPosesReady,
+    monogatariPosesReadyByAttack,
+    monogatariPosesReady,
+    monogatariEvokesReadyByEvent,
+    monogatariEvokeReady,
+  } = useAttackPosePreload({
+    combatId: state.combatId,
+    players: state.players,
+    prefersReducedMotion,
+    activeVfx,
+  })
   // A passive orb's end-of-turn effects can all land in the SAME state update
   // (the engine resolves the whole ordered list before the client ever sees
   // it), so without this every orb's burst would reveal on the same frame —
@@ -1376,15 +927,6 @@ function CombatScreenView({
       attackContactMs={prefersReducedMotion ? 0 : characterAttackContactMs(state, enemy.uid, active.event)}
       revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
     />)
-  const groundedVfx = state.enemies.flatMap((enemy) => activeVfx
-    .filter(({ event }) => event.enemyIds.includes(enemy.uid) && isEndTurnLightning(event))
-    .map((active) => <CombatVfx
-      key={`${enemy.uid}-${active.event.seq}-${active.recipe.asset}`}
-      active={active}
-      role="target"
-      targetEnemyId={enemy.uid}
-      revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)}
-    />))
   useEffect(() => {
     const uid = slimeCardZoom?.card.uid
     if (!uid) return
@@ -1401,41 +943,24 @@ function CombatScreenView({
     activeVfx.some(isCharacterAttack) || livePresentation.slimeCommandsPending)
   const stageAttacksActive = characterAttacksActive || activeVfx.some(({ event }) =>
     event.kind === 'orb' && event.sourceId === 'orb-evoke' && event.orb !== 'frost')
-  useLayoutEffect(() => {
-    // Commit restored positions and scale together before allowing new tweens.
-    setStageMotionReady(false)
-    const frame = requestAnimationFrame(() => {
-      boardRef.current?.getBoundingClientRect()
-      setStageMotionReady(true)
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [state.combatId, authoritativeRestoration])
-  const stageFormationKey = state.enemies.map((enemy) =>
-    `${enemy.uid}:${enemy.defId}:${enemy.row}:${enemy.isBoss}:${enemy.dead}`).join('|')
-  useLayoutEffect(() => {
-    if (prefersReducedMotion) return
-    const busy = stageAttacksActive || falling.size > 0 || state.phase === 'enemy'
-    // A new attack can begin midway through a camera tween. Hold native stage
-    // transitions before attack offsets are measured, then continue recovery.
-    for (const animation of boardRef.current?.closest('.combat')?.getAnimations({ subtree: true }) ?? []) {
-      if (!(animation instanceof CSSTransition) || !animation.transitionProperty.startsWith('--stage-')) continue
-      if (busy) {
-        // pause() alone schedules a pause for the next frame in WebKit.
-        // Freeze this frame before measuring attack source/target offsets.
-        const time = animation.currentTime
-        animation.pause()
-        if (time !== null) animation.currentTime = time
-      } else if (animation.playState === 'paused') {
-        const time = animation.currentTime
-        animation.play()
-        // WebKit otherwise reuses the transition's original, now-expired start.
-        if (typeof time === 'number' && typeof document.timeline.currentTime === 'number') {
-          animation.startTime = document.timeline.currentTime - time
-        }
-      }
-    }
-  }, [stageAttacksActive, falling.size, state.phase, state.players.length, stageFormationKey,
-    stageScale, stageEnemySlots, state.combatId, prefersReducedMotion])
+  const {
+    boardRef,
+    combatBarRef,
+    viewerRowRef,
+    stageScale,
+    stageEnemySlots,
+    stageMotionReady,
+    bosses,
+    stageEnemies,
+    largestSlimeParty,
+  } = useStageLayout({
+    state,
+    viewerId,
+    falling,
+    prefersReducedMotion,
+    stageAttacksActive,
+    authoritativeRestoration,
+  })
   const [characterAttacks, setCharacterAttacks] = useState<Record<string, CharacterAttackMotion[]>>({})
   const [slimeCommandMotions, setSlimeCommandMotions] = useState<Record<string, {
     seq: number
@@ -1611,12 +1136,6 @@ function CombatScreenView({
     motionViewer.current = viewerId
     const before = motionBaseline.current
     motionBaseline.current = next
-    const activeDrag = cardDragStart.current
-    const draggedCards = activeDrag?.chamber ? next.chamber : next.hand
-    if (activeDrag && (restored || !draggedCards.some((card) => card.uid === activeDrag.card.uid) ||
-      !(activeDrag.chamber ? chamberCardCanStartDrag(activeDrag.card) : cardCanStartDrag(activeDrag.card)))) {
-      clearCardDrag()
-    }
 
     if (!before) {
       if (!reducedMotion && animateOpeningHand && next.hand.length > 0) {
@@ -1693,7 +1212,6 @@ function CombatScreenView({
 
   useEffect(() => () => {
     for (const timer of motionTimers.current.values()) clearTimeout(timer)
-    if (cardDragFrame.current !== null) cancelAnimationFrame(cardDragFrame.current)
   }, [])
 
   function restoreUnknownPower(
@@ -1773,12 +1291,6 @@ function CombatScreenView({
     setUsingPower(false)
   }, [onAction, state])
 
-  function recenterViewerRow() {
-    const board = boardRef.current
-    revealViewerRow(board, viewerRowRef.current)
-    programmaticScroll.current = board ? { left: board.scrollLeft, top: board.scrollTop } : null
-  }
-
   // Drop stale targeting when the phase, seat, or mandatory trigger changes.
   useEffect(() => {
     // Entering copy has its own effect below that replaces the parent card's
@@ -1806,7 +1318,6 @@ function CombatScreenView({
   }, [endTurnResolving])
 
   useEffect(() => {
-    setArmedEndTurnAbilityId(null)
     setEndTurnSelfExhaust(false)
   }, [endTurnEffect?.id])
 
@@ -1908,13 +1419,11 @@ function CombatScreenView({
   // (the potion is not spent) and the player reopens them afterwards.
   const owesChoice = Boolean(viewerPlayerChoice) ||
     (slayerChoice?.playerId === viewerId && state.phase !== 'lost')
-  useEffect(() => {
-    const dialog = choiceDialogRef.current
-    if (!dialog) return
-    if (pending?.choiceCards && !pending.choiceConfirmed && !owesChoice) {
-      if (!dialog.open) dialog.showModal()
-    } else if (dialog.open) dialog.close()
-  }, [pending?.choiceCards, pending?.choiceConfirmed, owesChoice])
+  useModalDialog(
+    choiceDialogRef,
+    Boolean(pending?.choiceCards && !pending.choiceConfirmed && !owesChoice),
+    pending?.choiceCards,
+  )
 
   // A chosen Distilled Chaos card can still need a board target. Keeping the
   // reveal modal open makes the whole board inert and strands that card.
@@ -1924,35 +1433,32 @@ function CombatScreenView({
     Boolean(powerChoiceCards) && !powerScryConfirmed
   const itemModalOpen = ['liquid_memories', 'liquid_void', 'transforming_brew', 'purity_potion', 'entropic_brew'].includes(pendingPotion ?? '') ||
     gemFinderScryOpen || Boolean(relicScry) || Boolean(visibleDistilled)
-  useEffect(() => {
-    const dialog = itemDialogRef.current
-    if (itemModalOpen && !owesChoice) {
-      if (dialog && !dialog.open) dialog.showModal()
-    } else if (dialog?.open) dialog.close()
-  }, [itemModalOpen, owesChoice, pendingPotion, pendingPowerUid, relicScry?.playerId, visibleDistilled?.playerId])
+  useModalDialog(
+    itemDialogRef,
+    itemModalOpen && !owesChoice,
+    `${pendingPotion ?? ''}:${pendingPowerUid ?? ''}:${relicScry?.playerId ?? ''}:${visibleDistilled?.playerId ?? ''}`,
+  )
 
   useEffect(() => {
     setStartTurnScryPicked([])
     setResolvingStartTurnScry(false)
   }, [startTurnScryKey])
 
-  useEffect(() => {
-    const dialog = startTurnScryDialogRef.current
-    const owned = activeStartTurnScry?.playerId === viewerId && activeStartTurnScry.cards !== null
-    if (owned) {
-      if (dialog && !dialog.open) dialog.showModal()
-    } else if (dialog?.open) dialog.close()
-  }, [startTurnScryKey, activeStartTurnScry?.playerId, activeStartTurnScry?.cards, viewerId])
+  useModalDialog(
+    startTurnScryDialogRef,
+    activeStartTurnScry?.playerId === viewerId && activeStartTurnScry.cards !== null,
+    startTurnScryKey,
+  )
 
   useEffect(() => {
     setResolvingStartTurnDiscard(false)
-    const dialog = startTurnDiscardDialogRef.current
-    const owned = activeStartTurnDiscard?.playerId === viewerId && activeStartTurnDiscard.cards !== null
-    if (owned) {
-      if (dialog && !dialog.open) dialog.showModal()
-    } else if (dialog?.open) dialog.close()
   }, [activeStartTurnDiscard?.playerId, activeStartTurnDiscard?.sourceId,
     activeStartTurnDiscard?.cards, viewerId])
+  useModalDialog(
+    startTurnDiscardDialogRef,
+    activeStartTurnDiscard?.playerId === viewerId && activeStartTurnDiscard.cards !== null,
+    `${activeStartTurnDiscard?.playerId ?? ''}:${activeStartTurnDiscard?.sourceId ?? ''}:${activeStartTurnDiscard?.cards?.length ?? ''}`,
+  )
 
   async function finishStartTurnDiscard(card: CardInstance) {
     if (!activeStartTurnDiscard || activeStartTurnDiscard.playerId !== viewerId || resolvingStartTurnDiscard) return
@@ -2154,7 +1660,6 @@ function CombatScreenView({
       setRetainedCards({})
       setDiscardOrders({})
     }
-    if (state.phase !== 'player') setArmedEndTurnAbilityId(null)
     if (state.phase !== 'start') {
       setStartTurnOrder([])
       setStartTurnEnemyTargets({})
@@ -2265,169 +1770,7 @@ function CombatScreenView({
     // drags the hand scroller with it — which the fanned-card checks catch.
     endTurnRef.current?.focus({ preventScroll: true })
   }, [state.phase])
-  const visibleEnemies = displayedEnemies(state.enemies, prefersReducedMotion ? new Set() : falling)
-  const bosses = visibleEnemies.filter((enemy) => enemy.isBoss)
-  const stageEnemies = visibleEnemies.filter((enemy) => !enemy.isBoss)
   const enemyButtonOrder = livingEnemiesInStageOrder(state.enemies)
-  const stageEnemyCount = visibleEnemies.length
-  const stageScaleActors = state.players.length + stageEnemyCount
-  // EnemyCard can briefly retain its previous visual during restoration.
-  // Fit from encounter data so new tall enemies start at the correct scale.
-  const stageHasTallEnemy = visibleEnemies.some(enemy => {
-    const def = enemyDef(enemy.defId)
-    return enemy.isBoss || def.elite || (def.artId ?? def.id) === 'sentry'
-  })
-  const stageHasOrbs = state.players.some(player => player.character === 'defect'
-    ? player.orbs.length > 0 : player.orbs.some(Boolean))
-  const stagePresentationBusy = !prefersReducedMotion && (stageAttacksActive || falling.size > 0 || state.phase === 'enemy')
-  const largestSlimeParty = Math.max(0, ...state.players.map(player => player.character === 'slime_boss' ? player.slimes.length : 0))
-  const statusSeats = state.players.map(player => `${player.id}:${player.row}`).join('\0')
-
-  useLayoutEffect(() => {
-    const statuses = boardRef.current?.querySelectorAll<HTMLElement>('.seat__meta') ?? []
-    // Keep Orbs above wrapped statuses without moving the hero. A row change remounts the seat, so rebind per seat.
-    const measure = (element: HTMLElement) => {
-      element.closest<HTMLElement>('.seat__interactive')?.style
-        .setProperty('--temporary-status-height', `${element.offsetHeight}px`)
-    }
-    statuses.forEach(measure)
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) if (entry.target instanceof HTMLElement) measure(entry.target)
-    })
-    statuses.forEach(element => observer.observe(element))
-    return () => observer.disconnect()
-  }, [state.combatId, statusSeats])
-
-  useLayoutEffect(() => {
-    const board = boardRef.current
-    if (!board) return
-    // Let contact, death and recovery finish before changing the stage camera.
-    if (stagePresentationBusy && fittedStage.current?.combatId === state.combatId &&
-      fittedStage.current.restoration === authoritativeRestoration) return
-    const fit = () => {
-      if (board.clientWidth === 0) return
-      const rem = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16
-      const widthScale = stageScaleFor(stageScaleActors, board.clientWidth, rem, stageEnemyCount)
-      // Painted actors scale; the readable status/intent bands keep fixed gutters.
-      const heightRem = board.clientHeight / rem
-      const compact = matchMedia('(orientation: landscape) and (max-height: 26.25rem)').matches
-      const heroGutter = compact ? (largestSlimeParty ? 12.5 : 7.5) : (largestSlimeParty ? 4.5 : 2.75)
-      const heroFloor = largestSlimeParty ? (compact ? 1.25 : 7.1) : 4.1
-      const heroFit = (heightRem - heroGutter - (stageHasOrbs ? 7 : 0)) / ((STAGE_GAP_REM - 1) * 1.2 + heroFloor)
-      // Landscape raises portraits above the hand by 4.75rem in stage-scale.css.
-      const enemyFit = stageHasTallEnemy
-        ? (heightRem - 6.6 - (compact ? 4.75 : 0)) / ((STAGE_GAP_REM - 1) * 1.6 + 5.3) : 1
-      const scale = Math.min(widthScale, Math.max(compact ? .25 : .3, Math.min(heroFit, enemyFit)))
-      fittedStage.current = { combatId: state.combatId, restoration: authoritativeRestoration }
-      setStageLayout(previous => previous.scale === scale && previous.enemySlots === stageEnemyCount
-        ? previous : { scale, enemySlots: stageEnemyCount })
-    }
-    fit()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(fit)
-    observer.observe(board)
-    return () => observer.disconnect()
-  }, [stagePresentationBusy, stageScaleActors, stageEnemyCount, largestSlimeParty, stageHasTallEnemy, stageHasOrbs, state.combatId, authoritativeRestoration])
-
-  useLayoutEffect(() => {
-    const board = boardRef.current
-    const stage = board?.querySelector('.row')
-    if (!board || !stage) return
-    // Transparent animation overscan can create a phantom scroll range even
-    // when the entire formation fits. It must never hide the first hero's HP.
-    const fitScroll = () => {
-      const fits = stage.getBoundingClientRect().width <= board.clientWidth + 1
-      board.style.overflow = fits ? 'clip' : 'auto hidden'
-      if (fits) board.scrollLeft = 0
-      else if (followViewerRow.current && board.querySelector('.slime-party')) recenterViewerRow()
-    }
-    fitScroll()
-    if (typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(fitScroll)
-    observer.observe(stage)
-    observer.observe(board)
-    return () => observer.disconnect()
-  }, [state.combatId])
-
-  // When the scale floor or foreground summons still require scrolling, keep
-  // the row the player actually controls on screen.
-  //
-  // A layout effect, not a plain one: this must run before paint, or the board
-  // is briefly drawn scrolled to the wrong row and then jumps.
-  // Enemy VFX, deaths, and enemy summons must not recenter the board underneath the
-  // player. Only a new combat or an explicit seat switch chooses a new view.
-  useLayoutEffect(() => {
-    followViewerRow.current = true
-    recenterViewerRow()
-  }, [viewerId, state.combatId])
-
-  // A wider foreground party can move the viewer's seat. Keep following it
-  // unless the player has deliberately scrolled to inspect another lane.
-  useLayoutEffect(() => {
-    if (followViewerRow.current) recenterViewerRow()
-  }, [largestSlimeParty])
-
-  useEffect(() => {
-    const board = boardRef.current
-    if (!board || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(() => {
-      if (followViewerRow.current) recenterViewerRow()
-    })
-    observer.observe(board)
-    return () => observer.disconnect()
-  }, [viewerId])
-
-  useEffect(() => {
-    const board = boardRef.current
-    if (!board) return
-    const inspectElsewhere = () => {
-      if (
-        programmaticScroll.current !== null &&
-        Math.abs(board.scrollLeft - programmaticScroll.current.left) < 1 &&
-        Math.abs(board.scrollTop - programmaticScroll.current.top) < 1
-      ) {
-        programmaticScroll.current = null
-        return
-      }
-      programmaticScroll.current = null
-      if (manualBoardScroll.current) {
-        manualBoardScroll.current = false
-        followViewerRow.current = false
-      }
-    }
-    const armScroll = () => { manualBoardScroll.current = true }
-    const armKeyboardScroll = (event: KeyboardEvent) => {
-      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) armScroll()
-    }
-    const armScrollbar = (event: PointerEvent) => {
-      if (event.target === board) armScroll()
-    }
-    const releasePointer = () => requestAnimationFrame(() => { manualBoardScroll.current = false })
-    board.addEventListener('wheel', armScroll, { passive: true })
-    board.addEventListener('pointerdown', armScrollbar)
-    board.addEventListener('pointerup', releasePointer)
-    board.addEventListener('keydown', armKeyboardScroll)
-    board.addEventListener('scroll', inspectElsewhere, { passive: true })
-    return () => {
-      board.removeEventListener('wheel', armScroll)
-      board.removeEventListener('pointerdown', armScrollbar)
-      board.removeEventListener('pointerup', releasePointer)
-      board.removeEventListener('keydown', armKeyboardScroll)
-      board.removeEventListener('scroll', inspectElsewhere)
-    }
-  }, [viewerId])
-
-  // And again whenever the desktop window changes shape. The scroll position
-  // is measured in pixels against the old layout.
-  useEffect(() => {
-    const reveal = () => {
-      followViewerRow.current = true
-      recenterViewerRow()
-    }
-    window.addEventListener('resize', reveal)
-    return () => window.removeEventListener('resize', reveal)
-  }, [])
 
   if (!viewer) return <p className="muted">No seat for {viewerId}.</p>
   const downfallCharacter = DOWNFALL_CHARACTER_IDS.find((character) => character === viewer.character)
@@ -2533,20 +1876,6 @@ function CombatScreenView({
     : undefined
   const endTurnEffectSlimeAsset = endTurnEffectVisual?.kind === 'slime'
     ? assetPath(`combat/slimes/${slimeAssetSlug(endTurnEffectVisual.cardId)}.webp`)
-    : undefined
-  // A row-hitting end-turn effect lights empty rows while armed or being dragged.
-  const endTurnEffectAimed = endTurnEffect !== undefined &&
-    (armedEndTurnAbilityId === endTurnEffect.id || endTurnEffectDrag?.ability.id === endTurnEffect.id)
-  const endTurnEffectDragVisual = endTurnEffectDrag?.ability.visual
-  const endTurnEffectDragCard = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'card' && endTurnEffectDrag
-    ? state.players.find((player) => player.id === endTurnEffectDrag.ability.playerId)
-      ?.powers.find((power) => power.uid === endTurnEffectDragVisual.cardUid)
-    : undefined
-  const endTurnEffectDragSlimeAsset = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'slime'
-    ? assetPath(`combat/slimes/${slimeAssetSlug(endTurnEffectDragVisual.cardId)}.webp`)
-    : undefined
-  const endTurnEffectDragRelicId = !endTurnEffectDrag?.sourceOrb && endTurnEffectDragVisual?.kind === 'relic'
-    ? endTurnEffectDragVisual.relicId
     : undefined
 
   function showSlimeCard(card: CardInstance, target: HTMLElement) {
@@ -3087,34 +2416,6 @@ function CombatScreenView({
       setDiscardOrders(orders)
     }
   }
-
-  // In local solo all information is present, so a turn with literally no
-  // card, token, potion, Power, or relic action can safely collapse. Online
-  // hands are private and shared turn order is meaningful, so clients never
-  // guess on behalf of the party.
-  const viewerHasLegalAction = !voluntaryActionsBlocked && (viewer.hand.some((card) => canAfford(state, viewer, card, false, drawCount)) ||
-    viewer.chamber.some(chamberCardCanStartDrag) ||
-    viewer.shivs > 0 || viewer.soulburn > 0 ||
-    viewer.guardianMode && viewer.vigor > 0 && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) ||
-    viewer.miracles > 0 && viewer.energy < CAPS.energy && (
-      viewer.relics.some((relic) => relic.defId === 'ice_cream') ||
-      viewer.hand.some((card) => canAfford(state, viewer, card, true, drawCount))) ||
-    viewer.potions.some((potionId) => canUsePotionNow(potionId)) ||
-    viewer.powers.some((power) => {
-      const def = faceOf(cardDef(power.defId), power.upgraded)
-      return Boolean(def.activeAbility) && (!def.oncePerTurn || !powerAbilityUsed(state, viewer.id, power.uid)) &&
-        powerActivationAllowed(def, state, viewer)
-    }) ||
-    viewer.relics.some((_, relicIndex) => canUseRelicNow(relicIndex)) || courierAvailable)
-  useEffect(() => {
-    if (onAction || !autoAdvance || !autoEndTurn || state.players.length !== 1 || state.phase !== 'player' ||
-      viewer.dead || viewerHasLegalAction || voluntaryActionsBlocked || forcedCard || distilled || pending || pendingTrigger ||
-      endTurnResolving || playWindow) return undefined
-    const timer = window.setTimeout(finishTurn, 450)
-    return () => window.clearTimeout(timer)
-    // Slayer Pack: an open card-play window is still being resolved; the engine closes it once nothing is left.
-  }, [autoAdvance, autoEndTurn, state.phase, state.turn, state.players.length, viewer.dead, viewerHasLegalAction,
-    forcedCard, distilled, pending, pendingTrigger, endTurnResolving, voluntaryActionsBlocked, playWindow])
 
   function reconciliation(outcome: ActionOutcome | void) {
     const snapshot = outcome?.snapshot
@@ -3659,9 +2960,6 @@ function CombatScreenView({
     ? `${pendingStartEvokeTarget ? `${pendingStartEvokeTarget.ability.id}:${pendingStartEvokeTarget.index}`
       : `${pending?.card.uid}:${pendingEvokeTarget}`}`
     : null
-  useEffect(() => {
-    setArmedEndTurnAbilityId((current) => current === 'evoke-target' ? null : current)
-  }, [evokeTargetStep])
 
   function cardContext(next: Pending) {
     return {
@@ -4300,95 +3598,6 @@ function CombatScreenView({
     stageOrCommit(next)
   }
 
-  function dragTargetAt(x: number, y: number, hitsRow: boolean): string | null {
-    const hit = document.elementFromPoint(x, y)
-    const enemy = hit?.closest<HTMLElement>('.enemy') ?? (hitsRow
-      ? hit?.closest<HTMLElement>('.row')?.querySelector<HTMLElement>('.enemy:not(.enemy--dead)')
-      : null)
-    const uid = enemy?.dataset.enemyId
-    return uid && state.enemies.some((candidate) => candidate.uid === uid && !candidate.dead) ? uid : null
-  }
-
-  function dragPlayerAt(x: number, y: number): string | null {
-    const id = document.elementFromPoint(x, y)?.closest<HTMLElement>('.seat')?.dataset.playerId
-    return id && state.players.some((candidate) => candidate.id === id && !candidate.dead) ? id : null
-  }
-
-  function endTurnTargetForEnemy(enemy: Enemy, ability: EndTurnEffectDrag['ability'] | undefined = endTurnEffect): string | null {
-    if (ability && 'orbChoice' in ability && ability.orbChoice) return null
-    const direct = ability?.targets?.find((target) =>
-      target.uid === enemy.uid || target.uid.endsWith(`:${enemy.uid}`))?.uid
-    if (direct || enemy.isBoss) return direct ?? null
-    return ability?.targets?.find((target) =>
-      target.uid === lightningRowTarget(enemy.row) || target.uid.endsWith(`:${lightningRowTarget(enemy.row)}`))?.uid ?? null
-  }
-
-  function endTurnTargetForRow(row: number, ability: EndTurnEffectDrag['ability'] | undefined = endTurnEffect): string | null {
-    return ability?.targets?.find((target) =>
-      target.uid === lightningRowTarget(row) || target.uid.endsWith(`:${lightningRowTarget(row)}`))?.uid ?? null
-  }
-
-  function endTurnTargetForOrb(playerId: string, slot: number, ability = endTurnEffect): string | null {
-    return ability?.orbChoice && ability.playerId === playerId
-      ? ability.targets?.find((target) => target.uid === `orb:${slot}`)?.uid ?? null
-      : null
-  }
-
-  function endTurnOrbSourceAt(player: Player, event: React.PointerEvent<HTMLDivElement>) {
-    const orb = (event.target as HTMLElement).closest<HTMLElement>('[data-orb-slot]')
-    const slot = Number(orb?.dataset.orbSlot)
-    const sourceOrb = Number.isInteger(slot) ? player.orbs[slot] : undefined
-    const sourceTargetUid = Number.isInteger(slot) ? endTurnTargetForOrb(player.id, slot) : null
-    return sourceOrb && sourceTargetUid && orb ? { sourceOrb, sourceTargetUid, element: orb } : null
-  }
-
-  function endTurnEffectCardTargetAt(x: number, y: number): boolean {
-    return document.elementFromPoint(x, y)?.closest('.end-turn-effect--card') !== null
-  }
-
-  function endTurnEffectDragTargetAt(active: EndTurnEffectDrag, x: number, y: number): string | null {
-    if (active.sourceTargetUid) return endTurnEffectCardTargetAt(x, y) ? active.sourceTargetUid : null
-    if (active.ability.id === pendingStartEnemy?.id) {
-      const enemyUid = dragTargetAt(x, y, false)
-      return enemyUid && startEnemyChoiceAvailable(enemyUid) ? enemyUid : null
-    }
-    if ('players' in active.ability && active.ability.players) {
-      const playerId = dragPlayerAt(x, y)
-      return active.ability.players.some((player) => player.id === playerId) ? playerId : null
-    }
-    const enemyUid = dragTargetAt(x, y, false)
-    const enemy = enemyUid ? state.enemies.find((candidate) => candidate.uid === enemyUid) : undefined
-    if (enemy) return endTurnTargetForEnemy(enemy, active.ability)
-    const row = Number(document.elementFromPoint(x, y)?.closest<HTMLElement>('.row__enemies--targetable')?.dataset.row)
-    return Number.isInteger(row) ? endTurnTargetForRow(row, active.ability) : null
-  }
-
-  function onEndTurnOrbPointerDown(player: Player, event: React.PointerEvent<HTMLDivElement>) {
-    const ability = endTurnEffect
-    const source = endTurnOrbSourceAt(player, event)
-    if (event.button !== 0 || !ability?.orbChoice || !source || !endTurnEffectCanStartDrag(ability.id)) return
-    source.element.setPointerCapture(event.pointerId)
-    endTurnEffectDragStart.current = {
-      ability,
-      ...source,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      x: event.clientX,
-      y: event.clientY,
-      targetUid: null,
-      element: source.element,
-    }
-  }
-
-  function isEndTurnEnemyTarget(enemy: Enemy): boolean {
-    if (endTurnTargetForEnemy(enemy) !== null) return endTurnEffectAimed
-    // A row hit also hits the boss, so light it while a row lies under a dragged effect or Evoke aim.
-    const hovered = endTurnEffectDrag?.targetUid
-    return enemy.isBoss && !enemy.dead && typeof hovered === 'string' &&
-      lightningRowFromTarget(hovered.split(':').slice(-2).join(':')) !== null
-  }
-
   function resolveTurnEffectTarget(abilityId: string, targetUid: string) {
     if (pendingStartPlayer?.id === abilityId && pendingStartPlayer.players?.some((player) => player.id === targetUid)) {
       chooseStartTurnPlayer(targetUid)
@@ -4420,268 +3629,114 @@ function CombatScreenView({
     if (next !== state) onChange?.(next)
   }
 
-  function endTurnEffectCanStartDrag(abilityId: string) {
-    return !pendingTrigger && !endTurnEffectDrag && (
-      canResolveEndTurn && endTurnEffect?.id === abilityId ||
-      canResolveStartTurn && startTurnEffectDraggable && startTurnEffectSource?.id === abilityId ||
-      evokeTargetSource?.id === abilityId
-    )
-  }
+  const {
+    cardDrag,
+    endTurnEffectDrag,
+    armedEndTurnAbilityId,
+    setArmedEndTurnAbilityId,
+    endTurnEffectAimed,
+    endTurnEffectDragCard,
+    endTurnEffectDragSlimeAsset,
+    endTurnEffectDragRelicId,
+    cardDragTargetRow,
+    suppressCardClick,
+    suppressEndTurnOrbClick,
+    cardDragOverlay,
+    cardDragArrow,
+    cardDragArrowShadow,
+    endTurnEffectDragOverlay,
+    endTurnEffectDragArrow,
+    endTurnEffectDragArrowShadow,
+    endTurnTargetForEnemy,
+    endTurnTargetForRow,
+    endTurnTargetForOrb,
+    isEndTurnEnemyTarget,
+    onEndTurnOrbPointerDown,
+    onEndTurnEffectPointerDown,
+    onEndTurnEffectPointerMove,
+    finishEndTurnEffectDrag,
+    cancelEndTurnEffectDrag,
+    activateEndTurnEffect,
+    chamberCardCanStartDrag,
+    onCardPointerDown,
+    onCardPointerMove,
+    finishCardDrag,
+    cancelCardDrag,
+    activateCard,
+  } = useCombatDrag({
+    state,
+    viewer,
+    viewerId,
+    drawCount,
+    authoritativeRestoration,
+    authoritativeConnected,
+    usingCard,
+    pending,
+    pendingTrigger,
+    endTurnResolving,
+    forcedCard,
+    distilled,
+    relicScry,
+    miracleOnCard,
+    voluntaryActionsBlocked,
+    endTurnEffect,
+    canResolveEndTurn,
+    canResolveStartTurn,
+    startTurnEffectDraggable,
+    startTurnEffectSource,
+    evokeTargetSource,
+    evokeTargetOrb,
+    evokeTargetStep,
+    pendingStartEnemy,
+    startEnemyChoiceAvailable,
+    onResolveTurnEffectTarget: resolveTurnEffectTarget,
+    onCardClick,
+    onHermitChamberPlay: submitHermitChamber,
+  })
 
-  function onEndTurnEffectPointerDown(ability: EndTurnEffectDrag['ability'], event: React.PointerEvent<HTMLButtonElement>) {
-    if (event.button !== 0 || !endTurnEffectCanStartDrag(ability.id)) return
-    event.currentTarget.setPointerCapture(event.pointerId)
-    endTurnEffectDragStart.current = {
-      ability,
-      ...(ability.id === evokeTargetSource?.id && evokeTargetOrb ? { sourceOrb: evokeTargetOrb } : {}),
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      x: event.clientX,
-      y: event.clientY,
-      targetUid: null,
-      element: event.currentTarget,
+  const previewEnemyUid = (() => {
+    const living = livingEnemies(state)
+    if (living.length === 1) return living[0]!.uid
+    const picked = cardDrag?.targetUid ?? pointedEnemyUid
+    return living.some((enemy) => enemy.uid === picked) ? picked : null
+  })()
+  const cardDamage = useMemo(() => {
+    const previews = new Map<string, CardDamagePreview>()
+    if (!cardHints || viewer.dead || state.phase !== 'player') return previews
+    for (const card of viewer.hand) {
+      const preview = previewCardDamage(state, viewer.id, card.uid, previewEnemyUid, Boolean(onAction))
+      if (preview) previews.set(card.uid, preview)
     }
-  }
+    return previews
+  }, [cardHints, state, viewer, previewEnemyUid, onAction])
 
-  function onEndTurnEffectPointerMove(event: React.PointerEvent<HTMLElement>) {
-    const start = endTurnEffectDragStart.current
-    if (!start || start.pointerId !== event.pointerId) return
-    if (!endTurnEffectDragLive.current && Math.hypot(event.clientX - start.startX, event.clientY - start.startY) < 10) return
-    endTurnEffectDragMove.current = { x: event.clientX, y: event.clientY }
-    if (endTurnEffectDragFrame.current !== null) return
-    endTurnEffectDragFrame.current = requestAnimationFrame(() => {
-      endTurnEffectDragFrame.current = null
-      const active = endTurnEffectDragStart.current
-      const move = endTurnEffectDragMove.current
-      if (!active || !move) return
-      const next: EndTurnEffectDrag = {
-        ...active,
-        x: move.x,
-        y: move.y,
-        targetUid: endTurnEffectDragTargetAt(active, move.x, move.y),
-      }
-      const previous = endTurnEffectDragLive.current
-      endTurnEffectDragLive.current = next
-      const path = `M ${next.startX} ${next.startY + (next.y < next.startY ? -28 : 28)} Q ${next.startX} ${next.y} ${next.x} ${next.y}`
-      endTurnEffectDragArrow.current?.setAttribute('d', path)
-      endTurnEffectDragArrowShadow.current?.setAttribute('d', path)
-      endTurnEffectDragOverlay.current?.style.setProperty('--effect-drag-x', `${next.x - next.startX}px`)
-      endTurnEffectDragOverlay.current?.style.setProperty('--effect-drag-y', `${next.y - next.startY}px`)
-      if (!previous || previous.targetUid !== next.targetUid) setEndTurnEffectDrag(next)
-    })
-  }
-
-  function clearEndTurnEffectDrag() {
-    endTurnEffectDragStart.current = null
-    endTurnEffectDragLive.current = null
-    endTurnEffectDragMove.current = null
-    if (endTurnEffectDragFrame.current !== null) cancelAnimationFrame(endTurnEffectDragFrame.current)
-    endTurnEffectDragFrame.current = null
-    setEndTurnEffectDrag(null)
-  }
-
-  function finishEndTurnEffectDrag(event: React.PointerEvent<HTMLElement>) {
-    const start = endTurnEffectDragStart.current
-    if (!start || start.pointerId !== event.pointerId) return
-    const moved = Math.hypot(event.clientX - start.startX, event.clientY - start.startY) >= 10
-    const targetUid = endTurnEffectDragTargetAt(start, event.clientX, event.clientY)
-    clearEndTurnEffectDrag()
-    if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
-    if (!moved) return
-    if (start.sourceTargetUid) {
-      suppressEndTurnOrbClick.current = start.sourceTargetUid
-      setTimeout(() => {
-        if (suppressEndTurnOrbClick.current === start.sourceTargetUid) suppressEndTurnOrbClick.current = null
-      }, 0)
-    } else {
-      suppressEndTurnEffectClick.current = start.ability.id
-      setTimeout(() => {
-        if (suppressEndTurnEffectClick.current === start.ability.id) suppressEndTurnEffectClick.current = null
-      }, 0)
-    }
-    if (targetUid) resolveTurnEffectTarget(start.ability.id, targetUid)
-  }
-
-  function cancelEndTurnEffectDrag(event: React.PointerEvent<HTMLElement>) {
-    if (endTurnEffectDragStart.current?.pointerId === event.pointerId) clearEndTurnEffectDrag()
-  }
-
-  function activateEndTurnEffect(ability: EndTurnEffectDrag['ability']) {
-    if (suppressEndTurnEffectClick.current === ability.id) {
-      suppressEndTurnEffectClick.current = null
-      return
-    }
-    if (!endTurnEffectCanStartDrag(ability.id)) return
-    setArmedEndTurnAbilityId((current) => current === ability.id ? null : ability.id)
-  }
-
-  function onCardPointerDown(card: CardInstance, event: React.PointerEvent<HTMLButtonElement>, playable: boolean, chamber = false) {
-    if (event.button !== 0) return
-    const canDrag = playable && (chamber ? chamberCardCanStartDrag(card) : cardCanStartDrag(card))
-    const staged = chamber ? stageHermitChamberViewer(viewer!, card,
-      state.pendingHermitChamberPlays?.[0]?.playerId === viewerId &&
-      state.pendingHermitChamberPlays[0].cardUids[0] === card.uid &&
-      state.pendingHermitChamberPlays[0].free) : null
-    const pending = canDrag ? pendingFor(staged?.card ?? card, null, state, staged?.player ?? viewer!,
-      false, undefined, chamber) : null
-    const scrollElement = event.currentTarget.closest('.hand-scroll') as HTMLDivElement | null
-    event.currentTarget.setPointerCapture(event.pointerId)
-    cardDragStart.current = {
-      card, chamber, pointerId: event.pointerId,
-      startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY,
-      needsEnemy: pending?.needsEnemy ?? false,
-      needsPlayer: pending ? !pending.needsEnemy && (pending.needsAlly || pending.playerChoices > 0) : false,
-      hitsRow: pending?.hitsRow ?? false,
-      element: event.currentTarget,
-      scrollElement,
-      scrollLeft: scrollElement?.scrollLeft ?? 0,
-      scrolling: false,
-      canDrag,
-      moved: false,
-    }
-  }
-
-  function onCardPointerMove(event: React.PointerEvent<HTMLElement>) {
-    const start = cardDragStart.current
-    if (!start || start.pointerId !== event.pointerId) return
-    const dx = event.clientX - start.startX
-    const dy = event.clientY - start.startY
-    if (Math.hypot(dx, dy) >= 10) start.moved = true
-    const verticallyDominant = dy < -10 && -dy >= Math.abs(dx)
-    const towardRequiredTarget = dy < -10 && -dy >= Math.abs(dx) * 0.25 &&
-      ((start.needsEnemy && dx > 0) || (start.needsPlayer && dx < 0))
-    const overRequiredTarget = dy < -10 && !verticallyDominant && !towardRequiredTarget && (start.needsEnemy
-      ? Boolean(dragTargetAt(event.clientX, event.clientY, start.hitsRow))
-      : start.needsPlayer ? Boolean(dragPlayerAt(event.clientX, event.clientY)) : false)
-    const upwardIntent = verticallyDominant || towardRequiredTarget || overRequiredTarget
-    if (!cardDragLive.current && start.scrolling) {
-      if (upwardIntent) {
-        if (start.scrollElement) start.scrollElement.scrollLeft = start.scrollLeft
-        start.scrolling = false
-      } else {
-        if (start.scrollElement) start.scrollElement.scrollLeft = start.scrollLeft - dx
-        return
-      }
-    }
-    if (!cardDragLive.current && Math.abs(dx) >= 10 && !upwardIntent && Math.abs(dx) > Math.abs(dy)) {
-      start.scrolling = true
-      if (start.scrollElement) start.scrollElement.scrollLeft = start.scrollLeft - dx
-      return
-    }
-    if (!start.canDrag) return
-    if (!cardDragLive.current &&
-      Math.hypot(dx, dy) < 10) return
-    cardDragMove.current = { x: event.clientX, y: event.clientY }
-    if (cardDragFrame.current !== null) return
-    cardDragFrame.current = requestAnimationFrame(() => {
-      cardDragFrame.current = null
-      const active = cardDragStart.current
-      const move = cardDragMove.current
-      if (!active || !move) return
-      const next: CardDrag = {
-        card: active.card,
-        chamber: active.chamber,
-        pointerId: active.pointerId,
-        startX: active.startX,
-        startY: active.startY,
-        x: move.x,
-        y: move.y,
-        targetUid: active.needsEnemy ? dragTargetAt(move.x, move.y, active.hitsRow) : null,
-        targetPlayerId: active.needsPlayer ? dragPlayerAt(move.x, move.y) : null,
-        needsEnemy: active.needsEnemy,
-        needsPlayer: active.needsPlayer,
-        hitsRow: active.hitsRow,
-      }
-      const previous = cardDragLive.current
-      cardDragLive.current = next
-      const path = `M ${next.startX} ${next.startY - 45} Q ${next.startX} ${next.y} ${next.x} ${next.y}`
-      cardDragArrow.current?.setAttribute('d', path)
-      cardDragArrowShadow.current?.setAttribute('d', path)
-      if (cardDragOverlay.current) {
-        cardDragOverlay.current.style.setProperty(
-          '--drag-y',
-          `${Math.max(0, next.y - next.startY + 210)}px`,
-        )
-        cardDragOverlay.current.style.setProperty(
-          '--drag-turn',
-          `${Math.max(-8, Math.min(8, (next.x - next.startX) / 24))}deg`,
-        )
-      }
-      if (!previous || previous.targetUid !== next.targetUid ||
-        previous.targetPlayerId !== next.targetPlayerId) setCardDrag(next)
-    })
-  }
-
-  function cardCanStartDrag(card: CardInstance) {
-    return !usingCard && !pending && !pendingTrigger && !endTurnResolving && state.phase === 'player' &&
-      !forcedCard && !distilled && !relicScry && canAfford(state, viewer!, card, miracleOnCard, drawCount)
-  }
-
-  function chamberCardCanStartDrag(card: CardInstance) {
-    const required = state.pendingHermitChamberPlays?.[0]
-    const staged = stageHermitChamberViewer(viewer!, card,
-      required?.playerId === viewerId && required.cardUids[0] === card.uid && required.free)
-    return !usingCard && !pending && !pendingTrigger && !endTurnResolving && !forcedCard &&
-      state.phase === 'player' && (required?.cardUids[0] === card.uid || !voluntaryActionsBlocked) &&
-      canAfford(state, staged.player, staged.card)
-  }
-
-  function clearCardDrag() {
-    cardDragStart.current = null
-    cardDragLive.current = null
-    cardDragMove.current = null
-    if (cardDragFrame.current !== null) cancelAnimationFrame(cardDragFrame.current)
-    cardDragFrame.current = null
-    setCardDrag(null)
-  }
-
-  function finishCardDrag(event: React.PointerEvent<HTMLElement>) {
-    const start = cardDragStart.current
-    if (!start || start.pointerId !== event.pointerId) return
-    const dx = event.clientX - start.startX
-    const dy = event.clientY - start.startY
-    const needsEnemy = cardDragLive.current?.needsEnemy ?? start.needsEnemy
-    const needsPlayer = cardDragLive.current?.needsPlayer ?? start.needsPlayer
-    const targetUid = needsEnemy ? dragTargetAt(event.clientX, event.clientY, start.hitsRow) : null
-    const targetPlayerId = needsPlayer ? dragPlayerAt(event.clientX, event.clientY) : null
-    const releaseUpwardIntent = dy < -10 && (-dy >= Math.abs(dx) || Boolean(targetUid || targetPlayerId))
-    const releaseHorizontalIntent = Math.abs(dx) >= 10 && !releaseUpwardIntent && Math.abs(dx) > Math.abs(dy)
-    const wasScrolling = releaseHorizontalIntent ||
-      (!cardDragLive.current && start.scrolling && !releaseUpwardIntent)
-    if (start.scrolling && releaseUpwardIntent && start.scrollElement) {
-      start.scrollElement.scrollLeft = start.scrollLeft
-    } else if (releaseHorizontalIntent && start.scrollElement) {
-      start.scrollElement.scrollLeft = start.scrollLeft - dx
-    }
-    const moved = start.moved || Math.hypot(dx, dy) >= 10
-    const lifted = dy < -10
-    clearCardDrag()
-    if (start.element.hasPointerCapture(event.pointerId)) start.element.releasePointerCapture(event.pointerId)
-    if (!moved) return
-    suppressCardClick.current = start.card.uid
-    setTimeout(() => {
-      if (suppressCardClick.current === start.card.uid) suppressCardClick.current = null
-    }, 0)
-    if (!start.canDrag || wasScrolling) return
-    if (lifted && (!needsEnemy || targetUid) && (!needsPlayer || targetPlayerId)) {
-      if (start.chamber) submitHermitChamber(start.card, targetUid, targetPlayerId)
-      else onCardClick(start.card, targetUid, targetPlayerId)
-    }
-  }
-
-  function cancelCardDrag(event: React.PointerEvent<HTMLElement>) {
-    if (cardDragStart.current?.pointerId !== event.pointerId) return
-    clearCardDrag()
-  }
-
-  function activateCard(card: CardInstance) {
-    if (suppressCardClick.current === card.uid) {
-      suppressCardClick.current = null
-      return
-    }
-    onCardClick(card)
-  }
+  // In local solo all information is present, so a turn with literally no
+  // card, token, potion, Power, or relic action can safely collapse. Online
+  // hands are private and shared turn order is meaningful, so clients never
+  // guess on behalf of the party.
+  const viewerHasLegalAction = !voluntaryActionsBlocked && (viewer.hand.some((card) => canAfford(state, viewer, card, false, drawCount)) ||
+    viewer.chamber.some(chamberCardCanStartDrag) ||
+    viewer.shivs > 0 || viewer.soulburn > 0 ||
+    viewer.guardianMode && viewer.vigor > 0 && !viewer.cardPlayLocked && !reachedTimeWarpLimit(state, viewer) ||
+    viewer.miracles > 0 && viewer.energy < CAPS.energy && (
+      viewer.relics.some((relic) => relic.defId === 'ice_cream') ||
+      viewer.hand.some((card) => canAfford(state, viewer, card, true, drawCount))) ||
+    viewer.potions.some((potionId) => canUsePotionNow(potionId)) ||
+    viewer.powers.some((power) => {
+      const def = faceOf(cardDef(power.defId), power.upgraded)
+      return Boolean(def.activeAbility) && (!def.oncePerTurn || !powerAbilityUsed(state, viewer.id, power.uid)) &&
+        powerActivationAllowed(def, state, viewer)
+    }) ||
+    viewer.relics.some((_, relicIndex) => canUseRelicNow(relicIndex)) || courierAvailable)
+  useEffect(() => {
+    if (onAction || !autoAdvance || !autoEndTurn || state.players.length !== 1 || state.phase !== 'player' ||
+      viewer.dead || viewerHasLegalAction || voluntaryActionsBlocked || forcedCard || distilled || pending || pendingTrigger ||
+      endTurnResolving || playWindow) return undefined
+    const timer = window.setTimeout(finishTurn, 450)
+    return () => window.clearTimeout(timer)
+    // Slayer Pack: an open card-play window is still being resolved; the engine closes it once nothing is left.
+  }, [autoAdvance, autoEndTurn, state.phase, state.turn, state.players.length, viewer.dead, viewerHasLegalAction,
+    forcedCard, distilled, pending, pendingTrigger, endTurnResolving, voluntaryActionsBlocked, playWindow])
 
   // Distilled Chaos already asks which card to play. Requiring a second click
   // on the same card in hand added no decision; stage it immediately so the
@@ -4994,7 +4049,7 @@ function CombatScreenView({
   // The ground's accessible name follows the same priority as its click.
   function rowLaneClickLabel(row: number): string {
     const rowLabel = combatRowLabel(state, row)
-    if (endTurnEffectAimed && endTurnTargetForRow(row)) {
+    if (endTurnEffectAimed && endTurnEffect && endTurnTargetForRow(row)) {
       return `Resolve ${endTurnEffect.label} in ${rowLabel}`
     }
     if (!usingTrigger && pendingTrigger && pendingTrigger.playerId === viewer?.id && triggerHermitChoicesReady &&
@@ -5146,24 +4201,21 @@ function CombatScreenView({
   // folded in regardless of row" reads the same way everywhere, not just for
   // card-based row targets.
   const rowHitSuffix = state.enemies.some((enemy) => enemy.isBoss && !enemy.dead) ? ', and the boss' : ''
-  const normalEnemyPrompt = pending?.hitsRow
-    ? `Choose an enemy${originalTarget || copyTarget} — its whole row is hit${rowHitSuffix}`
-    : pendingDef?.bossTargetCost !== undefined && pending?.cardInHand && state.enemies.some((enemy) => enemy.isBoss && !enemy.dead)
-      ? `Choose an enemy${copyTarget} — ${pendingDef.name} costs ${pendingDef.bossTargetCost} Energy on a Boss`
-      : `Choose an enemy${originalTarget || copyTarget}`
-  const enemyPrompt = normalEnemyPending
-    ? normalEnemyPrompt
-    : independentEnemyPending && adjacentPickUids
-      ? `${pendingDef?.name} — choose adjacent enemy ${(pending?.enemyUids.length ?? 0) + 1}/${pending?.enemyChoices} for its damage`
-    : independentEnemyPending
-      ? `Choose ${independentHitPending ? 'damage' : 'token'} target ${(pending?.enemyUids.length ?? 0) + 1}/${pending?.enemyChoices}`
-    : spentShivPending
-      ? `Choose Shiv attack ${(pending?.shivEnemyUids.length ?? 0) + 1}/${pending?.spentShivs}${
-        pendingShivProgress && pendingShivProgress.options.length < livingEnemies(state).length
-          ? ' — choose a surviving enemy' : ''}`
-    : overflowOnly
-    ? `Choose overflow Shiv target ${(pending?.shivEnemyUids.length ?? 0) - (pending?.spentShivs ?? 0) + 1}/${pending?.overflowShivs}, or skip the rest`
-    : normalEnemyPrompt
+  const enemyPrompt = deriveEnemyPrompt({
+    state,
+    pending,
+    pendingDef,
+    normalEnemyPending,
+    independentEnemyPending,
+    independentHitPending,
+    adjacentPickUids,
+    spentShivPending,
+    overflowOnly,
+    pendingShivProgress,
+    originalTarget,
+    copyTarget,
+    rowHitSuffix,
+  })
   // The Hermit setup Load pauses the Draw step; start-of-turn order comes after it.
   const startTurnOpen = state.phase === 'start' && !forcedCard && !pendingTrigger &&
     (state.pendingHermitSetupLoads?.length ?? 0) === 0 &&
@@ -5195,207 +4247,89 @@ function CombatScreenView({
     ? orderedStartAbilities.flatMap((ability) => ability.exhaustCards
       ?.filter((card) => card.uid === startTurnExhaustUids[ability.id]).map((card) => card.uid) ?? [])
     : [])
-  const startTurnPrompt = pendingStartExhaust
-    ? `${pendingStartExhaust.label} — choose a card to Exhaust`
-    : pendingStartShiv
-      ? `${pendingStartShiv.ability.label} — throw Shiv ${pendingStartShiv.index + 1}/${pendingStartShiv.ability.overflowShivs}`
-      : pendingStartEnemy
-      ? `${pendingStartEnemy.label} — choose an enemy`
-    : pendingStartPlayer
-      ? `${pendingStartPlayer.label} — choose a player`
-    : pendingStartEvokeTarget
-      ? `${pendingStartEvokeTarget.ability.label} — choose ${pendingStartEvokeRows.length > 0
-        ? `an enemy for the Evoked Orb — its whole row is hit${rowHitSuffix}` : 'a target for the Evoked Orb'}`
-    : pendingStartEvoke?.evokeChoice
-      ? `${pendingStartEvoke.label} — choose an Orb to Evoke (${pendingStartEvoke.evokeChoice.index + 1})`
-    : teammateStartExhaust
-      ? `Waiting for ${state.players.find((player) => player.id === teammateStartExhaust.playerId)?.name ??
-        'a teammate'} to choose a card to Exhaust`
-    : null
-  const forcedSource = forcedCard?.sourceLabel ?? (forcedCard
-    ? cardDef(forcedCard.sourceCardId ?? 'mayhem').name
-    : '')
-  const forcedPrompt = forcedCard && !pending
-    ? forcedCard.playerId === viewerId
-      ? `${forcedSource} — play the drawn card for 0 Energy`
-      : `Waiting for ${state.players.find((player) => player.id === forcedCard.playerId)?.name ?? 'another player'} to play ${forcedSource}'s card`
-    : null
-  const plunderPrompt = pendingPlunder
-    ? pendingPlunder.playerId === viewer.id
-      ? 'Plunder — switch rows or stay where you are'
-      : `Waiting for ${state.players.find((player) => player.id === pendingPlunder.playerId)?.name ?? 'another player'} to finish Plunder`
-    : null
+  const startTurnPrompt = deriveStartTurnPrompt({
+    state,
+    pendingStartExhaust,
+    pendingStartShiv,
+    pendingStartEnemy,
+    pendingStartPlayer,
+    pendingStartEvokeTarget,
+    pendingStartEvokeRows,
+    pendingStartEvoke,
+    teammateStartExhaust,
+    rowHitSuffix,
+  })
+  const forcedPrompt = deriveForcedPrompt(state, viewerId, forcedCard, pending)
+  const plunderPrompt = derivePlunderPrompt(state, viewer.id, pendingPlunder)
   // Slayer Pack: another player's card-given choice (the owner answers in their own prompt below).
   const waitingPlayerChoice = viewerPlayerChoice ? undefined : owedChoices[0]
-  const playerChoicePrompt = waitingPlayerChoice
-    ? `Waiting for ${state.players.find((player) => player.id === waitingPlayerChoice.playerId)?.name ?? 'another player'} — ${waitingPlayerChoice.sourceLabel}`
-    : null
-  const dieRelicPrompt = dieRelicPending
-    ? dieRelicPending.playerId === viewer.id
-      ? `${dieRelicPending.sourceLabel} — finish the chosen die Relic`
-      : `Waiting for ${state.players.find((player) => player.id === dieRelicPending.playerId)?.name ?? 'another player'} to finish a die Relic`
-    : null
-  const triggerPrompt = pendingTrigger
-    ? pendingTrigger.playerId === viewer.id
-      ? `${pendingTrigger.label} — choose ${pendingTrigger.hermitChoices && !triggerHermitChoicesReady
-        ? 'cards' : pendingTrigger.slimeChoice && !triggerSlimeChoicesReady ? 'Slime or self' :
-        triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount
-          ? `${triggerSlimeEnemyLabels[triggerSlimeEnemyUids.length] ?? 'Slime'} Command target ${triggerSlimeEnemyUids.length + 1}/${triggerSlimeEnemyAmount}` :
-        pendingTrigger.targets ? triggerHermitCurse ? `an enemy for ${cardDef(triggerHermitCurse.defId).name}` : 'an enemy'
-          : pendingTrigger.players ? 'a player' :
-        pendingTrigger.hermitChoices ? 'cards' : pendingTrigger.slimeChoice ? 'Slime or self' :
-          `an enemy — its whole row is hit${rowHitSuffix}`}`
-      : `Waiting for ${state.players.find((player) => player.id === pendingTrigger.playerId)?.name ?? 'another player'} to resolve ${pendingTrigger.label}`
-    : null
-  const beforeDrawPrompt = activeStartTurnScry && activeStartTurnScry.playerId !== viewer.id
-    ? `Waiting for ${state.players.find((player) => player.id === activeStartTurnScry.playerId)?.name ?? 'another player'} to Scry before drawing`
-    : null
+  const playerChoicePrompt = derivePlayerChoicePrompt(state, waitingPlayerChoice)
+  const dieRelicPrompt = deriveDieRelicPrompt(state, viewer.id, dieRelicPending)
+  const triggerPrompt = deriveTriggerPrompt({
+    state,
+    viewerId: viewer.id,
+    pendingTrigger,
+    triggerHermitChoicesReady,
+    triggerSlimeChoicesReady,
+    triggerSlimeEnemyUids,
+    triggerSlimeEnemyAmount,
+    triggerSlimeEnemyLabels,
+    triggerHermitCurse,
+    rowHitSuffix,
+  })
+  const beforeDrawPrompt = deriveBeforeDrawPrompt(state, viewer.id, activeStartTurnScry)
   // Slayer Pack: The viewer's live card-play window: the cards a resolved
   // Discovery, Violence, ... still lets them play, at the window's exact cost.
   const playWindowName = playWindow ? cardDef(playWindow.sourceCardId).name : ''
-  const playWindowPrompt = playWindow && state.phase === 'player'
-    ? `${playWindowName}: play ${playWindow.plays === 1 ? 'one offered card'
-      : playWindow.optional ? 'any offered cards' : 'every offered card'
-    } for ${playWindow.cost} Energy${playWindow.plays === 1 ? '' : ' each'}`
-    : null
-  const prompt = dieRelicPrompt ?? plunderPrompt ?? triggerPrompt ?? forcedPrompt ?? beforeDrawPrompt ?? startTurnPrompt ?? (pendingPowerDef
-    ? pendingPowerDef.id === 'guardian_gem_finder'
-      ? powerScryConfirmed
-        ? pendingPower?.attachedGemId === 'guardian_jasper' ? 'Jasper — Exhaust up to 3 cards'
-          : pendingPower?.attachedGemId === 'guardian_amethyst' ? 'Amethyst — choose whether to Mode Shift'
-            : pendingPowerNeedsAlly ? 'Gem Finder — Scry confirmed; choose a player'
-              : 'Gem Finder — Scry confirmed; choose an enemy'
-        : 'Gem Finder — choose cards to discard from the private Scry'
-      : pendingPowerDef.id === 'guardian_revenge_protocol'
-        ? 'Revenge Protocol — choose an Attack in hand'
-      : pendingPowerDef.id === 'hermit_shadow_cloak'
-      ? 'Shadow Cloak — choose a Curse to discard from hand or Chamber'
-      : pendingPowerDef.id === 'hermit_black_wind'
-        ? powerChamberUids.length === 0 ? 'Black Wind — choose a Chamber card to discard'
-          : powerLoadUids.length === 0 ? 'Black Wind — choose a card to Load'
-            : 'Black Wind — choose an enemy for the loaded Curse'
-      : pendingPower?.attachedGemId === 'guardian_jasper'
-        ? 'Jasper — Exhaust up to 3 cards'
-      : pendingPower?.attachedGemId === 'guardian_onyx' && pendingPowerNeedsAlly
-        ? 'Onyx — choose a player'
-      : pendingPower?.attachedGemId === 'guardian_amethyst'
-        ? 'Amethyst — choose whether to Mode Shift'
-      : creativeAiEffect
-        ? creativeAiEffect.anyNumber
-          ? `${pendingPowerDef.name} — choose Orbs to remove (up to ${Math.min(
-            viewer.discard.length, viewer.orbs.filter((orb) => orb != null).length)})`
-          : `${pendingPowerDef.name} — choose an Orb to remove`
-      : pendingPowerDef.target === 'row'
-        ? `Choose an enemy for ${pendingPowerDef.name} — its whole row is hit${rowHitSuffix}`
-        : `Choose an enemy for ${pendingPowerDef.name}`
-    : pendingPotion === 'gamblers_brew'
-      ? "Gambler's Brew — choose the shared die face"
-    : pendingPotion === 'liquid_memories'
-      ? 'Liquid Memories — choose a card from your discard pile'
-    : pendingPotion === 'liquid_void'
-      ? 'Liquid Void — choose a card from your Exhaust pile'
-    : pendingPotion === 'transforming_brew'
-      ? 'Transforming Brew — choose a non-Curse card in your hand'
-    : pendingPotion === 'destiny_draught'
-      ? 'Destiny Draught — choose any die relic ability'
-    : pendingPotion === 'purity_potion'
-      ? `Purity — choose up to 3 cards to Exhaust (${potionCardUids.length}/3)`
-    : pendingPotion === 'entropic_brew' && !viewerHasSozu
-      ? 'Entropic Brew — choose a held Potion to replace'
-    : pendingPotionDef
-    ? pendingPotionDef.target === 'row'
-      ? `Choose an enemy for ${pendingPotionDef.name} — its whole row is hit${rowHitSuffix}`
-      : pendingPotionOverflow > 0
-        ? `Choose overflow Shiv target ${potionShivEnemyUids.length + 1}/${pendingPotionOverflow}, or skip the rest`
-        : `Choose ${pendingPotionNeedsEnemy ? 'an enemy' : 'a player'} for ${pendingPotionDef.name}`
-    : spendingShiv
-    ? 'Choose an enemy for the Shiv'
-    : spendingSoulburn
-    ? 'Choose an enemy for Soulburn'
-    : (pending?.choice?.kind === 'load' || pending?.choice?.kind === 'loadAny') && !pending.choiceConfirmed
-      ? `${pendingDef?.name ?? 'Card'} — choose ${pending.choice.kind === 'loadAny' ? 'up to ' : ''}${pending.choice.amount} card${pending.choice.amount === 1 ? '' : 's'} to Load`
-    : pending?.slimeChoice && !pending.slimeChoiceConfirmed &&
-      (pendingDef?.cost !== 'X' || pending.energySpent !== null)
-      ? `Choose ${pending.slimeChoice.minimum === pending.slimeChoice.amount ? '' : 'up to '}${pending.slimeChoice.amount} Slime${pending.slimeChoice.amount === 1 ? '' : 's'}`
-    : pending && pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending)
-      ? `Choose ${slimeEnemyChoiceLabels(pending)[pending.slimeEnemyUids.length] ?? 'Slime'} Command target ${pending.slimeEnemyUids.length + 1}/${slimeEnemyChoicesRequired(pending)}`
-    : pending?.hermitDieRelicChoice && !pending.hermitDieRelicChoiceConfirmed
-      ? `Cheat — trigger ${pending.hermitDieRelicChoice.minimum === pending.hermitDieRelicChoice.amount ? '' : 'up to '}${pending.hermitDieRelicChoice.amount} different die relic${pending.hermitDieRelicChoice.amount === 1 ? '' : 's'}`
-    : pending?.chamberChoice && chamberChoiceRequired(pending) > 0 && !pending.chamberChoiceConfirmed
-      ? `Choose ${chamberChoiceRequired(pending)} Chamber card${chamberChoiceRequired(pending) === 1 ? '' : 's'} to ${pending.chamberChoice.kind}`
-    : pending?.chooseLoadSelf === null
-      ? `Load ${pendingDef?.name ?? 'this card'} after playing it?`
-    : pending?.spendVigor === null
-      ? `Choose Vigor to spend on ${pendingDef?.name ?? 'this card'}`
-    : pending?.guardianModeShift === null
-      ? `Shift Guardian Mode with ${pendingDef?.name ?? 'this card'}?`
-    : pending?.guardianBlockSpend === null
-      ? `Choose Block to spend with ${pendingDef?.name ?? 'Body Crash'}`
-    : pending && pending.hermitEnemyUids.length < loadedTargetCount(pending)
-      ? `Choose enemy for loaded Curse ${pending.hermitEnemyUids.length + 1}/${loadedTargetCount(pending)}`
-    : pending && pending.soulburnEnemyUids.length < pending.soulburnChoices
-      ? `Choose Soulburn target ${pending.soulburnEnemyUids.length + 1}/${pending.soulburnChoices}`
-    : pendingDef?.id === 'slayer_metamorphosis' && pending?.metamorphosisPowerUid === undefined
-      ? `${pendingDef.name} — choose one of your Powers to attach to and copy`
-    : pendingDef?.cost === 'X' && pending?.energySpent === null
-      ? `Choose Energy for ${pendingDef.name}`
-    : pendingDef?.modes && !modeSatisfied
-      ? `Choose how to play ${pendingDef.name}`
-    : corruptedShardModeNeeded && !corruptedShardModeSatisfied
-      ? `Corrupted Shard — choose a Guardian Mode for ${pendingDef?.name ?? 'this card'}`
-    : pendingPowerBeamChoiceNeeded && pending?.guardianPowerCardUid === null
-      ? 'Power Beam — choose a Power from your hand or discard pile to play for 0 Energy'
-    : pending?.choiceCards && !pending.choiceConfirmed
-      ? pending.choice?.kind === 'scry'
-        ? `Scry ${pending.choice.amount} — choose any cards to discard`
-        : pending.choice?.kind === 'topdeck'
-          ? `${pendingDef?.name ?? 'Card'} — choose ${choiceNeeded} card to put on top`
-        : pending.choice?.kind === 'recover'
-          ? `${pendingDef?.name ?? 'Card'} — choose a card from your discard pile`
-        : pending.choice?.kind === 'recoverExhaust'
-          ? `${pendingDef?.name ?? 'Card'} — choose ${pending.choice.minimum === 0 ? `up to ${choiceNeeded}` :
-            choiceNeeded === 1 ? 'a card' : choiceNeeded} from your Exhaust pile`
-        : pending.choice?.kind === 'search'
-          ? pendingSearchKind?.kind === 'overexert'
-            ? choiceNeeded === 0 ? 'Overexert — no playable card remains after drawing'
-              : 'Overexert — choose a playable card from your hand'
-            : pendingSearchKind?.kind === 'replicateSlime'
-              ? choiceNeeded === 0 ? 'Replication — no Slime is in your draw pile'
-                : 'Replication — choose a Slime from your draw pile to play'
-              : `${pendingDef?.name ?? 'Card'} — choose ${choiceNeeded} from your draw pile`
-        : `Discard ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} after drawing`
-    : (pending?.choice?.kind === 'discardAny' || pending?.choice?.kind === 'exhaustAny' ||
-      pending?.choice?.kind === 'bottomdeck') && !pending.choiceConfirmed
-      ? pending.choice.kind === 'discardAny'
-        ? `Discard any number of cards — ${pending.picked.length} chosen`
-        : pending.choice.kind === 'bottomdeck'
-        ? `${pendingDef?.name ?? 'Card'} — choose ${pending.choice.minimum === 0 ? 'any number of cards'
-          : `${Math.min(pending.choice.amount, choicePoolSize)} card${pending.choice.amount === 1 ? '' : 's'}`} for the bottom of your draw pile${
-          pending.picked.length > 0 ? ` (in this order) — ${pending.picked.length} chosen` : ''}`
-        : `Exhaust ${pending.choice.minimum ? `${pending.choice.minimum}-${pending.choice.amount}` : `up to ${pending.choice.amount}`} cards — ${pending.picked.length} chosen`
-    : pending?.choice && !handChoiceSatisfied
-      ? `${pending.choice.kind === 'discard' ? 'Discard' : 'Exhaust'} ${choiceNeeded} card${
-          choiceNeeded === 1 ? '' : 's'
-        } — ${pending.picked.length}/${choiceNeeded} chosen`
-      : pendingEvokeTarget >= 0
-        ? pendingEvokeUsesRows
-          ? `Choose an enemy for this evoke — its whole row is hit${rowHitSuffix}`
-          : 'Choose an enemy for this evoke'
-        : pendingEvokeChoice
-          ? `${pendingDef?.name ?? 'Card'} — choose an Orb to Evoke (${pendingEvokeChoice.index + 1})`
-        : pending?.needsEnemy && !enemyChoicesDone
-        ? enemyPrompt
-        : independentPlayerPending
-          ? `Choose Block recipient ${(pending?.playerIds.length ?? 0) + 1}/${pending?.playerChoices}`
-        : pending?.needsAlly && !pending.playerId
-          ? 'Choose who gets it'
-          : switchChoiceReady
-            ? 'Choose another player to switch rows with, or keep rows'
-          : null) ?? (pending ? null : playWindowPrompt)
-  const draggedEnemy = cardDrag?.targetUid
-    ? state.enemies.find((enemy) => enemy.uid === cardDrag.targetUid)
-    : undefined
-  const cardDragTargetRow = cardDrag?.hitsRow ? draggedEnemy?.row : undefined
+  const playWindowPrompt = derivePlayWindowPrompt(state, playWindow)
+  const prompt = derivePrompt({
+    viewer,
+    dieRelic: dieRelicPrompt,
+    plunder: plunderPrompt,
+    trigger: triggerPrompt,
+    forced: forcedPrompt,
+    beforeDraw: beforeDrawPrompt,
+    startTurn: startTurnPrompt,
+    playWindow: playWindowPrompt,
+    enemy: enemyPrompt,
+    rowHitSuffix,
+    pendingPower,
+    pendingPowerDef,
+    powerScryConfirmed,
+    pendingPowerNeedsAlly,
+    powerChamberUids,
+    powerLoadUids,
+    creativeAiEffect,
+    pendingPotion,
+    pendingPotionDef,
+    pendingPotionOverflow,
+    pendingPotionNeedsEnemy,
+    potionCardUids,
+    potionShivEnemyUids,
+    viewerHasSozu,
+    spendingShiv,
+    spendingSoulburn,
+    pending,
+    pendingDef,
+    slimeEnemyChoicesRequired,
+    slimeEnemyChoiceLabels,
+    chamberChoiceRequired,
+    loadedTargetCount,
+    modeSatisfied,
+    corruptedShardModeNeeded,
+    corruptedShardModeSatisfied,
+    pendingPowerBeamChoiceNeeded,
+    choiceNeeded,
+    choicePoolSize,
+    pendingSearchKind,
+    handChoiceSatisfied,
+    pendingEvokeTarget,
+    pendingEvokeUsesRows,
+    pendingEvokeChoice,
+    enemyChoicesDone,
+    independentPlayerPending,
+    switchChoiceReady,
+  })
   const displayedPileCount = (kind: 'draw' | 'discard' | 'exhaust', count: number) =>
     Math.max(0, count - cardFlights.filter((flight) => flight.destination === kind && !flight.landed).length)
   const drawPileCount = drawCount ?? viewer.draw.length
@@ -5434,438 +4368,138 @@ function CombatScreenView({
         '--stage-actor-width': `calc(${STAGE_GAP_REM - 1}rem * var(--stage-scale))`,
       } as React.CSSProperties}
     >
-      {groundedVfx}
-      <header ref={combatBarRef} className="combat__bar">
-        <span className="combat__turn">Turn {state.turn}</span>
-        <span className="combat__die" title="The round's shared die">
-          <Icon name={dieIcon(state.die)} size={26} decorative={false} />
-        </span>
-        <span key={`${state.turn}-${state.phase}`} className={`combat__phase combat__phase--${state.phase}`}>{state.phase === 'copy'
-          ? `Resolve ${copyResolutionLabel ?? 'card'}`
-          : hermitSetupPending ? 'Load 1 card'
-          : hermitSetupOwner ? `${hermitSetupOwner.name} Loads a card`
-          : PHASE_LABEL[state.phase]}</span>
-        {onCourierReveal && courierPeekPhase(state)
-          ? <CourierPeek placement="bar" players={state.players} viewerId={viewerId} usedBy={courierUsedBy ?? []} onReveal={onCourierReveal} /> : null}
-        <span className="combat__actions">
-          {/* Slayer Pack: a card-given choice (Heel Hook, Magnetism) docks in the bar, off the board,
-              so it never covers an enemy or its intent. */}
-          {playerChoicePrompt ? <span className="combat__power-hint" role="status">{playerChoicePrompt}</span> : null}
-          {viewer && viewerPlayerChoice ? (
-            <span className="player-choice" role="group" aria-label={`${viewerPlayerChoice.sourceLabel} choice`}>
-              {viewerPlayerChoice.kind === 'drawOrDiscard' ? <>
-                <span className="combat__power-hint" title={`${viewerPlayerChoice.sourceLabel}: you may draw a card or discard a card`}>
-                  {viewerPlayerChoice.sourceLabel}:
-                </span>
-                <button type="button" disabled={usingPlayerChoice || viewer.drawLocked ||
-                  viewer.draw.length + viewer.discard.length === 0}
-                  onClick={() => submitPlayerChoice({ draw: true })}>Draw a card</button>
-                <button type="button" disabled={usingPlayerChoice || viewer.hand.length === 0}
-                  onClick={() => setPlayerChoiceDiscarding(true)}>Discard a card</button>
-                <button type="button" disabled={usingPlayerChoice}
-                  onClick={() => submitPlayerChoice({})}>Neither</button>
-              </> : <>
-                <span className="combat__power-hint"
-                  title={`${viewerPlayerChoice.sourceLabel}: you may return cards from the top of your discard pile`}>
-                  <span className="player-choice__source">{viewerPlayerChoice.sourceLabel.replace(/^.*'s /, '')}: </span>
-                  {viewer.discard.slice(
-                    viewer.discard.length - Math.min(viewerPlayerChoice.upTo, viewer.discard.length)).reverse()
-                    .map((card) => faceOf(cardDef(card.defId), card.upgraded).name).join(', ')}
-                </span>
-                {Array.from({ length: Math.min(viewerPlayerChoice.upTo, viewer.discard.length) }, (_unused, index) => {
-                  const names = viewer.discard.slice(viewer.discard.length - index - 1).reverse()
-                    .map((card) => faceOf(cardDef(card.defId), card.upgraded).name).join(' and ')
-                  return <button key={index} type="button" disabled={usingPlayerChoice} aria-label={`Return ${names}`}
-                    onClick={() => submitPlayerChoice({ count: index + 1 })}>Take {index + 1}</button>
-                })}
-                <button type="button" disabled={usingPlayerChoice} aria-label="Return nothing"
-                  onClick={() => submitPlayerChoice({ count: 0 })}>Take none</button>
-              </>}
-            </span>
-          ) : null}
-          {!viewer.dead && !relicScry && !voluntaryActionsBlocked && (state.phase === 'player' || state.phase === 'discard' ||
-            state.phase === 'start' && viewer.potions.includes('gamblers_brew')) ? (
-            <>
-              {activePowerWindow(state) && !forcedCard && !distilled && !endTurnResolving && !pendingTrigger ? viewer.powers.flatMap((power) => {
-                const def = faceOf(cardDef(power.defId), power.upgraded)
-                if (!def.activeAbility) return []
-                const staged = pendingPowerUid === power.uid
-                const used = powerAbilityUsed(state, viewer.id, power.uid)
-                const attachedGem = power.attachedGemId ? cardDef(power.attachedGemId).name : null
-                // Slayer Pack: Master Reality and Creative AI need a card to return
-                // (Creative AI also an Orb to remove); Creative AI asks which Orbs.
-                const returnsDiscardTop = def.effects.some((effect) =>
-                  effect.kind === 'returnDiscardTop' || effect.kind === 'removeOrbsForDiscardTop')
-                const removesOrbs = def.effects.some((effect) => effect.kind === 'removeOrbsForDiscardTop')
-                return [<button
-                  type="button"
-                  key={power.uid}
-                  disabled={usingPower || used || Boolean(pending?.choiceCards) ||
-                    !powerActivationAllowed(def, state, viewer) ||
-                    def.id === 'hermit_shadow_cloak' && ![...viewer.hand, ...viewer.chamber].some((card) =>
-                      faceOf(cardDef(card.defId), card.upgraded).type === 'curse') ||
-                    def.id === 'hermit_black_wind' && (viewer.chamber.length === 0 || viewer.hand.length === 0) ||
-                    returnsDiscardTop && viewer.discard.length === 0 ||
-                    removesOrbs && viewer.orbs.every((orb) => orb == null)}
-                  aria-label={used ? `${def.name}${attachedGem ? ` with ${attachedGem}` : ''} used`
-                    : `Use ${def.name}${attachedGem ? ` with ${attachedGem}` : ''}`}
-                  aria-pressed={staged}
-                  onClick={() => {
-                    setPending(null)
-                    setSpendingShiv(false)
-                    setMiracleOnCard(false)
-                    setPendingPotion(null)
-                    setPotionShivEnemyUids([])
-                    setPotionOverflowRequired(0)
-                    setPowerChamberUids([])
-                    setPowerLoadUids([])
-                    setPowerExhaustUids([])
-                    setPowerOrbSlots([])
-                    setPowerGemContext(null)
-                    setPowerScryConfirmed(false)
-                    const needsTarget = def.target === 'row' ||
-                      cardNeedsEnemy(def, viewer, true, undefined, true, power.attachedGemId)
-                    const needsGemChoice = guardianCardNeedsAlly(def, viewer, power.attachedGemId) &&
-                      livingPlayers.length > 1 ||
-                      power.attachedGemId === 'guardian_jasper' || power.attachedGemId === 'guardian_amethyst'
-                    const needsHermitChoice = def.id === 'hermit_shadow_cloak' || def.id === 'hermit_black_wind'
-                    if (!staged && def.id === 'guardian_gem_finder') requestPowerPreview(power.uid)
-                    else if (!staged && !needsTarget && !needsGemChoice && !needsHermitChoice && !removesOrbs &&
-                      def.id !== 'guardian_revenge_protocol') usePower(power.uid, {})
-                    else setPendingPowerUid(staged ? null : power.uid)
-                  }}
-                ><PowerGlyph def={def} /></button>]
-              }) : null}
-              {/* Slayer Pack: Creative AI's Orbs are picked on the board; its instruction and
-                  confirm dock here so no prompt row covers the Orbs on a horizontal phone. */}
-              {creativeAiEffect ? (
-                <span className="combat__power-hint" aria-hidden="true">
-                  {creativeAiEffect.anyNumber ? 'Tap Orbs to remove' : 'Tap an Orb to remove'}
-                </span>
-              ) : null}
-              {creativeAiEffect?.anyNumber ? (
-                <button type="button" disabled={usingPower || powerOrbSlots.length === 0}
-                  onClick={() => usePower(pendingPowerUid!, { orbSlots: powerOrbSlots })}>
-                  Return {powerOrbSlots.length} card{powerOrbSlots.length === 1 ? '' : 's'}
-                </button>
-              ) : null}
-              {(state.phase === 'player' || state.phase === 'start') && !forcedCard && !distilled && !endTurnResolving && !pendingTrigger ? [...new Set(viewer.potions)].flatMap((potionId) => {
-                if (!canUsePotionNow(potionId)) return []
-                const potion = potionDef(potionId)
-                const staged = pendingPotion === potionId
-                const count = viewer.potions.filter((held) => held === potionId).length
-                const shivs = gainedShivs(potion.effects)
-                const capacity = state.potionLimit + (viewer.relics.some((relic) => relic.defId === 'potion_belt') ? 2 : 0)
-                const needsTarget = ['gamblers_brew', 'liquid_memories', 'liquid_void', 'transforming_brew', 'purity_potion', 'destiny_draught'].includes(potionId) ||
-                  potionId === 'mystery_potion' && state.die <= 2 ||
-                  potionId === 'entropic_brew' && !viewerHasSozu &&
-                    viewer.potions.length - 1 + 2 > capacity || Boolean(potion.target) || (
-                  potion.supportTarget === 'anyPlayer' && livingPlayers.length > 1
-                ) || overflowShivCount(state, shivs) > 0
-                const descriptionId = `potion-action-${viewer.id}-${potionId}-description`
-                // A potion that needs a target is not drunk by the committing
-                // tap — that tap arms targeting, and the target is chosen next.
-                // Already staged, the button only un-stages: free and
-                // reversible, so there is nothing to read first and no label.
-                return <PotionTooltipAnchor id={potionId} key={potionId}
-                  confirmLabel={needsTarget ? (staged ? undefined : 'aim') : 'drink'}>
-                  <span id={descriptionId} className="visually-hidden">{potion.text}</span>
-                  <button
-                    type="button"
-                    disabled={usingPotion || Boolean(pending?.choiceCards)}
-                    aria-label={`Use ${potion.name}${count > 1 ? ` ×${count}` : ''}`}
-                    aria-describedby={descriptionId}
-                    data-webmcp-sequence-end={!potion.effects.length || potion.effects.some((effect) =>
-                      effect.kind === 'draw' || effect.kind === 'drawToHandSize')
-                      ? 'true' : undefined}
-                    aria-pressed={needsTarget ? staged : undefined}
-                    onClick={() => {
-                      if (needsTarget) {
-                        setPending(null)
-                        setPendingPowerUid(null)
-                        setSpendingShiv(false)
-                        setMiracleOnCard(false)
-                        setPendingPotion(staged ? null : potionId)
-                        setPotionShivEnemyUids([])
-                        setPotionOverflowRequired(staged ? 0 : overflowShivCount(state, shivs))
-                        setPotionCardUids([])
-                      } else consumePotion(potionId)
-                    }}
-                  >
-                    <img className="item-icon-image" src={potionIconPath(potionId)} alt="" />
-                  </button>
-                </PotionTooltipAnchor>
-              }) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !endTurnResolving &&
-              !pendingTrigger && !viewer.cardPlayLocked && viewer.shivs > 0 ? (
-                <button
-                  type="button"
-                  className={spendingShiv ? 'is-chosen' : undefined}
-                  disabled={Boolean(pending?.choiceCards)}
-                  aria-label="Use Shiv"
-                  aria-pressed={spendingShiv}
-                  onClick={() => {
-                    setPending(null)
-                    setPendingPowerUid(null)
-                    setMiracleOnCard(false)
-                    setPendingPotion(null)
-                    setPotionShivEnemyUids([])
-                    setPotionOverflowRequired(0)
-                    setSpendingShiv((current) => !current)
-                    setSpendingSoulburn(false)
-                  }}
-                >
-                  <StatusIcon name="shiv" size={22} />
-                </button>
-              ) : null}
-              {state.phase === 'player' && viewer.guardianMode ? (
-                <button type="button"
-                  disabled={viewer.vigor < 1 || Boolean(pending?.choiceCards) || Boolean(forcedCard) || Boolean(distilled) ||
-                    Boolean(relicScry) || endTurnResolving || Boolean(pendingTrigger) ||
-                    viewer.cardPlayLocked || reachedTimeWarpLimit(state, viewer)}
-                  aria-label={`Spend 1 Vigor, ${viewer.vigor} available`}
-                  title="Spend 1 Vigor to boost your card effects for the rest of this turn"
-                  onClick={() => {
-                    setPending(null)
-                    setPendingPowerUid(null)
-                    setPendingPotion(null)
-                    setSpendingShiv(false)
-                    setSpendingSoulburn(false)
-                    if (onAction) onAction({ kind: 'spendVigor' })
-                    else onChange?.(spendVigor(state, viewer.id))
-                  }}>
-                  <StatusIcon name="vigor" size={22} />
-                  <span aria-hidden="true">{viewer.vigor}</span>
-                </button>
-              ) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && !relicScry && !endTurnResolving &&
-              !pendingTrigger && !viewer.cardPlayLocked && viewer.soulburn > 0 ? (
-                <button
-                  type="button"
-                  className={spendingSoulburn ? 'is-chosen' : undefined}
-                  disabled={Boolean(pending?.choiceCards)}
-                  aria-label={`Spend Soulburn, ${viewer.soulburn} available`}
-                  aria-pressed={spendingSoulburn}
-                  onClick={() => {
-                    setPending(null)
-                    setPendingPowerUid(null)
-                    setMiracleOnCard(false)
-                    setPendingPotion(null)
-                    setPotionShivEnemyUids([])
-                    setPotionOverflowRequired(0)
-                    setSpendingShiv(false)
-                    setExtraCrispySoulburn(false)
-                    setSpendingSoulburn((current) => !current)
-                  }}
-                >
-                  <img className="item-icon-image" src={assetPath('icons/hexaghost-flame.png')} alt="" />
-                  <span aria-hidden="true">{viewer.soulburn}</span>
-                </button>
-              ) : null}
-              {spendingSoulburn && extraCrispyPower ? (
-                <button type="button" className={extraCrispySoulburn ? 'is-chosen' : undefined}
-                  aria-label="Use Extra Crispy with Soulburn" aria-pressed={extraCrispySoulburn}
-                  onClick={() => setExtraCrispySoulburn((current) => !current)}>
-                  Extra Crispy ×2
-                </button>
-              ) : null}
-              {state.phase === 'player' && !forcedCard && !distilled && !endTurnResolving && !pendingTrigger && viewer.miracles > 0 ? (
-                <button
-                  type="button"
-                  disabled={Boolean(pending?.choiceCards)}
-                  aria-label={viewer.energy === CAPS.energy ? 'Use Miracle on next card' : 'Use Miracle (+1 Energy)'}
-                  aria-pressed={viewer.energy === CAPS.energy ? miracleOnCard : undefined}
-                  onClick={() => {
-                    if (viewer.energy < CAPS.energy) {
-                      if (onAction) onAction({ kind: 'spendMiracle' })
-                      else onChange?.(spendMiracle(state, viewer.id))
-                    }
-                    else {
-                      setPending(null)
-                      setPendingPowerUid(null)
-                      setSpendingShiv(false)
-                      setPendingPotion(null)
-                      setPotionShivEnemyUids([])
-                      setPotionOverflowRequired(0)
-                      setMiracleOnCard((current) => !current)
-                    }
-                  }}
-                >
-                  <Icon name="miracle" size={22} />
-                </button>
-              ) : null}
-              {state.phase === 'discard' && (retainAllowance > 0 && discardableHand.length > 0 || optionalRetainUids.size > 0) ? (
-                <span className="retain-options" role="group"
-                  aria-label={`Retain up to ${retainAllowance + optionalRetainUids.size} cards for ${viewer.name}`}>
-                  {discardableHand.filter((card) => retainAllowance > 0 || optionalRetainUids.has(card.uid)).map((card) => {
-                    const retained = retainedSet.has(card.uid)
-                    const name = faceOf(cardDef(card.defId), card.upgraded).name
-                    return <button key={card.uid} type="button" aria-pressed={retained}
-                      disabled={!retained && !optionalRetainUids.has(card.uid) && allowanceRetains.length >= retainAllowance}
-                      onClick={() => setRetainedCards((current) => ({
-                        ...current,
-                        [viewer.id]: retained
-                          ? viewerRetainedCards.filter((uid) => uid !== card.uid)
-                          : [...viewerRetainedCards, card.uid],
-                      }))}>
-                      {retained ? '✓ ' : ''}Retain {name}
-                    </button>
-                  })}
-                </span>
-              ) : null}
-              {state.phase === 'discard' && viewerNeedsEndTurnChoice && viewerNeedsDiscardTop &&
-              discardCandidates.length > 1 ? (
-                <label className="discard-order">
-                  Top discard
-                  <select
-                    aria-label={`Top discard for ${viewer.name}`}
-                    value={viewerDiscardTop}
-                    onChange={(event) => setDiscardTops((current) => ({
-                      ...current,
-                      [viewer.id]: event.target.value,
-                    }))}
-                  >
-                    {discardCandidates.map((card) => {
-                      const def = faceOf(cardDef(card.defId), card.upgraded)
-                      return <option key={card.uid} value={card.uid}>{`${def.unplayable ? '—' : cardCost(def, viewer.powers, viewer.lostHpThisCombat)} · ${def.name}`}</option>
-                    })}
-                  </select>
-                </label>
-              ) : null}
-              {/* The count lives on the End turn button itself. A co-op turn
-                  ends when everyone says so, and being told who the table is
-                  waiting on is the whole reason a second screen existed. */}
-              {!forcedCard && !distilled && !(playWindow && !playWindow.optional) ? <button type="button" ref={endTurnRef} className="combat__end-turn" onClick={finishTurn}
-                disabled={Boolean(pending?.choiceCards) || Boolean(pendingTrigger) || endTurnResolving || chamberClosing ||
-                  state.phase === 'player' && voluntaryActionsBlocked ||
-                  state.phase === 'discard' && !viewerNeedsEndTurnChoice}>
-                {state.phase === 'discard'
-                  ? `${discardOrders[viewer.id] ? 'Update' : 'Confirm'} end-turn effect (${confirmedDiscards}/${endTurnParticipants.length})`
-                  : endTurnCount ? `End turn ${endTurnCount}` : 'End turn'}
-              </button> : null}
-            </>
-          ) : null}
-          {stagedStartTurnTriggerPending && startTurnCount ? (
-            <button type="button" className="combat__end-turn" disabled>
-              Resolve start turn {startTurnCount}
-            </button>
-          ) : null}
-          {startTurnOpen && !stagedStartTurnTriggerPending && !activeStartTurnScry &&
-          orderedStartTurnScries.length > 0 ? (
-            <>
-              <StartTurnOrder title="Before-draw Scry order"
-                hint={startTurnOrderHint(canOrderStartTurnScries, 'Scries', orderedStartTurnScries.length)} players={state.players}
-                steps={orderedStartTurnScries.map((ability) => ({
-                  ...ability, badges: [{ text: `Scry ${ability.amount}` }],
-                }))}
-                canMove={canOrderStartTurnScries} onMove={moveStartTurnScry} />
-              <button type="button" className="combat__end-turn" disabled={!canOrderStartTurnScries} onClick={finishStartTurnScryOrder}>
-                {canOrderStartTurnScries ? 'Confirm before-draw order' : 'Waiting for before-draw order'}
-              </button>
-            </>
-          ) : null}
-          {startTurnChoicesOpen ? (
-            <>
-              {stagedStartTurnTriggers?.map((trigger) => (
-                <button type="button" key={trigger.id} onClick={() => setEditingStagedStartTurnTrigger(trigger.id)}>
-                  Edit {trigger.label}
-                </button>
-              ))}
-              {state.startTurnStage === 'facing' && pendingStartEnemy ? (
-                <span className="combat__power-hint" role="status">{pendingStartEnemy.label}</span>
-              ) : null}
-              {pendingStartEnemy?.id.startsWith('facing:') && pendingStartEnemy.targets?.some((target) => target.uid === 'none') ? (
-                <button type="button" disabled={!startEnemyChoiceAvailable('none')}
-                  onClick={() => chooseStartTurnEnemy('none')}>Face away</button>
-              ) : null}
-              {!visibleStartModeShift && state.startTurnStage !== 'facing' ? <StartTurnOrder key={`${state.combatId}/${state.turn}`} title="Start-of-turn order"
-                hint={startTurnOrderHint(canCommitStartTurnOrder && !partyStartTurnOrderLocked, 'effects',
-                  orderedStartAbilities.length, partyStartTurnOrderLocked)} foldWhenShort
-                players={state.players}
-                steps={orderedStartAbilities.map((ability) => {
-                  const decided = (startTurnTargets[ability.id] ?? [])
-                    .filter((target) => target !== undefined).length
-                  const evoked = startTurnEvokeSlots[ability.id]?.length ?? 0
-                  const targetChosen = startTurnEnemyTargets[ability.id] !== undefined
-                  const exhaustChosen = startTurnExhaustUids[ability.id] !== undefined
-                  return {
-                    ...ability,
-                    badges: [
-                      ...ability.targets?.length ? [{ text: targetChosen ? 'Target set' : 'Choose target', done: targetChosen }]
-                        : ability.exhaustCards ? [ability.playerId === viewer.id || exhaustChosen
-                          ? { text: exhaustChosen ? 'Exhaust set' : 'Choose a card to Exhaust', done: exhaustChosen }
-                          : { text: `Waiting for ${state.players.find((player) => player.id === ability.playerId)?.name ??
-                            'a teammate'}` }]
-                        : [],
-                      ...ability.overflowShivs > 0
-                        ? [{ text: `Shiv targets ${decided}/${ability.overflowShivs}`, done: decided === ability.overflowShivs }]
-                        : [],
-                      ...evoked > 0 || ability.evokeChoice
-                        ? [{ text: `Evoke ${evoked}${ability.evokeChoice ? '+' : ''}`, done: !ability.evokeChoice }]
-                        : [],
-                    ],
-                  }
-                })}
-                canMove={canCommitStartTurnOrder && !partyStartTurnOrderLocked} onMove={moveStartTurnAbility} /> : null}
-              {orderedStartAbilities.some((ability) =>
-                (ability.targets?.length ?? 0) > 1 && startTurnEnemyTargets[ability.id] !== undefined) ||
-                Object.values(startTurnPlayerTargets).some((playerId) => playerId !== undefined) ||
-                Object.values(startTurnExhaustUids).some((uid) => uid !== undefined) ||
-                Object.values(startTurnModeShifts).some((shift) => shift !== undefined) ||
-                Object.values(startTurnTargets).some((targets) =>
-                  targets.some((target) => target !== undefined)) ||
-                Object.values(startTurnEvokeSlots).some((slots) => slots.length > 0) ? (
-                <button type="button" disabled={!canResolveStartTurn}
-                  onClick={() => {
-                    setStartTurnEnemyTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
-                      ability.id,
-                      savedStartTurnEnemyTargets?.[ability.id] ??
-                        (ability.targets?.length === 1 ? ability.targets[0]!.uid : undefined),
-                    ])))
-                    setStartTurnPlayerTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
-                      ability.id,
-                      ability.players?.length === 1 ? ability.players[0]!.id : undefined,
-                    ])))
-                    setStartTurnExhaustUids(Object.fromEntries(orderedStartAbilities.map((ability) => [
-                      ability.id, ability.exhaustCards?.length === 1 ? ability.exhaustCards[0]!.uid : undefined,
-                    ])))
-                    setStartTurnModeShifts({})
-                    setStartTurnTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [
-                      ability.id,
-                      Array(ability.overflowShivs).fill(undefined),
-                    ])))
-                    setStartTurnEvokeSlots(Object.fromEntries(orderedStartAbilities.map((ability) => [ability.id, []])))
-                    setStartTurnEvokeTargets(Object.fromEntries(orderedStartAbilities.map((ability) => [ability.id, []])))
-                  }}>
-                  Reset start choices
-                </button>
-              ) : null}
-              {!visibleStartModeShift && !resolvingStartTurnMode
-                ? <button type="button" className="combat__end-turn" onClick={() => finishStartTurn()}
-                disabled={!startTurnReady || !canResolveStartTurn || sendingStartTurn}>
-                {viewerStartTurnDecided
-                  ? `Waiting for ${startTurnCoordinator?.name ?? 'the party'}${startTurnCount ? ` (${startTurnCount})` : ''}`
-                  : sendingStartTurn ? 'Confirming…'
-                  : canResolveStartTurn
-                  ? partyStartTurnOrderPending && viewer.id === startTurnCoordinatorId ? 'Confirm start-of-turn order'
-                    : startTurnChoiceId && viewer.id === fumesOwnerId ? 'Confirm Noxious Fumes target'
-                      : startTurnCount ? `Resolve start turn ${startTurnCount}` : 'Resolve start of turn'
-                  : startTurnCount ? `Resolve start turn ${startTurnCount}` : startTurnCoordinator
-                    ? `Waiting for ${startTurnCoordinator.name}` : 'Waiting for start-turn order'}
-                </button> : null}
-            </>
-          ) : null}
-          {startTurnStuck && onResync ? (
-            <button type="button" className="combat__resync" disabled={resyncing}
-              onClick={() => {
-                setResyncing(true)
-                void onResync().finally(() => setResyncing(false))
-              }}>
-              {resyncing ? 'Re-syncing…' : 'Stuck? Re-sync start of turn'}
-            </button>
-          ) : null}
-        </span>
-      </header>
+      <GroundedCombatVfx
+        enemies={state.enemies}
+        activeVfx={activeVfx}
+        orbEndTurnRevealDelayMs={orbEndTurnRevealDelayMs}
+      />
+      <CombatBar
+        combatBarRef={combatBarRef}
+        endTurnRef={endTurnRef}
+        state={state}
+        viewer={viewer}
+        viewerId={viewerId}
+        livingPlayers={livingPlayers}
+        copyResolutionLabel={copyResolutionLabel}
+        hermitSetupPending={hermitSetupPending}
+        hermitSetupOwner={hermitSetupOwner}
+        onCourierReveal={onCourierReveal}
+        courierUsedBy={courierUsedBy}
+        playerChoicePrompt={playerChoicePrompt}
+        viewerPlayerChoice={viewerPlayerChoice}
+        usingPlayerChoice={usingPlayerChoice}
+        submitPlayerChoice={submitPlayerChoice}
+        setPlayerChoiceDiscarding={setPlayerChoiceDiscarding}
+        relicScry={relicScry}
+        voluntaryActionsBlocked={voluntaryActionsBlocked}
+        forcedCard={forcedCard}
+        distilled={distilled}
+        endTurnResolving={endTurnResolving}
+        pendingTrigger={pendingTrigger}
+        pending={pending}
+        setPending={setPending}
+        pendingPowerUid={pendingPowerUid}
+        setPendingPowerUid={setPendingPowerUid}
+        usingPower={usingPower}
+        setPowerChamberUids={setPowerChamberUids}
+        setPowerLoadUids={setPowerLoadUids}
+        setPowerExhaustUids={setPowerExhaustUids}
+        powerOrbSlots={powerOrbSlots}
+        setPowerOrbSlots={setPowerOrbSlots}
+        setPowerGemContext={setPowerGemContext}
+        setPowerScryConfirmed={setPowerScryConfirmed}
+        requestPowerPreview={requestPowerPreview}
+        usePower={usePower}
+        creativeAiEffect={creativeAiEffect}
+        canUsePotionNow={canUsePotionNow}
+        pendingPotion={pendingPotion}
+        setPendingPotion={setPendingPotion}
+        usingPotion={usingPotion}
+        viewerHasSozu={viewerHasSozu}
+        setPotionShivEnemyUids={setPotionShivEnemyUids}
+        setPotionOverflowRequired={setPotionOverflowRequired}
+        setPotionCardUids={setPotionCardUids}
+        consumePotion={consumePotion}
+        spendingShiv={spendingShiv}
+        setSpendingShiv={setSpendingShiv}
+        spendingSoulburn={spendingSoulburn}
+        setSpendingSoulburn={setSpendingSoulburn}
+        extraCrispyPower={extraCrispyPower}
+        extraCrispySoulburn={extraCrispySoulburn}
+        setExtraCrispySoulburn={setExtraCrispySoulburn}
+        miracleOnCard={miracleOnCard}
+        setMiracleOnCard={setMiracleOnCard}
+        onAction={onAction}
+        onChange={onChange}
+        retainAllowance={retainAllowance}
+        discardableHand={discardableHand}
+        optionalRetainUids={optionalRetainUids}
+        retainedSet={retainedSet}
+        allowanceRetains={allowanceRetains}
+        viewerRetainedCards={viewerRetainedCards}
+        setRetainedCards={setRetainedCards}
+        viewerNeedsEndTurnChoice={viewerNeedsEndTurnChoice}
+        viewerNeedsDiscardTop={viewerNeedsDiscardTop}
+        discardCandidates={discardCandidates}
+        viewerDiscardTop={viewerDiscardTop}
+        setDiscardTops={setDiscardTops}
+        playWindow={playWindow}
+        finishTurn={finishTurn}
+        chamberClosing={chamberClosing}
+        discardOrders={discardOrders}
+        confirmedDiscards={confirmedDiscards}
+        endTurnParticipants={endTurnParticipants}
+        endTurnCount={endTurnCount}
+        stagedStartTurnTriggerPending={stagedStartTurnTriggerPending}
+        startTurnCount={startTurnCount}
+        startTurnOpen={startTurnOpen}
+        activeStartTurnScry={activeStartTurnScry}
+        orderedStartTurnScries={orderedStartTurnScries}
+        canOrderStartTurnScries={canOrderStartTurnScries}
+        startTurnOrderHint={startTurnOrderHint}
+        moveStartTurnScry={moveStartTurnScry}
+        finishStartTurnScryOrder={finishStartTurnScryOrder}
+        startTurnChoicesOpen={startTurnChoicesOpen}
+        stagedStartTurnTriggers={stagedStartTurnTriggers}
+        setEditingStagedStartTurnTrigger={setEditingStagedStartTurnTrigger}
+        pendingStartEnemy={pendingStartEnemy}
+        startEnemyChoiceAvailable={startEnemyChoiceAvailable}
+        chooseStartTurnEnemy={chooseStartTurnEnemy}
+        visibleStartModeShift={visibleStartModeShift}
+        canCommitStartTurnOrder={canCommitStartTurnOrder}
+        partyStartTurnOrderLocked={partyStartTurnOrderLocked}
+        orderedStartAbilities={orderedStartAbilities}
+        startTurnTargets={startTurnTargets}
+        startTurnEvokeSlots={startTurnEvokeSlots}
+        startTurnEnemyTargets={startTurnEnemyTargets}
+        startTurnPlayerTargets={startTurnPlayerTargets}
+        startTurnExhaustUids={startTurnExhaustUids}
+        startTurnModeShifts={startTurnModeShifts}
+        savedStartTurnEnemyTargets={savedStartTurnEnemyTargets}
+        setStartTurnEnemyTargets={setStartTurnEnemyTargets}
+        setStartTurnPlayerTargets={setStartTurnPlayerTargets}
+        setStartTurnExhaustUids={setStartTurnExhaustUids}
+        setStartTurnModeShifts={setStartTurnModeShifts}
+        setStartTurnTargets={setStartTurnTargets}
+        setStartTurnEvokeSlots={setStartTurnEvokeSlots}
+        setStartTurnEvokeTargets={setStartTurnEvokeTargets}
+        moveStartTurnAbility={moveStartTurnAbility}
+        canResolveStartTurn={canResolveStartTurn}
+        resolvingStartTurnMode={resolvingStartTurnMode}
+        finishStartTurn={finishStartTurn}
+        startTurnReady={startTurnReady}
+        sendingStartTurn={sendingStartTurn}
+        viewerStartTurnDecided={viewerStartTurnDecided}
+        startTurnCoordinator={startTurnCoordinator}
+        partyStartTurnOrderPending={partyStartTurnOrderPending}
+        startTurnCoordinatorId={startTurnCoordinatorId}
+        startTurnChoiceId={startTurnChoiceId}
+        fumesOwnerId={fumesOwnerId}
+        startTurnStuck={startTurnStuck}
+        onResync={onResync}
+        resyncing={resyncing}
+        setResyncing={setResyncing}
+      />
 
       {over && !(state.phase === 'won' && slayerChoice?.playerId === viewer.id) ? (
         <p className={`combat__result combat__result--${state.phase}`} role="status">
@@ -6263,89 +4897,20 @@ function CombatScreenView({
         </div>
       ) : null}
 
-      {pendingPotionNeedsCards ? (
-        <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="potion-card-choice-title"
-          onCancel={(event) => {
-            event.preventDefault()
-            cancelPotionChoice()
-          }}>
-          <h2 id="potion-card-choice-title">{pendingPotionDef!.name}</h2>
-          <p>{pendingPotion === 'liquid_memories'
-            ? 'Choose one discarded card to return to your hand for 0 Energy this turn.'
-            : pendingPotion === 'liquid_void'
-              ? 'Choose one Exhausted card to return to your hand for 0 Energy this turn.'
-              : pendingPotion === 'transforming_brew'
-                ? 'Choose one non-Curse card in your hand to Transform.'
-                : 'Choose up to three cards in your hand, then confirm.'}</p>
-          <div className="distilled-choice__cards">
-            {(pendingPotion === 'liquid_memories' ? viewer.discard
-              : pendingPotion === 'liquid_void' ? viewer.exhaust : viewer.hand)
-              .filter((card) => pendingPotion !== 'transforming_brew' || !cardIsCurse(card.defId)).map((card) => (
-              <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} selected={potionCardUids.includes(card.uid)}
-                onClick={() => pendingPotion === 'liquid_memories'
-                  ? consumePotion(pendingPotion, { recoverDiscardUid: card.uid })
-                  : pendingPotion === 'liquid_void'
-                    ? consumePotion(pendingPotion, { recoverExhaustUid: card.uid })
-                  : pendingPotion === 'transforming_brew'
-                    ? consumePotion(pendingPotion, { transformHandUid: card.uid })
-                  : setPotionCardUids((current) => current.includes(card.uid)
-                    ? current.filter((uid) => uid !== card.uid)
-                    : current.length < 3 ? [...current, card.uid] : current)} />
-            ))}
-          </div>
-          {pendingPotion === 'purity_potion' ? (
-            <button type="button" className="prompt__mode"
-              onClick={() => consumePotion(pendingPotion, { exhaustUids: potionCardUids })}>
-              Exhaust {potionCardUids.length || 'none'}
-            </button>
-          ) : null}
-          <button type="button" className="prompt__cancel" onClick={cancelPotionChoice}>Cancel</button>
-        </dialog>
-      ) : null}
-
-      {pendingPotion === 'destiny_draught' ? (
-        <div className="prompt" aria-label="Destiny Draught relic ability">
-          <DieRelicChoiceList state={state} choices={dieRelicChoices(state)}
-            onChoose={(choice) => consumePotion(pendingPotion, {
-              targetRelicPlayerId: choice.owner.id, targetRelicIndex: choice.relicIndex,
-              targetAbilityIndex: choice.abilityIndex, enemyUid: choice.enemy?.uid,
-              targetPlayerId: choice.targetPlayer?.id,
-            })} />
-          <button type="button" className="prompt__cancel" onClick={cancelPotionChoice}>Cancel</button>
-        </div>
-      ) : null}
-
-      {pendingPotion === 'entropic_brew' && !viewerHasSozu ? (
-        <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="entropic-choice-title"
-          onCancel={(event) => {
-            event.preventDefault()
-            cancelPotionChoice()
-          }}>
-          <h2 id="entropic-choice-title">Entropic Brew</h2>
-          <p>Choose one held Potion to discard, then gain two.</p>
-          <div className="item-actions">
-            {viewer.potions.filter((held) => held !== 'entropic_brew').map((held, index) => {
-              const descriptionId = `entropic-replace-${held}-${index}-description`
-              // Deliberately no `confirmLabel`, which is what keeps the
-              // read-first step OFF here: this dialog is opened with
-              // `showModal`, and the anchor portals its panel to the body —
-              // outside the top layer, so under the backdrop. A gate whose
-              // panel cannot be seen is a tap that does nothing. That panel is
-              // equally unreachable here for a mouse, which is an older and
-              // separate problem; the rules stay available through the
-              // description below either way.
-              return <PotionTooltipAnchor id={held} key={`${held}:${index}`}>
-                <span id={descriptionId} className="visually-hidden">{potionDef(held).text}</span>
-                <button type="button" aria-describedby={descriptionId}
-                onClick={() => consumePotion('entropic_brew', { replacePotionId: held })}>
-                  <img className="item-icon-image" src={potionIconPath(held)} alt="" /> Replace {potionDef(held).name}
-                </button>
-              </PotionTooltipAnchor>
-            })}
-          </div>
-          <button type="button" className="prompt__cancel" onClick={cancelPotionChoice}>Cancel</button>
-        </dialog>
-      ) : null}
+      <CombatPotionDialogs
+        state={state}
+        viewer={viewer}
+        stanceChangedThisTurn={stanceChangedThisTurn}
+        itemDialogRef={itemDialogRef}
+        pendingPotion={pendingPotion}
+        pendingPotionDef={pendingPotionDef}
+        pendingPotionNeedsCards={pendingPotionNeedsCards}
+        potionCardUids={potionCardUids}
+        setPotionCardUids={setPotionCardUids}
+        consumePotion={consumePotion}
+        cancelPotionChoice={cancelPotionChoice}
+        viewerHasSozu={viewerHasSozu}
+      />
 
       {!forcedCard && !distilled && !relicScry && !voluntaryActionsBlocked &&
         (state.phase === 'player' || state.phase === 'start' || state.phase === 'discard') ? (
@@ -6450,246 +5015,59 @@ function CombatScreenView({
         </div>
       ) : null}
 
-      {gemFinderScryOpen && powerChoiceCards ? (
-        <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="gem-finder-title"
-          onCancel={(event) => event.preventDefault()}>
-          <h2 id="gem-finder-title">Gem Finder — Scry {pendingPower?.upgraded ? 4 : 3}</h2>
-          <p>Select any revealed non-Gem cards to discard.</p>
-          <div className="distilled-choice__cards">{powerChoiceCards.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
-            playable={cardDef(card.defId).guardian?.printedType.startsWith('Gem') !== true}
-            selected={powerScryDiscardUids.includes(card.uid)} onClick={() => setPowerScryDiscardUids((current) =>
-              current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid])} />)}</div>
-          <button type="button" className="prompt__mode" onClick={confirmPowerScry}>
-            {powerScryDiscardUids.length === 0 ? 'Keep all and continue' : `Discard ${powerScryDiscardUids.length} and continue`}
-          </button>
-        </dialog>
-      ) : null}
-
-      {relicScry ? (
-        <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="golden-eye-title"
-          onCancel={(event) => event.preventDefault()}>
-          <h2 id="golden-eye-title">Golden Eye — Scry 3</h2>
-          {relicScry.playerId === viewerId ? <>
-            <p>Select any revealed cards to discard.</p>
-            <div className="distilled-choice__cards">{relicScry.cards.map((card) => <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card}
-              selected={relicCardUids.includes(card.uid)} onClick={() => setRelicCardUids((current) =>
-                current.includes(card.uid) ? current.filter((uid) => uid !== card.uid) : [...current, card.uid])} />)}</div>
-            <button type="button" className="prompt__mode"
-              onClick={() => useRelic(relicScry.relicIndex, { scryDiscardUids: relicCardUids })}>
-              Discard {relicCardUids.length || 'none'}
-            </button>
-          </> : <p>Waiting for {state.players.find((player) => player.id === relicScry.playerId)?.name}.</p>}
-        </dialog>
-      ) : null}
-
-      {visibleDistilled ? (
-        <dialog ref={itemDialogRef} className="distilled-choice" aria-labelledby="distilled-choice-title"
-          onCancel={(event) => event.preventDefault()}>
-          <h2 id="distilled-choice-title">Distilled Chaos</h2>
-          {visibleDistilled.playerId === viewerId ? (
-            <>
-              <p>Choose the next revealed card to play for 0 Energy.</p>
-              <div className="distilled-choice__cards">
-                {visibleDistilled.cards.map((card) => (
-                  <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} cost={0} playable
-                    onClick={() => onAction
-                      ? void onAction({ kind: 'chooseDistilledCard', cardUid: card.uid })
-                      : onChange?.(chooseDistilledCard(state, viewerId, card.uid))} />
-                ))}
-              </div>
-            </>
-          ) : (
-            <p>Waiting for {state.players.find((player) => player.id === visibleDistilled.playerId)?.name ?? 'another player'} to choose the next card.</p>
-          )}
-        </dialog>
-      ) : null}
-
-      {activeStartTurnScry?.playerId === viewerId && activeStartTurnScry.cards ? (
-        <dialog ref={startTurnScryDialogRef} className="choice-modal" aria-labelledby="start-turn-scry-title"
-          onCancel={(event) => event.preventDefault()}>
-          <div className="choice-modal__panel">
-            <h2 id="start-turn-scry-title">Foresight — Scry {activeStartTurnScry.amount}</h2>
-            <p>Select any revealed cards to discard; unselected cards stay on top in order.</p>
-            <div className="choice-modal__cards">
-              {activeStartTurnScry.cards.map((card) => (
-                <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} selected={startTurnScryPicked.includes(card.uid)}
-                  onClick={chooseStartTurnScryCard} />
-              ))}
-              {activeStartTurnScry.cards.length === 0 ? <span className="muted">No cards were revealed.</span> : null}
-            </div>
-            <button type="button" disabled={resolvingStartTurnScry} onClick={() => void finishStartTurnScry()}>
-              {startTurnScryPicked.length === 0
-                ? 'Keep all and continue'
-                : `Discard ${startTurnScryPicked.length} and continue`}
-            </button>
-          </div>
-        </dialog>
-      ) : null}
-
-      {activeStartTurnDiscard?.playerId === viewerId && activeStartTurnDiscard.cards ? (
-        <dialog ref={startTurnDiscardDialogRef} className="choice-modal" aria-labelledby="start-turn-discard-title"
-          onCancel={(event) => event.preventDefault()}>
-          <div className="choice-modal__panel">
-            <h2 id="start-turn-discard-title">
-              {activeStartTurnDiscard.label} — discard {activeStartTurnDiscard.remaining} card{activeStartTurnDiscard.remaining === 1 ? '' : 's'}
-            </h2>
-            <p>Choose a card from your hand. This choice is private.</p>
-            <div className="choice-modal__cards">
-              {activeStartTurnDiscard.cards.map((card) => (
-                <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} onClick={() => void finishStartTurnDiscard(card)} />
-              ))}
-            </div>
-          </div>
-        </dialog>
-      ) : null}
-
-      {pendingTrigger?.playerId === viewerId && pendingTrigger.hermitChoices && triggerHermitStep === 'cards' &&
-        !pendingPlunder ? (
-        <HermitTriggerChoice
-          key={pendingTrigger.id}
-          label={pendingTrigger.label}
-          choices={pendingTrigger.hermitChoices}
-          hand={viewer.hand}
-          loadUids={triggerHermitLoadUids}
-          chamberUids={triggerHermitChamberUids}
-          needsTarget={triggerHermitNeedsBoard}
-          busy={usingTrigger}
-          onLoadUids={setTriggerHermitLoadUids}
-          onChamberUids={setTriggerHermitChamberUids}
-          onConfirm={confirmTriggerHermitChoices}
-          onViewBoard={() => setTriggerHermitStep('board')}
-        />
-      ) : null}
-
-      {pending?.choiceCards && pending.choice && !pending.choiceConfirmed ? (
-        <dialog ref={choiceDialogRef}
-          className={`choice-modal${pending.choice.kind === 'scryToHand' ? ' choice-modal--scry-to-hand' : ''}`}
-          aria-labelledby="choice-modal-title"
-          onCancel={(event) => {
-            event.preventDefault()
-            if ((pending.cardInHand || pending.chamberPlay) &&
-              (pending.choice?.kind === 'recover' || pending.choice?.kind === 'recoverExhaust')) setPending(null)
-          }}>
-          <div className="choice-modal__panel">
-            <h2 id="choice-modal-title">
-              {pending.choice.kind === 'scry' || pending.choice.kind === 'scryToHand'
-                ? `Scry ${pending.choice.amount}`
-                : pending.choice.kind === 'topdeck'
-                  ? `Choose ${choiceNeeded} for the top of your draw pile`
-                : pending.choice.kind === 'recover'
-                  ? `Choose ${choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} from your discard pile`
-                : pending.choice.kind === 'recoverExhaust'
-                  ? `Choose ${pending.choice.minimum === 0 ? `up to ${choiceNeeded}` :
-                    choiceNeeded === 1 ? 'a' : choiceNeeded} card${choiceNeeded === 1 ? '' : 's'} from your Exhaust pile`
-                : pending.choice.kind === 'search'
-                  ? pendingSearchKind?.kind === 'overexert'
-                    ? choiceNeeded === 0 ? 'No playable card remains' : 'Choose a playable card from your hand'
-                    : pendingSearchKind?.kind === 'replicateSlime'
-                      ? choiceNeeded === 0 ? 'No Slime is in your draw pile' : 'Choose a Slime from your draw pile'
-                      : `Choose ${choiceNeeded} from your draw pile`
-                : pending.choice.kind === 'load' || pending.choice.kind === 'loadAny'
-                  ? `Choose ${pending.choice.kind === 'loadAny' ? 'up to ' : ''}${pending.choice.amount} to Load`
-                  : `Choose ${choiceNeeded} to discard`}
-            </h2>
-            <p>
-              {pending.choice.kind === 'scry' || pending.choice.kind === 'scryToHand'
-                ? pending.choice.kind === 'scryToHand'
-                  ? scryPlay
-                    ? scryPlayRequired
-                      ? 'Choose one revealed card to play for 0 Energy, and any others to discard.'
-                      : 'No revealed card can be played. Select any cards to discard.'
-                    : 'Select any cards to discard. You may also put one eligible revealed card into your hand.'
-                  : 'Select any revealed cards to discard; unselected cards stay on top in order.'
-                : pending.choice.kind === 'topdeck'
-                  ? `${pending.picked.length}/${choiceNeeded} selected. The card is committed.`
-                : pending.choice.kind === 'recover'
-                  ? `${pending.picked.length}/${choiceNeeded} selected from discard.`
-                : pending.choice.kind === 'recoverExhaust'
-                  ? `${pending.picked.length}/${choiceNeeded} selected from Exhaust.`
-                : pending.choice.kind === 'search'
-                  ? pendingSearchKind?.kind === 'overexert'
-                    ? choiceNeeded === 0 ? 'Continue without playing another card.'
-                      : `${pending.picked.length}/${choiceNeeded} selected; the chosen card will be played${
-                        selectedSearchType === 'attack' ? ' twice' : ''}.`
-                    : pendingSearchKind?.kind === 'replicateSlime'
-                      ? choiceNeeded === 0 ? 'Shuffle and continue without playing a Slime.'
-                        : `${pending.picked.length}/${choiceNeeded} selected; the chosen Slime will be played and the rest shuffled.`
-                      : `${pending.picked.length}/${choiceNeeded} selected; the rest will be shuffled.`
-                : pending.choice.kind === 'load' || pending.choice.kind === 'loadAny'
-                  ? `${pending.picked.length}/${pending.choice.amount} selected for the Chamber.`
-                : `${pending.picked.length}/${choiceNeeded} selected.${pending.picked.length > 0
-                  ? ` Discard order (later is higher): ${pending.picked.map((uid, index) => {
-                    const card = pending.choiceCards!.find((held) => held.uid === uid)!
-                    return `${index + 1}. ${faceOf(cardDef(card.defId), card.upgraded).name}`
-                  }).join(' → ')}.`
-                  : ''} The card is committed.`}
-            </p>
-            <div className="choice-modal__cards">
-              {pending.choiceCards.map((card) => <div key={card.uid}
-                className={pending.choice?.kind === 'scryToHand' ? 'choice-modal__card-option' : undefined}>
-                <Card stanceChangedThisTurn={stanceChangedThisTurn} card={card} selected={pending.picked.includes(card.uid) || pending.scryToHandUid === card.uid}
-                  onClick={onChoiceCardClick} />
-                {pending.choice?.kind === 'scryToHand' && (scryPlay
-                  ? scryPlayEligible(card) || pending.scryToHandUid === card.uid : effectiveCombatCardDef(
-                  faceOf(cardDef(card.defId), card.upgraded), viewer.guardianMode,
-                ).type ===
-                  (pendingDef?.effects.find((effect) => effect.kind === 'scryToHand') as { cardType?: string } | undefined)?.cardType)
-                  ? <button type="button" className="choice-modal__card-action"
-                    aria-pressed={pending.scryToHandUid === card.uid}
-                    onClick={() => setPending({ ...pending,
-                      picked: pending.picked.filter((uid) => uid !== card.uid),
-                      scryToHandUid: pending.scryToHandUid === card.uid ? undefined : card.uid,
-                      choiceConfirmed: false,
-                    })}>{scryPlay
-                      ? pending.scryToHandUid === card.uid ? 'Will play for 0' : 'Play for 0'
-                      : pending.scryToHandUid === card.uid ? 'Will put in hand' : 'Put in hand'}</button> : null}
-              </div>)}
-              {pending.choiceCards.length === 0 ? <span className="muted">No cards were revealed.</span> : null}
-            </div>
-            <button type="button" disabled={!handChoiceSatisfied} onClick={confirmChoice}>
-              {pending.choice.kind === 'scry' || pending.choice.kind === 'scryToHand'
-                ? pending.choice.kind === 'scryToHand' && pending.scryToHandUid
-                  ? pending.picked.length === 0
-                    ? scryPlay ? 'Play selected card, keep the rest' : 'Put selected card in hand and keep the rest'
-                    : `Discard ${pending.picked.length}, ${scryPlay ? 'play' : 'put'} selected card${scryPlay ? '' : ' in hand'}`
-                  : scryPlayRequired ? 'Choose a card to play'
-                  : pending.picked.length === 0 ? 'Keep all' : `Discard ${pending.picked.length} and continue`
-                : pending.choice.kind === 'topdeck'
-                  ? `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
-                : pending.choice.kind === 'recover'
-                  ? pendingDef?.effects.some((effect) => effect.kind === 'recoverDiscard' && effect.toHand)
-                    ? `Return selected card${choiceNeeded === 1 ? '' : 's'} to hand`
-                    : `Put selected card${choiceNeeded === 1 ? '' : 's'} on top`
-                : pending.choice.kind === 'recoverExhaust'
-                  ? pendingDef?.effects.some((effect) => effect.kind === 'recoverExhaustToDraw')
-                    ? pending.picked.length === 0 ? 'Keep all in Exhaust'
-                      : `Put selected card${pending.picked.length === 1 ? '' : 's'} on top of your draw pile`
-                    : pendingDef?.effects.some((effect) => effect.kind === 'recoverExhaustToDiscard')
-                      ? `Put selected card${pending.picked.length === 1 ? '' : 's'} on top of your discard pile`
-                      : 'Return selected card to hand'
-                : pending.choice.kind === 'search'
-                  ? pendingSearchKind?.kind === 'overexert'
-                    ? choiceNeeded === 0 ? 'Continue'
-                      : selectedSearchType === 'attack'
-                        ? 'Play selected Attack twice' : 'Play selected card'
-                    : pendingSearchKind?.kind === 'replicateSlime'
-                      ? choiceNeeded === 0 ? 'Shuffle and continue' : 'Play selected Slime and shuffle'
-                    : choiceNeeded === 0
-                      ? 'Shuffle and continue'
-                    : pendingDef?.effects.some((effect) => effect.kind === 'searchDrawAndPlayTwice')
-                    ? 'Play selected card twice and shuffle'
-                    : `Put selected card${choiceNeeded === 1 ? '' : 's'} in hand and shuffle`
-                : pending.choice.kind === 'load' || pending.choice.kind === 'loadAny'
-                  ? pending.picked.length === 0 ? 'Load none' : `Load ${pending.picked.length} card${pending.picked.length === 1 ? '' : 's'}`
-                : choiceNeeded === 0 ? 'Continue' : `Discard selected card${choiceNeeded === 1 ? '' : 's'}`}
-            </button>
-          {(pending.cardInHand || pending.chamberPlay) &&
-            (pending.choice.kind === 'recover' || pending.choice.kind === 'recoverExhaust') ? (
-              <button type="button" className="prompt__cancel" onClick={() => setPending(null)}>Cancel</button>
-            ) : null}
-          </div>
-        </dialog>
-      ) : null}
+      <CombatChoiceDialogs
+        state={state}
+        viewer={viewer}
+        viewerId={viewerId}
+        stanceChangedThisTurn={stanceChangedThisTurn}
+        onAction={onAction}
+        onChange={onChange}
+        itemDialogRef={itemDialogRef}
+        startTurnScryDialogRef={startTurnScryDialogRef}
+        startTurnDiscardDialogRef={startTurnDiscardDialogRef}
+        choiceDialogRef={choiceDialogRef}
+        gemFinderScryOpen={gemFinderScryOpen}
+        powerChoiceCards={powerChoiceCards}
+        pendingPower={pendingPower}
+        powerScryDiscardUids={powerScryDiscardUids}
+        setPowerScryDiscardUids={setPowerScryDiscardUids}
+        confirmPowerScry={confirmPowerScry}
+        relicScry={relicScry}
+        relicCardUids={relicCardUids}
+        setRelicCardUids={setRelicCardUids}
+        useRelic={useRelic}
+        visibleDistilled={visibleDistilled}
+        activeStartTurnScry={activeStartTurnScry}
+        startTurnScryPicked={startTurnScryPicked}
+        chooseStartTurnScryCard={chooseStartTurnScryCard}
+        resolvingStartTurnScry={resolvingStartTurnScry}
+        finishStartTurnScry={finishStartTurnScry}
+        activeStartTurnDiscard={activeStartTurnDiscard}
+        finishStartTurnDiscard={finishStartTurnDiscard}
+        pendingTrigger={pendingTrigger}
+        pendingPlunder={pendingPlunder}
+        triggerHermitStep={triggerHermitStep}
+        setTriggerHermitStep={setTriggerHermitStep}
+        triggerHermitLoadUids={triggerHermitLoadUids}
+        setTriggerHermitLoadUids={setTriggerHermitLoadUids}
+        triggerHermitChamberUids={triggerHermitChamberUids}
+        setTriggerHermitChamberUids={setTriggerHermitChamberUids}
+        triggerHermitNeedsBoard={triggerHermitNeedsBoard}
+        usingTrigger={usingTrigger}
+        confirmTriggerHermitChoices={confirmTriggerHermitChoices}
+        pending={pending}
+        setPending={setPending}
+        pendingDef={pendingDef}
+        choiceNeeded={choiceNeeded}
+        pendingSearchKind={pendingSearchKind}
+        selectedSearchType={selectedSearchType}
+        scryPlay={scryPlay}
+        scryPlayRequired={scryPlayRequired}
+        scryPlayEligible={scryPlayEligible}
+        onChoiceCardClick={onChoiceCardClick}
+        handChoiceSatisfied={handChoiceSatisfied}
+        confirmChoice={confirmChoice}
+      />
 
       {startTurnEffectSource ? (
         <section className="end-turn-effects start-turn-effects" aria-live="polite"
@@ -6852,683 +5230,107 @@ function CombatScreenView({
         </section>
       ) : null}
 
-      <div
-        className="board"
-        data-rows={rows.length}
-        data-slime-formation={state.players.some(player => player.character === 'slime_boss') || undefined}
-        data-crowded={livingEnemies(state).length >= 3 || undefined}
-        data-character-attack-assets-ready={characterAttackAssets.split('|').filter(src => characterAttackBlobs.has(src)).length || undefined}
-        ref={boardRef}
-        tabIndex={0}
-        aria-label="Combat board"
-        onPointerOver={(event) => {
-          const enemyUid = event.target instanceof Element
-            ? event.target.closest<HTMLElement>('[data-enemy-id]')?.dataset.enemyId : undefined
-          if (enemyUid) setPointedEnemyUid(enemyUid)
-        }}
-      >
-        {bosses.length > 0 ? (
-          <div className="board__bosses">
-            {bosses.map((enemy, index) => (
-              <EnemyCard
-                key={enemy.uid}
-                enemy={enemy}
-                enemies={state.enemies}
-                label={enemyLabel(state.enemies, enemy)}
-                die={state.die}
-                acting={state.phase === 'enemy' && !prefersReducedMotion}
-                animateArt={!prefersReducedMotion}
-                deferBossAttack={characterAttacksActive}
-                falling={falling.has(enemy.uid)}
-                visualContactMs={prefersReducedMotion ? 0 : targetPresentationTimings.get(enemy.uid)?.contact}
-                visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
-                visualResetKey={visualResetKey}
-                stageVisualDamage={!prefersReducedMotion}
-                splitAttackEvents={(state.presentationEvents ?? []).flatMap(event => {
-                  const weights = event.enemyIds.includes(enemy.uid) && splitAttackWeights(state, event)
-                  return weights ? [{ seq: event.seq, weights,
-                    damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }] : []
-                })}
-                hitBeats={hits.get(enemy.uid)}
-                vfx={enemyVfxFor(enemy)}
-                rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
-                cancelPendingThrow={state.phase === 'enemy' && enemyAttackArrivalMsFor(enemy.defId) !== undefined && expiredCultistPhase === activeEnemyPhaseKey}
-                onThrowPrepared={onCultistThrowPrepared}
-                onThrowStart={onCultistThrowStart}
-                onThrowSkipped={onCultistThrowSkipped}
-                // Stage slots count from the right; bosses retain printed left-to-right order.
-                stageIndex={stageEnemies.length + bosses.length - 1 - index}
-                // A boss stands in every row, so the only reading that means
-                // anything to the person looking at the screen is their own.
-                defender={viewer}
-                disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid) ||
-                  pendingShivProgress && !pendingShivProgress.options.some((option) => option.uid === enemy.uid))}
-                targeted={(isEndTurnEnemyTarget(enemy) ||
-                  cardDrag?.targetUid === enemy.uid ||
-                  cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
-                  isStartTurnEnemyTarget(enemy.uid) ||
-                  (pendingTrigger?.playerId === viewer.id && triggerHermitChoicesReady &&
-                    (pendingTrigger.targets?.some((target) => target.uid === enemy.uid) ||
-                      triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount)) ||
-                  isEnemyRowClickTargetable(enemy) ||
-                  ((pendingPotionNeedsEnemy || pendingPowerNeedsEnemy || (pendingPowerDef && pendingPowerDef.target !== 'row' &&
-                    (!pendingHermitPower || pendingPowerDef.id === 'hermit_black_wind' && powerLoadUids.length === 1)) || pendingPotionOverflow > 0) || spendingShiv || spendingSoulburn ||
-                  Boolean(pending && (pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending) ||
-                    pending.hermitEnemyUids.length < loadedTargetCount(pending) ||
-                    pending.soulburnEnemyUids.length < pending.soulburnChoices)) || (
-                  ((pendingEvokeTarget < 0 && (pending?.needsEnemy === true && !enemyChoicesDone || independentEnemyPending) &&
-                    slayerTargetAllowed(enemy) && (!pendingShivProgress ||
-                      pendingShivProgress.options.some((option) => option.uid === enemy.uid))) ||
-                    (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
-                ))) && !enemy.dead}
-                onClick={onEnemyClick}
-              />
-            ))}
-          </div>
-        ) : null}
-
-        {rows.map((row) => {
-          const occupant = state.players.find((player) => player.row === row)
-          const facingEnemy = liveFacingEnemies.find((enemy) => enemy.uid === occupant?.facingEnemyUid)
-          const facingName = facingEnemy ? enemyDef(facingEnemy.defId, facingEnemy.ascension).name : undefined
-          const facingAway = occupant?.facingEnemyUid === null && state.startTurnStage !== 'facing' && liveFacingEnemies.length === 1
-          const facingDescription = facingName ? `Facing ${facingName}` : facingAway
-            ? `Facing away from ${enemyDef(liveFacingEnemies[0]!.defId, liveFacingEnemies[0]!.ascension).name}` : undefined
-          const occupantVisual = occupant ? playerVisualId(occupant) : undefined
-          const occupantAttackVisual = isMonogatariVisual(occupantVisual) ? occupant?.character : occupantVisual
-          const foes = stageEnemies.filter((enemy) => enemy.row === row)
-          const emptyRowTargetable = foes.length === 0 && isRowLaneClickTargetable(row)
-          const actorEvents = occupant ? actorVfxFor(occupant.id) : []
-          const monogatariEvokes = !prefersReducedMotion && !occupant?.dead && occupantVisual === 'monogatari_defect'
-            ? actorEvents.flatMap(({ event }) => event.kind === 'orb' && event.sourceId === 'orb-evoke' &&
-              event.orb !== 'frost' && event.enemyIds.length > 0 ? [event] : []) : []
-          const evokePose = monogatariEvokes.filter(monogatariEvokeReady).at(-1)
-          const evokeHoldCast = evokePose ? monogatariEvokesReadyByEvent.current
-            .get(`${state.combatId}:${evokePose.seq}`)?.holdCast ?? false : false
-          const actorVfx = actorEvents.filter(({ event }) => event.enemyIds.length === 0 &&
-            !(occupant?.character === 'defect' && event.kind === 'orb' && event.sourceId === 'orb-evoke'))
-          const characterAttackMotions = occupant ? characterAttacks[occupant.id] ?? [] : []
-          const characterAttack = characterAttackMotions.filter(attack => !attack.interrupted).at(-1)
-          const latestCharacterAttackSeq = characterAttack?.active.event.seq
-          const slimeSpawnEvent = !prefersReducedMotion && occupant?.character === 'slime_boss'
-            ? livePresentationEvents.filter((event) => event.kind === 'card' &&
-                event.actorId === occupant.id && occupant.slimes.some((slime) => slime.card.defId === event.sourceId)).at(-1)
-            : undefined
-          const slimeCommandEvents = new Map(livePresentationEvents.flatMap((event) =>
-            event.kind === 'slime' && event.actorId === occupant?.id
-              ? [[event.slimeUid, event] as const]
-              : []))
-          const occupantHeat = occupant?.character === 'hexaghost'
-            ? Math.max(0, Math.min(6, occupant.heat))
-            : 0
-          const rigId = occupant?.character === 'hexaghost' ? `hexaghost-heat-${occupantHeat}`
-            : occupant?.character === 'guardian' && occupant.guardianMode === 'defense' ? 'guardian-defense'
-            : occupantVisual
-          const characterAttackAsset = assetPath(`combat/rigged/hero-${rigId}-attack.webp`)
-          const stagedSpec = occupantVisual ? stagedAttackOf(occupantVisual) : undefined
-          const characterIdleAsset = occupantVisual === 'watcher'
-            ? assetPath('combat/characters/watcher-hero.webp')
-            : stagedSpec || isMonogatariVisual(occupantVisual) ? stagedIdleAsset(occupantVisual!)
-            : assetPath(`combat/rigged/hero-${rigId}-idle.webp`)
-          const characterArtScale = prefersReducedMotion || occupant?.dead || occupantVisual === 'watcher' ? 1
-            : stagedSpec ? stagedSpec.displayScale
-            : (rigMetadata as Record<string, { scale?: number }>)[`hero-${rigId}`]?.scale ?? 1
-          // Where the painted head ends, so held potions and Orbs float just above it.
-          const animatedPortrait = !prefersReducedMotion && !occupant?.dead && !slimeSpawnEvent
-          const heroHeads = heroArtHeads as Record<string, number[]>
-          // A skin may paint its own summon drawing (`<skin>-spawn.webp`) and calibrate its head; otherwise the idle drawing shows.
-          const heroHead = ((slimeSpawnEvent && heroHeads[`${occupantVisual}-spawn`]) || (rigId ? heroHeads[rigId] : undefined))?.[animatedPortrait ? 0 : 1]
-          const guardianShiftHead = occupantVisual === 'guardian' ? heroHeads['guardian-transition']?.[0] : undefined
-          return (
-            <div
-              className={['row', occupant?.id === viewerId ? 'row--viewer' : ''].filter(Boolean).join(' ')}
-              key={row}
-              ref={occupant?.id === viewerId ? viewerRowRef : undefined}
-              style={{
-                '--stage-row': rows.indexOf(row),
-                '--stage-player-index': state.players.filter((player) => player.row > row).length,
-              } as React.CSSProperties}
-            >
-              <div className="row__seat">
-                {occupant ? (
-                  <>
-                    <div className="seat__interactive" data-player-id={occupant.id} data-character={occupantVisual}
-                      style={heroHead === undefined ? undefined : {
-                        '--hero-art-head-height': `calc(var(--stage-actor-width) * ${+(heroHead * (slimeSpawnEvent ? 1 : characterArtScale)).toFixed(4)})`,
-                        '--hero-shift-head-height': guardianShiftHead === undefined ? undefined
-                          : `calc(var(--stage-actor-width) * ${guardianShiftHead})`,
-                      } as React.CSSProperties}
-                      onPointerDown={(event) => onEndTurnOrbPointerDown(occupant, event)}
-                      onPointerMove={onEndTurnEffectPointerMove}
-                      onPointerUp={finishEndTurnEffectDrag}
-                      onPointerCancel={cancelEndTurnEffectDrag}
-                      onLostPointerCapture={cancelEndTurnEffectDrag}>
-                      <button
-                      type="button"
-                      className={[
-                        'seat',
-                        occupant.id === viewerId ? 'seat--viewer' : '',
-                        occupant.dead ? 'seat--dead' : '',
-                        falling.has(occupant.id) ? 'seat--falling' : '',
-                        characterAttack ? `seat--attack-${occupantAttackVisual}` : '',
-                        (!occupant.dead && ((pendingPotion !== null && potionDef(pendingPotion).supportTarget === 'anyPlayer') ||
-                          pendingPowerNeedsAlly ||
-                          pendingStartPlayer?.players?.some((player) => player.id === occupant.id) ||
-                          cardDrag?.needsPlayer ||
-                          (independentPlayerPending && enemyChoicesDone && choiceSatisfied) ||
-                          (pending?.needsAlly && pending.playerId === null && enemyChoicesDone && choiceSatisfied) ||
-                          (switchChoiceReady && occupant.id !== viewerId))
-                        )
-                          ? 'seat--targetable'
-                          : '',
-                        cardDrag?.targetPlayerId === occupant.id ||
-                          endTurnEffectDrag?.targetUid === occupant.id ||
-                          armedEndTurnAbilityId === pendingStartPlayer?.id &&
-                            pendingStartPlayer.players?.some((player) => player.id === occupant.id)
-                          ? 'seat--targeted' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' ')}
-                      onClick={() => onAllyClick(occupant)}
-                      data-player-id={occupant.id}
-                      data-stance={occupant.stance}
-                      data-attack-target={characterAttack?.targetId}
-                      style={characterAttack ? {
-                        '--attack-x': `${characterAttack.x}px`,
-                        '--attack-y': `${characterAttack.y}px`,
-                        '--silent-attack-duration': `${1900 + Math.max(0,
-                          ...characterAttackMotions.map((attack) => attack.targets.length - 1)) * 70}ms`,
-                      } as React.CSSProperties : undefined}
-                      aria-label={`${describeSeat(occupant)}${facingDescription ? `. ${facingDescription}` : ''}${pendingStartPlayer?.players?.some((player) =>
-                        player.id === occupant.id) ? `. Target for ${pendingStartPlayer.label}` : ''}`}
-                    >
-                      <span className="seat__portrait" aria-hidden="true" style={{ '--character-art-scale': characterArtScale } as React.CSSProperties}>
-                        {occupant.character === 'watcher' && occupant.stance !== 'neutral' ? (
-                          <span className={`stance-aura stance-aura--${occupant.stance}`} />
-                        ) : null}
-                        {occupantVisual === 'guardian' && occupant.guardianMode ? (
-                          <GuardianPortrait
-                            mode={occupant.guardianMode}
-                            animate={!prefersReducedMotion && !occupant.dead}
-                            restartKey={characterAttack?.active.event.seq ?? 'idle'}
-                          />
-                        ) : !prefersReducedMotion && !occupant.dead && !slimeSpawnEvent ? (
-                          <CombatAnimation
-                            key={`${occupantVisual}-${occupantHeat}`}
-                            src={characterIdleAsset}
-                            data-vfx-seq={characterAttack?.active.event.seq}
-                            onError={(image) => { image.style.display = 'none' }}
-                          />
-                        ) : (
-                          <img
-                            key={`${occupantVisual}-${occupantHeat}-${slimeSpawnEvent?.seq ?? characterAttack?.active.event.seq ?? 'idle'}`}
-                            data-static-art={Boolean(slimeSpawnEvent) || undefined}
-                            src={assetPath(occupantVisual === 'hexaghost'
-                              ? `combat/characters/hexaghost-heat-${occupantHeat}.webp`
-                              : `combat/characters/${occupantVisual}-${slimeSpawnEvent ? 'spawn' : 'hero'}.webp`)}
-                            data-vfx-seq={characterAttack?.active.event.seq}
-                            alt=""
-                            onError={(event) => {
-                              if (slimeSpawnEvent && event.currentTarget.dataset.fallback !== 'true') {
-                                event.currentTarget.dataset.fallback = 'true'
-                                event.currentTarget.src = assetPath(`combat/characters/${occupantVisual}-hero.webp`)
-                              } else event.currentTarget.style.display = 'none'
-                            }}
-                          />
-                        )}
-                        {characterAttackMotions.map((characterAttack) => (
-                          <span
-                            className={`character-attack character-attack--${occupantAttackVisual}${isMonogatariVisual(occupantVisual) ? ` character-attack--${occupantVisual}` : ''}`}
-                            data-attack-seq={characterAttack.active.event.seq}
-                            data-attack-target-count={characterAttack.targets.length}
-                            data-guardian-mode={occupantVisual === 'guardian' ? occupant.guardianMode ?? 'attack' : undefined}
-                            key={characterAttack.active.event.seq}
-                            style={{
-                              '--attack-x': `${characterAttack.x}px`,
-                              '--attack-y': `${characterAttack.y}px`,
-                              ...(occupantVisual === 'monogatari_defect' ? {
-                                '--monogatari-cast-x': `${monogatariPosesReady(occupantVisual, characterAttack.active.event.seq) ? 71 : 49.7}%`,
-                                '--monogatari-cast-height': `${monogatariPosesReady(occupantVisual, characterAttack.active.event.seq) ? 52.2 : 51.8}cqw`,
-                              } : {}),
-                            } as React.CSSProperties}
-                          >
-                            {characterAttack.active.event.seq === latestCharacterAttackSeq || occupantVisual === 'hermit' ? (
-                              isMonogatariVisual(occupantVisual) ? <MonogatariAttackPose
-                                visual={occupantVisual!} ready={monogatariPosesReady(occupantVisual!, characterAttack.active.event.seq)}
-                              /> : occupantVisual === 'ironclad' ? <>
-                                <span className="character-attack__pose character-attack__pose--ironclad-ready">
-                                  <img src={assetPath('combat/characters/ironclad-ready.webp')} alt="" />
-                                </span>
-                                <span className="character-attack__pose character-attack__pose--ironclad-impact">
-                                  <img src={assetPath('combat/characters/ironclad-impact.webp')} alt="" />
-                                </span>
-                              </> : occupantVisual === 'watcher' ? <>
-                                <span className="character-attack__pose character-attack__pose--watcher-charge">
-                                  <img src={assetPath('combat/characters/watcher-ready.webp')} alt="" />
-                                </span>
-                                <span className="character-attack__pose character-attack__pose--watcher-cast">
-                                  <img src={assetPath('combat/characters/watcher-thrust.webp')} alt="" />
-                                </span>
-                              </> : stagedSpec ? <StagedAttackPose
-                                visual={occupantVisual!} spec={stagedSpec}
-                                ready={stagedPosesReady(occupantVisual!, stagedSpec, characterAttack.active.event.seq)}
-                              /> : <CharacterAttackPose
-                                key={characterAttack.active.event.seq}
-                                attackSeq={characterAttack.active.event.seq}
-                                hermitEvent={occupantVisual === 'hermit' ? characterAttack.active.event : undefined}
-                                firing={characterAttack.active.event.seq === latestCharacterAttackSeq}
-                                assetPath={characterAttackAsset}
-                                fallbackAsset={characterIdleAsset}
-                                asset={characterAttackBlobs.get(characterAttackAsset)}
-                              />
-                            ) : null}
-                            {occupantVisual === 'watcher' ? (
-                              <>
-                                {characterAttack.targets.map((target, index) => (
-                                  <span
-                                    className="character-attack__meteor"
-                                    data-attack-target-id={target.id}
-                                    key={target.id}
-                                    style={{
-                                      '--attack-target-x': `${target.x}px`,
-                                      '--attack-target-y': `${target.y}px`,
-                                      '--attack-start-x': `${target.startX}px`,
-                                      '--attack-start-y': `${target.startY}px`,
-                                      '--attack-delay': `${index * 70}ms`,
-                                    } as React.CSSProperties}
-                                  >
-                                    <img
-                                      className="character-attack__meteor-art"
-                                      src={assetPath('combat/vfx/actions/watcher-meteor.webp')}
-                                      alt=""
-                                    />
-                                    <img
-                                      className="character-attack__meteor-impact"
-                                      src={assetPath('combat/vfx/actions/watcher-meteor-impact.webp')}
-                                      alt=""
-                                    />
-                                  </span>
-                                ))}
-                              </>
-                            ) : null}
-                            {occupantAttackVisual === 'ironclad' &&
-                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <span className="character-attack__swing" />
-                            ) : null}
-                            {stagedSpec ? <StagedImpacts event={characterAttack.active.event} visual={occupantVisual!} spec={stagedSpec} /> : null}
-                            {occupant?.character === 'defect' &&
-                            characterAttack.active.event.seq === latestCharacterAttackSeq ? (
-                              <>
-                                <span className="character-attack__core">
-                                  <img src={assetPath('combat/vfx/actions/defect-face-orb.webp')} alt="" />
-                                </span>
-                              </>
-                            ) : null}
-                            {(occupantVisual === 'silent' || occupant?.character === 'defect')
-                              ? characterAttack.targets.map((target, index) => (
-                                <span
-                                  className={occupantVisual === 'silent'
-                                    ? 'character-attack__dagger'
-                                    : 'character-attack__bolt'}
-                                  data-attack-target-id={target.id}
-                                  key={target.id}
-                                  style={{
-                                    '--attack-target-x': `${target.x}px`,
-                                    '--attack-target-y': `${target.y}px`,
-                                    '--attack-delay': `${index * 70}ms`,
-                                  } as React.CSSProperties}
-                                >
-                                  {occupantVisual === 'silent'
-                                    ? <img src={assetPath('combat/vfx/actions/silent-knife.webp')} alt="" />
-                                    : <img src={assetPath('combat/vfx/actions/defect-face-orb.webp')} alt="" />}
-                                </span>
-                              ))
-                              : null}
-                            {occupantVisual === 'hexaghost'
-                              ? characterAttack.targets.map((target, index) => (
-                                <span
-                                  className="character-attack__hexaghost-flame"
-                                  data-attack-target-id={target.id}
-                                  key={target.id}
-                                  style={{
-                                    '--attack-target-x': `${target.x}px`,
-                                    '--attack-target-y': `${target.y}px`,
-                                    '--attack-delay': `${index * 70}ms`,
-                                  } as React.CSSProperties}
-                                >
-                                  <img src={assetPath('combat/vfx/actions/hexaghost-flame.webp')} alt="" />
-                                </span>
-                              ))
-                              : null}
-                          </span>
-                        ))}
-                        {evokePose ? <MonogatariEvokePose key={`pose-${evokePose.seq}`} event={evokePose} holdCast={evokeHoldCast} /> : null}
-                        {!prefersReducedMotion && !occupant.dead && occupant?.character === 'defect' ? actorEvents.map(({ event }) =>
-                          event.kind === 'orb' && event.sourceId === 'orb-evoke'
-                            ? <DefectEvokeVfx key={`evoke-${event.seq}`} event={event} visual={occupantVisual}
-                              handCast={monogatariEvokes.includes(event) && monogatariEvokeReady(event)} /> : null) : null}
-                        {actorVfx.map((active) => (
-                          <CombatVfx key={`actor-${active.event.seq}-${active.recipe.asset}`} active={active} role="actor"
-                            revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)} />
-                        ))}
-                        {playerVfxFor(occupant.id).map((active) => (
-                          <CombatVfx key={`target-${active.event.seq}-${active.recipe.asset}`} active={active} role="target"
-                            revealDelayMs={orbEndTurnRevealDelayMs.get(active.event.seq)} />
-                        ))}
-                      </span>
-                      {(hits.get(occupant.id) ?? []).map((hit) => (
-                        <span
-                          className="hit-vfx"
-                          key={hit.beat}
-                          aria-hidden="true"
-                          style={{ '--hit-delay': `${hit.delayMs}ms` } as React.CSSProperties}
-                        >
-                          <strong>{hit.damage}</strong>
-                        </span>
-                      ))}
-                      <span className="seat__name">
-                        <span className="seat__label">{occupant.name}</span>
-                        {facingDescription ? (
-                          <span className="seat__facing" title={facingDescription}>
-                            → {facingName?.replace(/^Spire /, '') ?? 'Away'}
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="bar">
-                        <span
-                          className="bar__fill bar__fill--hp"
-                          data-health={healthBand(occupant.hp, occupant.maxHp)}
-                          style={{ width: `${Math.round((occupant.hp / occupant.maxHp) * 100)}%` }}
-                        />
-                        <span className="bar__label">
-                          {occupant.hp}/{occupant.maxHp}
-                        </span>
-                      </span>
-                      <span className="seat__meta">
-                      {occupant.strengthLossAtEndOfTurn > 0 ? (
-                        <span className="seat__pending">
-                          −{occupant.strengthLossAtEndOfTurn} Strength at end of turn
-                        </span>
-                      ) : null}
-                      {occupant.drawLocked ? (
-                        <span className="seat__pending">Cannot draw more cards this turn</span>
-                      ) : null}
-                      {occupant.cardPlayLocked ? (
-                        <span className="seat__pending">No additional cards this turn</span>
-                      ) : null}
-                      {(occupant.freeAttacksThisTurn ?? 0) > 0 ? (
-                        <span className="seat__pending">Swivel · next Attack costs 0 this turn</span>
-                      ) : null}
-                      {(occupant.doubledAttacksThisTurn ?? 0) > 0 ? (
-                        <span className="seat__pending">
-                          Double Tap · next {occupant.doubledAttacksThisTurn} Attack{
-                            occupant.doubledAttacksThisTurn === 1 ? '' : 's'
-                          } played twice
-                        </span>
-                      ) : null}
-                      {(occupant.tripledAttacksThisTurn ?? 0) > 0 ? (
-                        <span className="seat__pending">
-                          Blasphemy · next {occupant.tripledAttacksThisTurn} Attack{
-                            occupant.tripledAttacksThisTurn === 1 ? '' : 's'
-                          } played three times
-                        </span>
-                      ) : null}
-                      {(occupant.doubledCardsThisTurn ?? 0) > 0 ? (
-                        <span className="seat__pending">
-                          Echo Form · next {occupant.doubledCardsThisTurn} Attack or Skill card{
-                            occupant.doubledCardsThisTurn === 1 ? '' : 's'
-                          } played twice
-                        </span>
-                      ) : null}
-                      {(occupant.doubledSkillsThisTurn ?? 0) > 0 ? (
-                        <span className="seat__pending">
-                          Burst · next {occupant.doubledSkillsThisTurn} Skill{
-                            occupant.doubledSkillsThisTurn === 1 ? '' : 's'
-                          } played twice
-                        </span>
-                      ) : null}
-                      {remainingRoundHpLoss(occupant) !== undefined ? (
-                        <span className="seat__pending">
-                          {occupant.powers.some((power) => power.defId === 'wraith_form') ? 'Wraith Form' : 'Apparition'} · {remainingRoundHpLoss(occupant)} HP loss remaining
-                        </span>
-                      ) : null}
-                      {occupant.potions.length > 0 ? (
-                        <span className="seat__potions">
-                          {occupant.potions.map((id, index) => <PotionIcon id={id} focusable={false}
-                            key={`${id}-${index}`} />)}
-                        </span>
-                      ) : null}
-                      </span>
-                    </button>
-                    {occupant.character === 'slime_boss' && occupant.slimes.length > 0 ? (
-                      <span className="slime-party combat__slime-status" role="list"
-                        aria-label={`${occupant.name}'s Slimes`}>
-                        {occupant.slimes.map((slime) => {
-                          const def = faceOf(cardDef(slime.card.defId), slime.card.upgraded)
-                          const name = def.name.replace(/ Slime\+?$/, '')
-                          const commandReady = def.slimeCommandLimit === undefined ||
-                            slime.commandsThisTurn < def.slimeCommandLimit
-                          const commandText = slimeCommandText(def, slime.level)
-                          const slug = slimeAssetSlug(def.id)
-                          const commandEvent = prefersReducedMotion
-                            ? undefined
-                            : slimeCommandEvents.get(slime.card.uid)
-                          const commandMotion = occupant
-                            ? slimeCommandMotions[`${occupant.id}:${slime.card.uid}`]
-                            : undefined
-                          const activeCommandMotion = commandEvent && commandMotion?.seq === commandEvent.seq
-                            ? commandMotion
-                            : undefined
-                          const activeCommandEvent = activeCommandMotion ? commandEvent : undefined
-                          return <span
-                              key={`${slime.card.uid}:${activeCommandEvent?.seq ?? 'idle'}`}
-                              className={[
-                                'slime-party__actor combat__slime-chip',
-                                commandReady ? '' : 'slime-party__actor--spent',
-                                activeCommandEvent ? 'slime-party__actor--commanding' : '',
-                              ].filter(Boolean).join(' ')}
-                              role="listitem"
-                              tabIndex={0}
-                              onMouseEnter={(event) => showSlimeCard(slime.card, event.currentTarget)}
-                              onMouseLeave={(event) => {
-                                if (document.activeElement !== event.currentTarget) hideSlimeCard()
-                              }}
-                              onFocus={(event) => showSlimeCard(slime.card, event.currentTarget)}
-                              onBlur={hideSlimeCard}
-                              onAnimationEnd={(event) => {
-                                if (event.target === event.currentTarget && event.animationName === 'slime-party-command' && activeCommandEvent) {
-                                  livePresentation.finishSlimeCommand(activeCommandEvent.seq)
-                                }
-                              }}
-                              data-slime-uid={slime.card.uid}
-                              data-slime-def={def.id}
-                              data-slime-level={slime.level}
-                              data-slime-vigor={slime.vigor > 0 ? `+${slime.vigor}` : ''}
-                              style={activeCommandMotion ? {
-                                '--slime-command-x': `${activeCommandMotion.x}px`,
-                                '--slime-command-y': `${activeCommandMotion.y}px`,
-                              } as React.CSSProperties : undefined}
-                              aria-label={`${def.name}, level ${slime.level}, Strength ${slime.vigor}, ` +
-                                `${slime.commandsThisTurn} Commands this turn, ` +
-                                `${commandReady ? 'ready to Command' : 'Command limit reached'}, ` + commandText}>
-                              <img
-                                className="slime-party__art"
-                                key={slime === occupant.slimes[0] ? 'first' : 'following'}
-                                src={assetPath(`combat/slimes/${slug}.webp`)}
-                                onLoad={(event) => {
-                                  const image = event.currentTarget
-                                  const party = image.closest<HTMLElement>('.slime-party')
-                                  if (party?.firstElementChild === image.parentElement) {
-                                    const inset = String(0.025 + 0.95 * paintedLeft(image))
-                                    if (party.style.getPropertyValue('--slime-first-inset') !== inset) {
-                                      party.style.setProperty('--slime-first-inset', inset)
-                                      setSlimeLayoutVersion(version => version + 1)
-                                    }
-                                  }
-                                }}
-                                alt=""
-                                onError={(event) => {
-                                  if (event.currentTarget.dataset.fallback === 'true') {
-                                    event.currentTarget.style.display = 'none'
-                                    return
-                                  }
-                                  event.currentTarget.dataset.fallback = 'true'
-                                  event.currentTarget.src = assetPath(slimeFallbackAsset(def.id))
-                                }}
-                              />
-                              {activeCommandEvent ? (
-                                <img
-                                  className="slime-party__command"
-                                  key={activeCommandEvent.seq}
-                                  data-command-seq={activeCommandEvent.seq}
-                                  src={assetPath(`combat/slimes/${slug}.webp`)}
-                                  alt=""
-                                  onError={(event) => {
-                                    event.currentTarget.style.display = 'none'
-                                    const idle = event.currentTarget.parentElement?.querySelector<HTMLElement>('.slime-party__art')
-                                    if (idle) idle.style.opacity = '1'
-                                  }}
-                                />
-                              ) : null}
-                              <span className="slime-party__level" aria-hidden="true">{slime.level}</span>
-                              <span className="slime-party__summary" aria-hidden="true">
-                                {name} · L{slime.level} · Strength {slime.vigor} · Cmd {slime.commandsThisTurn}
-                              </span>
-                            </span>
-                        })}
-                      </span>
-                    ) : null}
-                    <OrbRow
-                      player={evokePlannedOrbs && occupant.id === evokeChoicePlayerId
-                        ? { ...occupant, orbs: evokePlannedOrbs }
-                        : occupant}
-                      targetVerb={evokeChoiceOptions && occupant.id === evokeChoicePlayerId ? 'Evoke'
-                        : creativeAiEffect && occupant.id === viewer.id ? 'Remove' : undefined}
-                      selectedSlots={creativeAiEffect?.anyNumber && occupant.id === viewer.id ? powerOrbSlots : undefined}
-                      targetableSlots={evokeChoiceOptions && occupant.id === evokeChoicePlayerId
-                        ? evokeChoiceOptions.map((option) => option.slot)
-                        : creativeAiEffect && occupant.id === viewer.id
-                        ? occupant.orbs.flatMap((orb, slot) => orb ? [slot] : [])
-                        : endTurnEffect?.orbChoice && canResolveEndTurn && occupant.id === endTurnEffect.playerId
-                        ? endTurnEffect.targets?.flatMap((target) => {
-                          const slot = Number(target.uid.slice(4))
-                          return target.uid.startsWith('orb:') && Number.isInteger(slot) ? [slot] : []
-                        })
-                        : []}
-                      onTarget={(slot) => {
-                        if (evokeChoiceOptions && occupant.id === evokeChoicePlayerId) {
-                          if (pendingStartEvoke) chooseStartTurnEvoke(slot)
-                          else onEvokeClick(slot)
-                          return
-                        }
-                        if (creativeAiEffect && occupant.id === viewer.id) {
-                          chooseCreativeAiOrb(slot)
-                          return
-                        }
-                        const targetUid = endTurnTargetForOrb(occupant.id, slot)
-                        if (targetUid && suppressEndTurnOrbClick.current === targetUid) {
-                          suppressEndTurnOrbClick.current = null
-                          return
-                        }
-                        if (targetUid && endTurnEffect) {
-                          resolveTurnEffectTarget(endTurnEffect.id, targetUid)
-                        }
-                      }}
-                    />
-                    </div>
-                    <div className="seat__status-strip" data-guardian-mode={occupant.guardianMode ?? undefined} tabIndex={0}
-                      aria-label={`${occupant.name} combat effects`}>
-                      <TokenRow
-                        block={occupant.block}
-                        strength={occupant.strength}
-                        vigorSpent={occupant.vigorSpentThisTurn}
-                        vulnerable={occupant.vulnerable}
-                        weak={occupant.weak}
-                        shivs={occupant.shivs}
-                        miracles={occupant.miracles}
-                        clawCubes={occupant.clawCubesGainedThisCombat}
-                      />
-                      <PowerRow powers={occupant.powers} />
-                    </div>
-                  </>
-                ) : null}
-              </div>
-              <div className={`row__enemies${emptyRowTargetable ? ' row__enemies--targetable' : ''}`}
-                data-enemies={foes.length} data-row={emptyRowTargetable ? row : undefined}
-                role={emptyRowTargetable ? 'button' : undefined}
-                tabIndex={emptyRowTargetable ? 0 : undefined}
-                aria-label={emptyRowTargetable ? `${rowLaneClickLabel(row)}${bosses.some((enemy) => !enemy.dead)
-                  ? ' (the boss is hit)' : ''}` : undefined}
-                onClick={emptyRowTargetable ? () => onRowLaneClick(row) : undefined}
-                onKeyDown={emptyRowTargetable ? (event) => {
-                  if (!event.repeat && (event.key === 'Enter' || event.key === ' ')) {
-                    event.preventDefault()
-                    onRowLaneClick(row)
-                  }
-                } : undefined}>
-                {foes.length > 0 ? (
-                  foes.map((enemy) => (
-                    <EnemyCard
-                      key={enemy.uid}
-                      enemy={enemy}
-                      enemies={state.enemies}
-                      label={enemyLabel(state.enemies, enemy)}
-                      die={state.die}
-                      acting={state.phase === 'enemy' && !prefersReducedMotion}
-                      animateArt={!prefersReducedMotion}
-                      deferBossAttack={characterAttacksActive}
-                      falling={falling.has(enemy.uid)}
-                      visualContactMs={prefersReducedMotion ? 0 : targetPresentationTimings.get(enemy.uid)?.contact}
-                      visualEventSeq={targetPresentationTimings.get(enemy.uid)?.event?.seq}
-                      visualResetKey={visualResetKey}
-                      stageVisualDamage={!prefersReducedMotion}
-                      splitAttackEvents={(state.presentationEvents ?? []).flatMap(event => {
-                        const weights = event.enemyIds.includes(enemy.uid) && splitAttackWeights(state, event)
-                        return weights ? [{ seq: event.seq, weights,
-                          damage: event.enemyHpLoss ? event.enemyHpLoss[enemy.uid] ?? 0 : undefined }] : []
-                      })}
-                      hitBeats={hits.get(enemy.uid)}
-                      vfx={enemyVfxFor(enemy)}
-                      rangedTargetPlayerIds={enemyAttackTargetPlayerIds(state, enemy)}
-                      cancelPendingThrow={state.phase === 'enemy' && enemyAttackArrivalMsFor(enemy.defId) !== undefined && expiredCultistPhase === activeEnemyPhaseKey}
-                      onThrowPrepared={onCultistThrowPrepared}
-                      onThrowStart={onCultistThrowStart}
-                      onThrowSkipped={onCultistThrowSkipped}
-                      stageIndex={stageEnemies.findIndex((candidate) => candidate.uid === enemy.uid)}
-                      rowLabel={state.players.length === 1 || facingEnemies.some((facing) => facing.uid === enemy.uid) ? undefined : occupant?.name}
-                      defender={facingEnemies.some((facing) => facing.uid === enemy.uid)
-                        ? state.players.find((player) => !player.dead && player.id === viewerId && player.facingEnemyUid === enemy.uid) ??
-                          state.players.find((player) => !player.dead && player.facingEnemyUid === enemy.uid)
-                        : occupant}
-                      disabled={Boolean(pendingStartEnemy?.id.startsWith('facing:') && !startEnemyChoiceAvailable(enemy.uid) ||
-                        pendingShivProgress && !pendingShivProgress.options.some((option) => option.uid === enemy.uid))}
-                      targeted={(isEndTurnEnemyTarget(enemy) ||
-                        cardDrag?.targetUid === enemy.uid ||
-                        cardDragTargetRow !== undefined && (cardDragTargetRow === enemy.row || enemy.isBoss) ||
-                        isStartTurnEnemyTarget(enemy.uid) ||
-                        (pendingTrigger?.playerId === viewer.id && triggerHermitChoicesReady &&
-                          (pendingTrigger.targets?.some((target) => target.uid === enemy.uid) ||
-                            triggerSlimeEnemyUids.length < triggerSlimeEnemyAmount)) ||
-                        isEnemyRowClickTargetable(enemy) ||
-                        ((pendingPotionNeedsEnemy || pendingPowerNeedsEnemy || (pendingPowerDef && pendingPowerDef.target !== 'row' &&
-                          (!pendingHermitPower || pendingPowerDef.id === 'hermit_black_wind' && powerLoadUids.length === 1)) || pendingPotionOverflow > 0) || spendingShiv || spendingSoulburn ||
-                        Boolean(pending && (pending.slimeEnemyUids.length < slimeEnemyChoicesRequired(pending) ||
-                          pending.hermitEnemyUids.length < loadedTargetCount(pending) ||
-                          pending.soulburnEnemyUids.length < pending.soulburnChoices)) || (
-                        ((pendingEvokeTarget < 0 && (pending?.needsEnemy === true && !enemyChoicesDone || independentEnemyPending) &&
-                          slayerTargetAllowed(enemy) && (!pendingShivProgress ||
-                            pendingShivProgress.options.some((option) => option.uid === enemy.uid))) ||
-                          (pendingEvokeTarget >= 0 && !pendingEvokeUsesRows && pendingEvokeTargetUids.has(enemy.uid))) && choiceSatisfied
-                      ))) && !enemy.dead}
-                      onClick={onEnemyClick}
-                    />
-                  ))
-                ) : null}
-              </div>
-            </div>
-          )
-        })}
-      </div>
+      <CombatStage
+        state={state}
+        viewer={viewer}
+        viewerId={viewerId}
+        rows={rows}
+        bosses={bosses}
+        stageEnemies={stageEnemies}
+        facingEnemies={facingEnemies}
+        liveFacingEnemies={liveFacingEnemies}
+        boardRef={boardRef}
+        viewerRowRef={viewerRowRef}
+        setPointedEnemyUid={setPointedEnemyUid}
+        prefersReducedMotion={prefersReducedMotion}
+        characterAttacksActive={characterAttacksActive}
+        falling={falling}
+        targetPresentationTimings={targetPresentationTimings}
+        visualResetKey={visualResetKey}
+        hits={hits}
+        enemyVfxFor={enemyVfxFor}
+        actorVfxFor={actorVfxFor}
+        playerVfxFor={playerVfxFor}
+        orbEndTurnRevealDelayMs={orbEndTurnRevealDelayMs}
+        livePresentationEvents={livePresentationEvents}
+        finishSlimeCommand={livePresentation.finishSlimeCommand}
+        expiredCultistPhase={expiredCultistPhase}
+        activeEnemyPhaseKey={activeEnemyPhaseKey}
+        onCultistThrowPrepared={onCultistThrowPrepared}
+        onCultistThrowStart={onCultistThrowStart}
+        onCultistThrowSkipped={onCultistThrowSkipped}
+        characterAttackAssets={characterAttackAssets}
+        characterAttackBlobs={characterAttackBlobs}
+        stagedPosesReady={stagedPosesReady}
+        monogatariPosesReady={monogatariPosesReady}
+        monogatariEvokeReady={monogatariEvokeReady}
+        monogatariEvokesReadyByEvent={monogatariEvokesReadyByEvent}
+        characterAttacks={characterAttacks}
+        slimeCommandMotions={slimeCommandMotions}
+        setSlimeLayoutVersion={setSlimeLayoutVersion}
+        showSlimeCard={showSlimeCard}
+        hideSlimeCard={hideSlimeCard}
+        pendingStartEnemy={pendingStartEnemy}
+        pendingStartPlayer={pendingStartPlayer}
+        pendingStartEvoke={pendingStartEvoke}
+        startEnemyChoiceAvailable={startEnemyChoiceAvailable}
+        pendingShivProgress={pendingShivProgress}
+        isEndTurnEnemyTarget={isEndTurnEnemyTarget}
+        cardDrag={cardDrag}
+        cardDragTargetRow={cardDragTargetRow}
+        endTurnEffectDrag={endTurnEffectDrag}
+        armedEndTurnAbilityId={armedEndTurnAbilityId}
+        isStartTurnEnemyTarget={isStartTurnEnemyTarget}
+        pendingTrigger={pendingTrigger}
+        triggerHermitChoicesReady={triggerHermitChoicesReady}
+        triggerSlimeEnemyUids={triggerSlimeEnemyUids}
+        triggerSlimeEnemyAmount={triggerSlimeEnemyAmount}
+        isEnemyRowClickTargetable={isEnemyRowClickTargetable}
+        isRowLaneClickTargetable={isRowLaneClickTargetable}
+        rowLaneClickLabel={rowLaneClickLabel}
+        onRowLaneClick={onRowLaneClick}
+        pendingPotion={pendingPotion}
+        pendingPotionNeedsEnemy={pendingPotionNeedsEnemy}
+        pendingPotionOverflow={pendingPotionOverflow}
+        pendingPowerNeedsEnemy={pendingPowerNeedsEnemy}
+        pendingPowerNeedsAlly={pendingPowerNeedsAlly}
+        pendingPowerDef={pendingPowerDef}
+        pendingHermitPower={pendingHermitPower}
+        powerLoadUids={powerLoadUids}
+        spendingShiv={spendingShiv}
+        spendingSoulburn={spendingSoulburn}
+        pending={pending}
+        slimeEnemyChoicesRequired={slimeEnemyChoicesRequired}
+        loadedTargetCount={loadedTargetCount}
+        pendingEvokeTarget={pendingEvokeTarget}
+        pendingEvokeUsesRows={pendingEvokeUsesRows}
+        pendingEvokeTargetUids={pendingEvokeTargetUids}
+        enemyChoicesDone={enemyChoicesDone}
+        independentEnemyPending={independentEnemyPending}
+        independentPlayerPending={independentPlayerPending}
+        slayerTargetAllowed={slayerTargetAllowed}
+        choiceSatisfied={choiceSatisfied}
+        switchChoiceReady={switchChoiceReady}
+        onEnemyClick={onEnemyClick}
+        onAllyClick={onAllyClick}
+        onEndTurnOrbPointerDown={onEndTurnOrbPointerDown}
+        onEndTurnEffectPointerMove={onEndTurnEffectPointerMove}
+        finishEndTurnEffectDrag={finishEndTurnEffectDrag}
+        cancelEndTurnEffectDrag={cancelEndTurnEffectDrag}
+        evokePlannedOrbs={evokePlannedOrbs}
+        evokeChoiceOptions={evokeChoiceOptions}
+        evokeChoicePlayerId={evokeChoicePlayerId}
+        creativeAiEffect={creativeAiEffect}
+        powerOrbSlots={powerOrbSlots}
+        endTurnEffect={endTurnEffect}
+        canResolveEndTurn={canResolveEndTurn}
+        chooseStartTurnEvoke={chooseStartTurnEvoke}
+        onEvokeClick={onEvokeClick}
+        chooseCreativeAiOrb={chooseCreativeAiOrb}
+        endTurnTargetForOrb={endTurnTargetForOrb}
+        suppressEndTurnOrbClick={suppressEndTurnOrbClick}
+        resolveTurnEffectTarget={resolveTurnEffectTarget}
+      />
 
       {viewer && dieRelicPending?.playerId === viewer.id ? (() => {
         const effect = dieRelicAbility?.effects.find((candidate) =>
@@ -7581,23 +5383,16 @@ function CombatScreenView({
             )))}
         </section>
       ) : null}
-      {viewer && viewerPlayerChoice?.kind === 'drawOrDiscard' && playerChoiceDiscarding ? (
-        // Slayer Pack: Heel Hook's discard is picked privately from the chooser's own hand.
-        <dialog ref={playerChoiceDialogRef} className="choice-modal" aria-labelledby="player-choice-discard-title"
-          onCancel={(event) => { event.preventDefault(); setPlayerChoiceDiscarding(false) }}>
-          <div className="choice-modal__panel">
-            <h2 id="player-choice-discard-title">{viewerPlayerChoice.sourceLabel} — discard a card</h2>
-            <p>Choose a card from your hand. This choice is private.</p>
-            <div className="choice-modal__cards">
-              {viewer.hand.map((card) => (
-                <Card stanceChangedThisTurn={stanceChangedThisTurn} key={card.uid} card={card} onClick={() => submitPlayerChoice({ discardUid: card.uid })} />
-              ))}
-            </div>
-            <button type="button" className="prompt__mode" disabled={usingPlayerChoice}
-              onClick={() => setPlayerChoiceDiscarding(false)}>Back</button>
-          </div>
-        </dialog>
-      ) : null}
+      <PlayerChoiceDiscardDialog
+        dialogRef={playerChoiceDialogRef}
+        viewer={viewer}
+        viewerPlayerChoice={viewerPlayerChoice}
+        playerChoiceDiscarding={playerChoiceDiscarding}
+        setPlayerChoiceDiscarding={setPlayerChoiceDiscarding}
+        stanceChangedThisTurn={stanceChangedThisTurn}
+        usingPlayerChoice={usingPlayerChoice}
+        submitPlayerChoice={submitPlayerChoice}
+      />
       {viewer && hermitStrengthPending ? (
         <section className="prompt" aria-label="Dead or Alive reward">
           <strong>Dead or Alive: choose a player to gain 1 Strength</strong>
@@ -7648,248 +5443,79 @@ function CombatScreenView({
             state.phase === 'won' ? ' before the party moves on' : ''}
         </p>
       ) : null}
-      <footer className="hand-area" data-character={viewer.character}
-        data-has-chamber={viewer.chamberSlots > 0 || undefined}>
-        <div className="hand-area__stats">
-          <span className={[
-            'pip',
-            'pip--energy',
-            motionActive.has('energy') ? `motion-pulse-${motionBeats.energy % 2}` : '',
-          ].filter(Boolean).join(' ')} data-character={skinOrb ? viewerVisual : viewer.character} data-skin-orb={skinOrb || undefined}
-          data-guardian-mode={viewer.guardianMode ?? undefined} data-empty={viewer.energy === 0 || undefined}
-          title="Energy">
-            {skinOrb ? <img className="energy-orb__skin"
-              src={assetPath(`combat/energy-orbs/${viewerVisual}.webp`)} alt="" aria-hidden="true" /> : null}
-            {downfallCharacter && !skinOrb ? <span className="energy-orb__layers" aria-hidden="true">
-              {downfallEnergyOrbLayers(downfallCharacter, viewer.energy === 0).map(({ layer, src }) =>
-                <img key={layer} data-layer={layer} src={src} alt="" />)}
-            </span> : null}
-            <IconValue name="energy" value={viewer.energy} size={26} />
-          </span>
-          {viewer.chamberSlots > 0 ? (
-            <button ref={chamberTriggerRef} type="button" className={[
-              'hermit-chamber-trigger',
-              chamberContact ? 'hermit-chamber-trigger--contact' : '',
-            ].filter(Boolean).join(' ')}
-              aria-expanded={chamberOpen}
-              aria-label={`Chamber, ${viewer.chamber.length} of ${viewer.chamberSlots} slots filled`}
-              title={chamberClosing ? 'Returning Chamber cards' : chamberOpen
-                ? 'Return Chamber cards' : 'Show Chamber cards'}
-              disabled={chamberClosing}
-              onClick={toggleChamber}>
-              <img src={assetPath(chamberOpen || chamberClosing || viewer.chamber.length === 0
-                ? 'icons/hermit-chamber.png'
-                : 'icons/hermit-chamber-loaded.png')} alt="" />
-              <span aria-hidden="true">{viewer.chamber.length}/{viewer.chamberSlots}</span>
-            </button>
-          ) : null}
-          {requiredHermitChamberCard?.playerId === viewer.id &&
-          (!requiredChamberCard || requiredChamberUnplayable) ? (
-            <button type="button" className="prompt__mode hermit-chamber-skip"
-              onClick={() => skipUnplayableHermitChamber(requiredHermitChamberCard.cardUids[0]!)}>
-              {requiredChamberCard ? `Skip unplayable ${cardDef(requiredChamberCard.defId).name}`
-                : 'Continue after unavailable Chamber card'}
-            </button>
-          ) : null}
-          <CardCollectionOverlay stanceChangedThisTurn={stanceChangedThisTurn} cards={viewer.draw} label="Draw pile" dataPile="draw" ordered={false}
-            triggerClassName={['pile', motionActive.has('draw')
-              ? `motion-pulse-${motionBeats.draw % 2}` : ''].filter(Boolean).join(' ')}>
-            <img className="pile__stack" src={assetPath('combat/piles/draw.webp')} alt="" />
-            <span className="pile__count" aria-hidden="true">{displayedPileCount('draw', drawPileCount)}</span>
-            <span className="visually-hidden">Draw pile, {drawCount ?? viewer.draw.length} cards</span>
-          </CardCollectionOverlay>
-          <span className="pile-group">
-            {([
-              ['discard', 'Discard pile', viewer.discard],
-              ['exhaust', 'Exhaust pile', viewer.exhaust],
-            ] as const).map(([kind, label, cards]) => (
-              <CardCollectionOverlay stanceChangedThisTurn={stanceChangedThisTurn} key={kind} cards={cards} label={label} dataPile={kind}
-                triggerClassName={['pile', motionActive.has(kind)
-                  ? `motion-pulse-${motionBeats[kind] % 2}` : ''].filter(Boolean).join(' ')}>
-                <img className="pile__stack" src={assetPath(`combat/piles/${kind}.webp`)} alt="" />
-                <span className="pile__count" aria-hidden="true">{displayedPileCount(kind, cards.length)}</span>
-              </CardCollectionOverlay>
-            ))}
-          </span>
-        </div>
-        {/* Fanned, the way a hand is actually held: each card tilted and
-            lifted by its distance from the middle. The angle is set here
-            because only the component knows how many cards there are. */}
-        <div ref={handScrollRef} className="hand-scroll" onWheel={(event) => {
-          event.currentTarget.scrollLeft += event.deltaX || (event.shiftKey ? event.deltaY : 0)
-        }}><div ref={handRef} className="hand" data-count={visibleHand.length}>
-          {visibleHand.map((card, index) => {
-            const chamberCard = visibleChamberUids.has(card.uid)
-            const required = chamberCard && requiredHermitChamberCard?.playerId === viewer.id &&
-              requiredHermitChamberCard.cardUids[0] === card.uid
-            const staged = chamberCard
-              ? stageHermitChamberViewer(viewer, card, required && requiredHermitChamberCard?.free)
-              : null
-            const cardViewer = staged?.player ?? viewer
-            const displayedCard = staged?.card ?? card
-            const attachedGemId = guardianGemForCard(viewer, card)
-            const shownCard = attachedGemId === card.attachedGemId ? card : { ...card, attachedGemId }
-            const def = effectiveCombatCardDef(faceOf(cardDef(card.defId), card.upgraded), cardViewer.guardianMode)
-            const setupTarget = !chamberCard && hermitSetupPending && hermitTargetedCurses.has(card.defId)
-              ? livingEnemies(state).length === 1 ? livingEnemies(state)[0] : undefined
-              : null
-            const setupPlayable = !chamberCard && hermitSetupPending &&
-              (!hermitTargetedCurses.has(card.defId) || Boolean(setupTarget))
-            const chamberCancelable = chamberCard && pending?.chamberPlay && pending.card.uid === card.uid &&
-              (pending.choicePreviewPending || !pending.choiceCards || pending.choice?.kind === 'recover' ||
-                pending.choice?.kind === 'recoverExhaust')
-            const chamberPlayable = chamberCard && !chamberClosing &&
-              (chamberCardCanStartDrag(card) || chamberCancelable)
-            const exhaustChoice = !chamberCard && handExhaustChoiceUids.has(card.uid)
-            const handPicksOnly = hermitSetupPending || exhaustChoice
-            return <Card stanceChangedThisTurn={stanceChangedThisTurn}
-              key={card.uid}
-              className={[drawnCards.has(card.uid) ? 'card--drawn' : '',
-                cardDrag?.card.uid === card.uid ? 'card--dragging' : '',
-                chamberCard ? 'card--chamber-drawn' : '',
-                setupPlayable || exhaustChoice && pendingStartExhaust ? 'card--load-choice' : '',
-                exhaustChoice && !pendingStartExhaust ? 'card--exhaust-repick' : '',
-                // The engine marks only the offered cards that can be played.
-                card.playWindowCost !== undefined && !chamberCard ? 'card--play-window' : ''].filter(Boolean).join(' ') || undefined}
-              style={{ '--deal-index': index } as React.CSSProperties}
-              inspectOnTouch
-              fan={fanOf(index, visibleHand.length)}
-              liveDamage={chamberCard ? undefined : cardDamage.get(card.uid)}
-              card={chamberCard ? displayedCard : shownCard}
-              gemPowerDamage={attachedGemId !== card.attachedGemId || undefined}
-              cost={card.uid === forcedCardUid ? 0 : playCost(def, cardViewer, displayedCard)}
-              playable={chamberCard ? chamberPlayable : exhaustChoice || (hermitSetupPending ? setupPlayable :
-                !usingCard &&
-                !pendingTrigger &&
-                !endTurnResolving &&
-                (!voluntaryActionsBlocked || card.uid === forcedCardUid) &&
-                (!pending?.choiceCards || pending.card.uid === card.uid) &&
-                ((state.phase === 'player' && !forcedCard && !distilled && !relicScry) || card.uid === forcedCardUid ||
-                  (pending?.card.uid === forcedCardUid && pending.choice !== null && !pending.choiceCards) ||
-                  (state.phase === 'copy' && pending?.cardInHand === false &&
-                    pending.choice !== null && !pending.choiceCards)) &&
-                // While a card is staged, other cards stay clickable only as
-                // choice targets; an unaffordable card must never be stageable
-                // or it strands the player in a pending state it cannot commit.
-                (card.uid === forcedCardUid ||
-                  (pending?.card.uid === forcedCardUid && pending.choice !== null &&
-                    !pending.choiceCards && card.uid !== pending.card.uid) ||
-                  canAfford(state, viewer, card, miracleOnCard, drawCount) ||
-                  pending?.card.uid === card.uid ||
-                  (pending?.choice != null && card.uid !== pending.card.uid)))
-              }
-              selected={pending?.card.uid === card.uid}
-              picked={pending?.picked.includes(card.uid) === true || chosenStartExhaustUids.has(card.uid)}
-              onClick={chamberCard
-                ? () => {
-                  if (suppressCardClick.current === card.uid) {
-                    suppressCardClick.current = null
-                    return
-                  }
-                  if (chamberCancelable) {
-                    setPending(null)
-                    return
-                  }
-                  submitHermitChamber(card)
-                }
-                : exhaustChoice
-                ? () => chooseStartTurnExhaust(card.uid)
-                : hermitSetupPending
-                ? () => setupPlayable && submitHermitSetup(card, setupTarget?.uid ?? null)
-                : activateCard}
-              onPointerDown={handPicksOnly && !chamberCard
-                ? undefined
-                : (event, playable) => onCardPointerDown(card, event, playable, chamberCard)}
-              onPointerMove={handPicksOnly && !chamberCard ? undefined : onCardPointerMove}
-              onPointerUp={handPicksOnly && !chamberCard ? undefined : finishCardDrag}
-              onPointerCancel={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}
-              onLostPointerCapture={handPicksOnly && !chamberCard ? undefined : cancelCardDrag}
-            />
-          })}
-        </div></div>
-      </footer>
-      {slimeCardZoom ? createPortal(
-        <span className="power__zoom slime-party__zoom" role="tooltip"
-          style={{ left: slimeCardZoom.x, top: slimeCardZoom.y }}>
-          <Card stanceChangedThisTurn={stanceChangedThisTurn} card={slimeCardZoom.card} playable={false} immediateArt />
-        </span>,
-        document.body,
-      ) : null}
-      {chamberReturnFlights.map((flight) => (
-        <div key={flight.card.uid} className="chamber-return-flight" style={{
-          left: flight.left,
-          top: flight.top,
-          width: flight.width,
-          height: flight.height,
-          '--chamber-return-x': `${flight.x}px`,
-          '--chamber-return-y': `${flight.y}px`,
-          '--chamber-return-index': flight.index,
-        } as React.CSSProperties} aria-hidden="true" inert>
-          <Card stanceChangedThisTurn={stanceChangedThisTurn} card={flight.card} playable={false} immediateArt />
-        </div>
-      ))}
-      {cardDrag ? (
-        <>
-          {cardDrag.needsEnemy || cardDrag.needsPlayer ? (
-            <svg className="card-target-arrow" aria-hidden="true">
-              <defs>
-                <marker id="card-target-arrowhead" markerUnits="userSpaceOnUse"
-                  markerWidth="22" markerHeight="22" refX="18" refY="11" orient="auto">
-                  <path d="M 0 0 L 22 11 L 0 22 Z" />
-                </marker>
-              </defs>
-              <path ref={cardDragArrowShadow} className="card-target-arrow__shadow" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
-              <path ref={cardDragArrow} className="card-target-arrow__line" d={`M ${cardDrag.startX} ${cardDrag.startY - 45} Q ${cardDrag.startX} ${cardDrag.y} ${cardDrag.x} ${cardDrag.y}`} />
-            </svg>
-          ) : null}
-          <div ref={cardDragOverlay} className="card-drag" style={{
-            left: cardDrag.startX,
-            top: cardDrag.startY - 90,
-            '--drag-y': `${Math.max(0, cardDrag.y - cardDrag.startY + 210)}px`,
-            '--drag-turn': `${Math.max(-8, Math.min(8, (cardDrag.x - cardDrag.startX) / 24))}deg`,
-          } as React.CSSProperties} aria-hidden="true" inert>
-            <Card stanceChangedThisTurn={stanceChangedThisTurn} card={cardDrag.card} playable={false} immediateArt />
-          </div>
-        </>
-      ) : null}
-      {endTurnEffectDrag ? (
-        <>
-          <svg className="card-target-arrow end-turn-target-arrow" aria-hidden="true">
-            <defs>
-              <marker id="end-turn-target-arrowhead" markerUnits="userSpaceOnUse"
-                markerWidth="22" markerHeight="22" refX="18" refY="11" orient="auto">
-                <path d="M 0 0 L 22 11 L 0 22 Z" />
-              </marker>
-            </defs>
-            <path ref={endTurnEffectDragArrowShadow} className="card-target-arrow__shadow"
-              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + (endTurnEffectDrag.y < endTurnEffectDrag.startY ? -28 : 28)} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
-            <path ref={endTurnEffectDragArrow} className="card-target-arrow__line end-turn-target-arrow__line"
-              d={`M ${endTurnEffectDrag.startX} ${endTurnEffectDrag.startY + (endTurnEffectDrag.y < endTurnEffectDrag.startY ? -28 : 28)} Q ${endTurnEffectDrag.startX} ${endTurnEffectDrag.y} ${endTurnEffectDrag.x} ${endTurnEffectDrag.y}`} />
-          </svg>
-          <div ref={endTurnEffectDragOverlay}
-            className={endTurnEffectDragCard ? 'end-turn-effect-drag end-turn-effect-drag--card' : 'end-turn-effect-drag'}
-            style={{ left: endTurnEffectDrag.startX, top: endTurnEffectDrag.startY } as React.CSSProperties}
-            aria-hidden="true" inert>
-            {endTurnEffectDragCard ? <Card stanceChangedThisTurn={stanceChangedThisTurn} card={endTurnEffectDragCard} playable={false} immediateArt />
-              : endTurnEffectDragRelicId ? (
-                <img className="item-icon-image" src={relicIconPath(endTurnEffectDragRelicId)} alt="" />
-              )
-              : endTurnEffectDragSlimeAsset ? (
-                <img className="end-turn-effect__slime" src={endTurnEffectDragSlimeAsset} alt="" />
-              ) : (
-              <span className={`token--orb token--orb-${endTurnEffectDrag.sourceOrb ?? (endTurnEffectDrag.ability.visual?.kind === 'orb'
-                ? endTurnEffectDrag.ability.visual.orb
-                : 'lightning')}`} />
-            )}
-          </div>
-        </>
-      ) : null}
-      {cardFlights.map((flight) => (
-        <div key={flight.beat} className={`card-flight-effect card-flight--${viewer.character}`} aria-hidden="true" inert>
-          {flight.destination !== 'stage' ? <SmokeTrail path={flight.trailPath} bounds={flight.trailBounds} /> : null}
-          {!flight.landed ? <FlyingCard flight={flight} character={viewer.character} /> : null}
-        </div>
-      ))}
+      <HandArea
+        state={state}
+        viewer={viewer}
+        viewerVisual={viewerVisual}
+        skinOrb={skinOrb}
+        downfallCharacter={downfallCharacter}
+        stanceChangedThisTurn={stanceChangedThisTurn}
+        drawCount={drawCount}
+        drawPileCount={drawPileCount}
+        displayedPileCount={displayedPileCount}
+        motionActive={motionActive}
+        motionBeats={motionBeats}
+        chamberTriggerRef={chamberTriggerRef}
+        handScrollRef={handScrollRef}
+        handRef={handRef}
+        chamberOpen={chamberOpen}
+        chamberClosing={chamberClosing}
+        chamberContact={chamberContact}
+        toggleChamber={toggleChamber}
+        requiredHermitChamberCard={requiredHermitChamberCard}
+        requiredChamberCard={requiredChamberCard}
+        requiredChamberUnplayable={requiredChamberUnplayable}
+        skipUnplayableHermitChamber={skipUnplayableHermitChamber}
+        visibleHand={visibleHand}
+        visibleChamberUids={visibleChamberUids}
+        hermitSetupPending={hermitSetupPending}
+        hermitTargetedCurses={hermitTargetedCurses}
+        pending={pending}
+        setPending={setPending}
+        usingCard={usingCard}
+        pendingTrigger={pendingTrigger}
+        endTurnResolving={endTurnResolving}
+        voluntaryActionsBlocked={voluntaryActionsBlocked}
+        forcedCard={forcedCard}
+        forcedCardUid={forcedCardUid}
+        distilled={distilled}
+        relicScry={relicScry}
+        miracleOnCard={miracleOnCard}
+        drawnCards={drawnCards}
+        cardDrag={cardDrag}
+        cardDamage={cardDamage}
+        handExhaustChoiceUids={handExhaustChoiceUids}
+        chosenStartExhaustUids={chosenStartExhaustUids}
+        pendingStartExhaust={pendingStartExhaust}
+        suppressCardClick={suppressCardClick}
+        chamberCardCanStartDrag={chamberCardCanStartDrag}
+        submitHermitChamber={submitHermitChamber}
+        chooseStartTurnExhaust={chooseStartTurnExhaust}
+        submitHermitSetup={submitHermitSetup}
+        activateCard={activateCard}
+        onCardPointerDown={onCardPointerDown}
+        onCardPointerMove={onCardPointerMove}
+        finishCardDrag={finishCardDrag}
+        cancelCardDrag={cancelCardDrag}
+      />
+      <FloatingOverlays
+        viewerCharacter={viewer.character}
+        stanceChangedThisTurn={stanceChangedThisTurn}
+        slimeCardZoom={slimeCardZoom}
+        chamberReturnFlights={chamberReturnFlights}
+        cardDrag={cardDrag}
+        cardDragOverlay={cardDragOverlay}
+        cardDragArrow={cardDragArrow}
+        cardDragArrowShadow={cardDragArrowShadow}
+        endTurnEffectDrag={endTurnEffectDrag}
+        endTurnEffectDragOverlay={endTurnEffectDragOverlay}
+        endTurnEffectDragArrow={endTurnEffectDragArrow}
+        endTurnEffectDragArrowShadow={endTurnEffectDragArrowShadow}
+        endTurnEffectDragCard={endTurnEffectDragCard}
+        endTurnEffectDragRelicId={endTurnEffectDragRelicId}
+        endTurnEffectDragSlimeAsset={endTurnEffectDragSlimeAsset}
+        cardFlights={cardFlights}
+      />
     </div>
   )
 }

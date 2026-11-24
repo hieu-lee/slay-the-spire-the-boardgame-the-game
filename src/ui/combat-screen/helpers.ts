@@ -5,6 +5,9 @@
 // in. `revealViewerRow` is the one that touches the DOM, because scrolling the
 // board to the seat you control is a measurement rather than a render.
 import type { Pending } from './types.ts'
+import type { TargetContactDeadline } from './hooks.ts'
+import { characterAttackContactMs, latestTargetPresentationEvent } from './vfx.tsx'
+import { assetPath } from '../../game/assets.ts'
 import { cardDef, faceOf } from '../../game/cards.ts'
 import type { CardDef, Effect } from '../../game/cards.ts'
 import {
@@ -28,9 +31,9 @@ import {
   slimeChoiceIsAvailable,
   cardDefForTarget,
 } from '../../game/combat.ts'
-import type { CombatState } from '../../game/combat.ts'
+import type { CombatPresentationEvent, CombatState } from '../../game/combat.ts'
 import { potionDef } from '../../game/relics.ts'
-import type { CardInstance, Player } from '../../game/types.ts'
+import type { CardInstance, DownfallCharacterId, Player } from '../../game/types.ts'
 import { orbDisplayText } from '../TokenRow.tsx'
 
 /** The engine's phase names are for the engine; players get words. */
@@ -447,4 +450,63 @@ export function canAfford(
   return cost === 'X'
     ? maximumXEnergy(def, player) >= (def.minimumX ?? 0)
     : cost <= player.energy + (spendMiracle ? 1 : 0)
+}
+
+export function targetPresentationTiming(
+  state: CombatState,
+  targetId: string,
+  contacts: ReadonlyMap<string, TargetContactDeadline>,
+): { event?: CombatPresentationEvent; contact: number } {
+  const event = latestTargetPresentationEvent(state.presentationEvents, targetId)
+  if (!event) return { contact: 0 }
+  const scheduled = contacts.get(targetId)
+  if (!scheduled || scheduled.throughSeq < event.seq) return { event, contact: -1 }
+  const outstanding = Math.max(0, scheduled.at - performance.now())
+  if (outstanding > 0) return { event, contact: outstanding }
+  const slimeAnimation = event.kind === 'slime' ||
+    event.kind === 'card' && cardDef(event.sourceId).cardKind === 'slime'
+  return {
+    event,
+    contact: slimeAnimation ? -1 : characterAttackContactMs(state, targetId, event),
+  }
+}
+
+export function downfallEnergyOrbLayers(character: DownfallCharacterId, empty: boolean) {
+  const layers = character === 'guardian' ? ['6', '1', '2', '3', '4', '5', '7'] : ['1', '2', '3', '4', '5', '6']
+  const base = character === 'guardian' ? '7' : '6'
+  return layers.map((layer) => ({
+    layer,
+    src: assetPath(`combat/energy-orbs/${character}/layer${layer}${empty && layer !== base ? 'd' : ''}.png`),
+  }))
+}
+
+export function stageHermitChamberViewer(player: Player, card: CardInstance, free = false) {
+  const stagedCard = { ...card, hermitDeadOn: true, ...(free ? { freeThisTurn: true } : {}) }
+  return {
+    card: stagedCard,
+    player: {
+      ...player,
+      chamber: player.chamber.filter((held) => held.uid !== card.uid),
+      hand: [...player.hand, stagedCard],
+    },
+  }
+}
+
+export function chargedCardEnergy(def: CardDef, player: Player, card: CardInstance): number | undefined {
+  const cost = playCost(def, player, card)
+  return typeof cost === 'number' ? cost : undefined
+}
+
+// Alpha bounds locate the painted edge rather than transparent sprite padding.
+export function paintedLeft(image: HTMLImageElement): number {
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
+  const context = canvas.getContext('2d')!
+  context.drawImage(image, 0, 0)
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+  let left = canvas.width
+  for (let y = 0; y < canvas.height; y++) for (let x = 0; x < left; x++) {
+    if (pixels[(y * canvas.width + x) * 4 + 3]! > 32) { left = x; break }
+  }
+  return left / canvas.width
 }
