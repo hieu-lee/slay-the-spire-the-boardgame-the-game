@@ -25,6 +25,7 @@ import {
   activeGiveUpVote,
   dieRelicChoiceNeedsInput,
   fail,
+  fastClone,
   findSeat,
   prioritizePendingTrigger,
   roomCardPacks,
@@ -67,14 +68,18 @@ import {
  *
  * Discard and exhaust piles stay public — they are face up on the table.
  * `shared` must be fresh for one unchanged-room broadcast; it caches only
- * viewer-independent start-turn planning, never redacted player data.
+ * viewer-independent read-only structures (detached from live room state),
+ * never redacted player data.
  */
 export function snapshotFor(room, seatToken, shared = {}) {
   const seat = findSeat(room, seatToken)
-  deferStartTurnTriggersForPostRoll(room)
-  // Persist the empty post-roll decision before a broadcast derives the
-  // downstream quorum. This also normalizes rooms restored from older saves.
-  ensurePostRollChoiceWindowClosed(room)
+  if (!shared.normalized) {
+    deferStartTurnTriggersForPostRoll(room)
+    // Persist the empty post-roll decision before a broadcast derives the
+    // downstream quorum. This also normalizes rooms restored from older saves.
+    ensurePostRollChoiceWindowClosed(room)
+    shared.normalized = true
+  }
   const viewerId = seat?.playerId ?? null
   const run = Array.isArray(room.run?.players) ? room.run : null
   const queuedCopy = room.concurrentCardCopies?.findLast((copy) => copy.playerId === viewerId)
@@ -103,69 +108,157 @@ export function snapshotFor(room, seatToken, shared = {}) {
     } }
   }
   const visibleRun = run && visibleCombat !== run.combat ? { ...run, combat: visibleCombat } : run
-  const viewerPlayer = run?.players.find((player) => player.id === viewerId)
-  const pendingOwner = run?.phase === 'combat' ? undefined
-    : run?.players.find((player) => player.relics.some((relic) => relic.pending))
-  const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
-  const giveUpVote = activeGiveUpVote(room)
-  const postRollPending = run?.combat?.phase === 'start' && roomPostRollChoicePending(room)
-  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnAbilities')) {
-    shared.startTurnAbilities = plannedStartTurnAbilities(room)
-  }
-  const privateStartAbilities = run?.combat?.phase === 'start' ? shared.startTurnAbilities : undefined
-  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'savedStartTurnEnemyTargets')) {
-    shared.savedStartTurnEnemyTargets = savedStartTurnEnemyTargets(room)
-    shared.savedStartTurnChoiceIds = new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))
-    shared.pendingNoxiousFumes = pendingNoxiousFumes(room)
-  }
-  const startAbilityOwners = new Map(privateStartAbilities?.map((ability) => [ability.id, ability.playerId]) ?? [])
-  const visibleStartAbilities = postRollPending ? [] : privateStartAbilities?.map((ability) => ({
-    ...structuredClone(ability),
-    exhaustCards: ability.playerId === viewerId ? structuredClone(ability.exhaustCards) : undefined,
-  }))
-  const visibleStartChoices = run?.combat?.phase === 'start' && room.startTurnCombatId === run.combat.combatId
-    ? (room.startTurnChoices ?? []).map((choice) => ({
-      ...structuredClone(choice),
-      exhaustUids: startAbilityOwners.get(choice.id) === viewerId ? structuredClone(choice.exhaustUids) : undefined,
-      trigger: startAbilityOwners.get(choice.id) === viewerId ? structuredClone(choice.trigger) : undefined,
+  const viewerPlayer = viewerId !== null ? run?.players.find((player) => player.id === viewerId) : undefined
+
+  if (!Object.hasOwn(shared, 'topLevelReady')) {
+    shared.topLevelReady = true
+    shared.connectedPlayerIds = new Set(room.seats.filter((candidate) => candidate.connected).map((candidate) => candidate.playerId))
+    shared.metaOptions = fastClone(room.metaOptions ?? { mode: 'standard', modifiers: [], quickStartAct: 1 })
+    shared.cardPacks = run ? [...(run.meta?.cardPacks ?? [])] : roomCardPacks(room)
+    shared.seats = room.seats.map(seatPublic)
+    shared.roomIsCampfire = run?.phase === 'room' && currentRoom(run.map)?.kind === 'campfire'
+    shared.campfireDecided = Object.keys(room.campfireChoices ?? {})
+    shared.endTurnDecided = Object.entries(room.endTurnReady ?? room.endTurnOrders ?? {})
+      .filter(([playerId, decision]) => decision !== false &&
+        (run?.combat?.phase !== 'discard' || shared.connectedPlayerIds.has(playerId)))
+      .map(([playerId]) => playerId)
+    shared.endTurnRequired = run?.combat?.phase === 'discard'
+      ? run.combat.players
+        .filter((player) => discardNeedsChoice(player) && shared.connectedPlayerIds.has(player.id))
+        .map((player) => player.id)
+      : Object.keys(room.endTurnReady ?? {})
+    shared.cardChoicePlayerId = Object.keys(room.cardPreviews ?? {})[0] ??
+      Object.keys(room.powerPreviews ?? {})[0] ?? run?.combat?.pendingCardCopy?.playerId
+    shared.merchantReady = [...(room.merchantReady ?? [])]
+    shared.courierPledge = room.courierPledge ? fastClone(room.courierPledge) : undefined
+    shared.eventPledgePayments = room.eventPledge ? fastClone(room.eventPledge.payments) : undefined
+    const merchantEntries = Object.entries(room.merchantPledges ?? {})
+    shared.hasRemovalPledge = false
+    shared.publicMerchantPledges = merchantEntries.length === 0 ? {} : Object.fromEntries(merchantEntries.map(([key, pledge]) => {
+      if (pledge.kind === 'removal') shared.hasRemovalPledge = true
+      const copy = fastClone(pledge)
+      if (pledge.kind === 'removal') copy.cardUid = undefined
+      return [key, copy]
     }))
-    : undefined
-  const revisableStartTriggers = run?.combat?.phase === 'start' && !(run.combat.pendingTriggers ?? [])
-    .some((trigger) => trigger.playerId === viewerId)
-    ? room.startTurnStagedTriggers?.filter((trigger) => trigger.playerId === viewerId) ?? []
-    : []
-  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'pendingStartOwners')) {
+    shared.giveUpVote = activeGiveUpVote(room)
+    shared.campaignProgress = {
+      version: room.campaignProgress.version,
+      characters: fastClone(room.campaignProgress.characters),
+      colorless: room.campaignProgress.colorless,
+      actIV: room.campaignProgress.actIV,
+      unspentMarks: room.campaignProgress.unspentMarks,
+      highestAscension: room.campaignProgress.highestAscension,
+      nextRunNumber: room.campaignProgress.nextRunNumber ?? 0,
+      finishedRunIds: [...(room.campaignProgress.finishedRunIds ?? [])],
+    }
+    const pendingOwner = run?.phase === 'combat' ? undefined
+      : run?.players.find((player) => player.relics.some((relic) => relic.pending))
+    const pendingRelic = pendingOwner?.relics.find((relic) => relic.pending)
+    shared.pendingRelicStatus = pendingOwner && pendingRelic ? {
+      playerId: pendingOwner.id, playerName: pendingOwner.name, relicId: pendingRelic.defId,
+    } : null
+    shared.pendingAcquisitionPlayerIds = run
+      ? run.players.filter((player) => hasPendingRelicAcquisition(run, player.id)).map((player) => player.id)
+      : []
+    shared.startTurnScryPreview = run?.combat ? startTurnScryPreview(run.combat) : undefined
+    shared.startTurnDiscardPreview = run?.combat ? startTurnDiscardPreview(run.combat) : undefined
+  }
+
+  const inStartPhase = run?.combat?.phase === 'start'
+  if (inStartPhase && !Object.hasOwn(shared, 'startTurnReady')) {
+    shared.startTurnReady = true
+    const postRollPending = roomPostRollChoicePending(room)
+    shared.postRollPending = postRollPending
+    const privateStartAbilities = plannedStartTurnAbilities(room, shared)
+    shared.startTurnAbilities = privateStartAbilities
+    shared.savedStartTurnEnemyTargets = savedStartTurnEnemyTargets(room, privateStartAbilities)
+    shared.savedStartTurnChoiceIds = new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))
+    shared.pendingNoxiousFumes = pendingNoxiousFumes(room, privateStartAbilities, shared.savedStartTurnEnemyTargets)
+    shared.startAbilityOwners = new Map(privateStartAbilities.map((ability) => [ability.id, ability.playerId]))
+    shared.publicStartAbilities = postRollPending ? [] : privateStartAbilities.map((ability) => {
+      const copy = fastClone(ability)
+      copy.exhaustCards = undefined
+      return copy
+    })
+    shared.publicStartChoices = room.startTurnCombatId === run.combat.combatId
+      ? (room.startTurnChoices ?? []).map((choice) => {
+        const copy = fastClone(choice)
+        copy.exhaustUids = undefined
+        copy.trigger = undefined
+        return copy
+      })
+      : undefined
     shared.pendingStartOwners = new Set(!postRollPending
-      ? [shared.pendingNoxiousFumes?.playerId, ...((privateStartAbilities ?? [])
+      ? [shared.pendingNoxiousFumes?.playerId, ...(privateStartAbilities
         .filter((ability) => startTurnAbilityNeedsChoice(
           ability, shared.savedStartTurnEnemyTargets, shared.savedStartTurnChoiceIds,
         ))
         .map((ability) => ability.playerId)), ...(run.combat.pendingTriggers ?? [])
           .filter((trigger) => trigger.startTurn).map((trigger) => trigger.playerId)].filter(Boolean)
       : [])
-  }
-  const pendingStartOwners = run?.combat?.phase === 'start' ? shared.pendingStartOwners : new Set()
-  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnOrderOwner')) {
-    shared.startTurnOrderOwner = postRollPending
-      ? undefined : cachedStartTurnOrderChoicePlayerId(room, privateStartAbilities)
-  }
-  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnRequired')) {
+    const orderLocked = room.startTurnCombatId === run.combat.combatId && Array.isArray(room.startTurnOrder)
+    shared.startTurnOrderLocked = orderLocked
+    shared.startTurnOrderOwner = postRollPending || (orderLocked && room.startTurnRequired != null)
+      ? undefined : cachedStartTurnOrderChoicePlayerId(room, privateStartAbilities, shared)
     shared.startTurnRequired = room.startTurnRequired ?? roomStartTurnChoicePlayerIds(
       room, privateStartAbilities, false, [], shared.startTurnOrderOwner,
     )
-  }
-  const startTurnRequired = run?.combat?.phase === 'start' ? shared.startTurnRequired : undefined
-  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnOrderPending')) {
-    shared.startTurnOrderPending = startTurnOrderPending(
+    shared.startTurnOrderPending = orderLocked ? false : startTurnOrderPending(
       room, privateStartAbilities, shared.startTurnOrderOwner,
+      shared.savedStartTurnEnemyTargets, shared.pendingNoxiousFumes,
     )
-  }
-  if (run?.combat?.phase === 'start' && !Object.hasOwn(shared, 'startTurnCoordinatorId')) {
     shared.startTurnCoordinatorId = startTurnCoordinator(
       room, privateStartAbilities, shared.startTurnOrderOwner, shared.startTurnOrderPending,
-      shared.startTurnRequired,
+      shared.startTurnRequired, shared.savedStartTurnEnemyTargets, shared.pendingNoxiousFumes,
     )
+    shared.startTurnDecided = Object.entries(room.startTurnReady ?? {})
+      .filter(([playerId, ready]) => ready && !shared.pendingStartOwners.has(playerId))
+      .map(([playerId]) => playerId)
+    shared.startTurnPostRollLocked = roomPostRollChoiceDone(room)
+    shared.startTurnScryAbilities = startTurnScryAbilities(run.combat)
   }
+
+  const postRollPending = inStartPhase && shared.postRollPending
+  const privateStartAbilities = inStartPhase ? shared.startTurnAbilities : undefined
+  const startAbilityOwners = inStartPhase ? shared.startAbilityOwners : undefined
+  const visibleStartAbilities = !inStartPhase ? undefined : postRollPending ? []
+    : privateStartAbilities.some((ability) => ability.playerId === viewerId && ability.exhaustCards !== undefined)
+      ? privateStartAbilities.map((ability, index) => (
+        ability.playerId === viewerId && ability.exhaustCards !== undefined
+          ? { ...shared.publicStartAbilities[index], exhaustCards: fastClone(ability.exhaustCards) }
+          : shared.publicStartAbilities[index]
+      ))
+      : shared.publicStartAbilities
+  const rawStartChoices = inStartPhase && room.startTurnCombatId === run.combat.combatId
+    ? (room.startTurnChoices ?? []) : undefined
+  const visibleStartChoices = !rawStartChoices ? undefined
+    : rawStartChoices.some((choice) => startAbilityOwners.get(choice.id) === viewerId &&
+      (choice.exhaustUids !== undefined || choice.trigger !== undefined))
+      ? rawStartChoices.map((choice, index) => (
+        startAbilityOwners.get(choice.id) === viewerId
+          ? {
+            ...shared.publicStartChoices[index],
+            exhaustUids: fastClone(choice.exhaustUids),
+            trigger: fastClone(choice.trigger),
+          }
+          : shared.publicStartChoices[index]
+      ))
+      : shared.publicStartChoices
+  const revisableStartTriggers = inStartPhase && !(run.combat.pendingTriggers ?? [])
+    .some((trigger) => trigger.playerId === viewerId)
+    ? room.startTurnStagedTriggers?.filter((trigger) => trigger.playerId === viewerId) ?? []
+    : []
+  const giveUpVote = shared.giveUpVote
+  const scryPreview = shared.startTurnScryPreview
+  const discardPreview = shared.startTurnDiscardPreview
+  const merchantPledges = !shared.hasRemovalPledge
+    ? shared.publicMerchantPledges
+    : Object.fromEntries(Object.entries(room.merchantPledges ?? {}).map(([key, pledge]) => [
+      key,
+      pledge.kind === 'removal' && pledge.buyerId === viewerId
+        ? { ...shared.publicMerchantPledges[key], cardUid: pledge.cardUid }
+        : shared.publicMerchantPledges[key],
+    ]))
 
   return {
     code: room.code,
@@ -174,13 +267,13 @@ export function snapshotFor(room, seatToken, shared = {}) {
     ascension: room.ascension,
     chooseYourRelic: room.chooseYourRelic === true,
     lastStand: room.lastStand === true,
-    metaOptions: structuredClone(room.metaOptions ?? { mode: 'standard', modifiers: [], quickStartAct: 1 }),
+    metaOptions: shared.metaOptions,
     // In the lobby, the packs a run started now would use; once it starts, the packs it froze.
-    cardPacks: run ? [...(run.meta?.cardPacks ?? [])] : roomCardPacks(room),
+    cardPacks: shared.cardPacks,
     // Only a seat that played a recorded run hears of its coins, and only its own share.
     ...(seat && room.recordedRuns?.some((recorded) => Object.hasOwn(recorded.skips, seat.token)) ? {
       recordedRuns: room.recordedRuns.filter((recorded) => Object.hasOwn(recorded.skips, seat.token)).map((recorded) => ({
-        runId: recorded.runId, bossCoins: structuredClone(recorded.bossCoins), skip: recorded.skips[seat.token],
+        runId: recorded.runId, bossCoins: fastClone(recorded.bossCoins), skip: recorded.skips[seat.token],
       })),
     } : {}),
     version: room.version,
@@ -191,7 +284,7 @@ export function snapshotFor(room, seatToken, shared = {}) {
     campfireChoice: viewerId !== null && room.campfireChoices?.[viewerId]
       ? { ...room.campfireChoices[viewerId] }
       : undefined,
-    campfireTransformAvailable: run?.phase === 'room' && currentRoom(run.map)?.kind === 'campfire'
+    campfireTransformAvailable: shared.roomIsCampfire
       ? viewerPlayer ? campfireTransformAvailable(viewerPlayer) : undefined
       : undefined,
     quickSetupTransformAvailable: run?.phase === 'setup' && run.setup &&
@@ -199,58 +292,42 @@ export function snapshotFor(room, seatToken, shared = {}) {
       run.setup.playerIds[run.setup.playerIndex] === viewerId && viewerPlayer
       ? availableTransformRewards(viewerPlayer) > 0 : undefined,
     /** Seats that have chosen at the campfire, so the UI can show who is left. */
-    campfireDecided: Object.keys(room.campfireChoices ?? {}),
-    endTurnDecided: Object.entries(room.endTurnReady ?? room.endTurnOrders ?? {})
-      .filter(([playerId, decision]) => decision !== false && (run?.combat?.phase !== 'discard' || room.seats
-        .some((candidate) => candidate.connected && candidate.playerId === playerId))).map(([playerId]) => playerId),
-    endTurnRequired: run?.combat?.phase === 'discard'
-      ? run.combat.players.filter((player) => discardNeedsChoice(player) && room.seats
-        .some((candidate) => candidate.connected && candidate.playerId === player.id)).map((player) => player.id)
-      : Object.keys(room.endTurnReady ?? {}),
+    campfireDecided: shared.campfireDecided,
+    endTurnDecided: shared.endTurnDecided,
+    endTurnRequired: shared.endTurnRequired,
     endTurnTopPlayerIds: run?.combat?.phase === 'discard'
-      ? run.combat.players.filter((player) => player.id === viewerId && discardTopNeedsChoice(player) && room.seats
-        .some((candidate) => candidate.connected && candidate.playerId === player.id)).map((player) => player.id)
+      ? run.combat.players
+        .filter((player) => player.id === viewerId && discardTopNeedsChoice(player) && shared.connectedPlayerIds.has(player.id))
+        .map((player) => player.id)
       : undefined,
     endTurnAbilities: visibleEndTurnAbilities(room, viewerId),
     startTurnAbilities: visibleStartAbilities,
-    startTurnRequired: room.startTurnRequired ?? startTurnRequired,
-    startTurnDecided: run?.combat?.phase === 'start'
-      ? Object.entries(room.startTurnReady ?? {})
-        .filter(([playerId, ready]) => ready && !pendingStartOwners.has(playerId)).map(([playerId]) => playerId)
-      : undefined,
-    startTurnChoiceId: run?.combat?.phase === 'start' && !postRollPending
+    startTurnRequired: room.startTurnRequired ?? (inStartPhase ? shared.startTurnRequired : undefined),
+    startTurnDecided: inStartPhase ? shared.startTurnDecided : undefined,
+    startTurnChoiceId: inStartPhase && !postRollPending
       ? shared.pendingNoxiousFumes?.id : undefined,
-    startTurnEnemyTargets: run?.combat?.phase === 'start' ? shared.savedStartTurnEnemyTargets : undefined,
+    startTurnEnemyTargets: inStartPhase ? shared.savedStartTurnEnemyTargets : undefined,
     startTurnChoices: visibleStartChoices,
     stagedStartTurnTriggers: revisableStartTriggers.flatMap((trigger) => {
       const ability = pendingTriggerAbility({
         ...run.combat, pendingTriggers: [trigger, ...(run.combat.pendingTriggers ?? [])],
       })
-      return ability?.playerId === viewerId ? [{ ...structuredClone(ability),
+      return ability?.playerId === viewerId ? [{ ...fastClone(ability),
         choiceId: `${trigger.playerId}/${trigger.sourceId}` }] : []
     }),
-    startTurnPostRollLocked: run?.combat?.phase === 'start' ? roomPostRollChoiceDone(room) : undefined,
-    startTurnOrderPending: run?.combat?.phase === 'start' ? shared.startTurnOrderPending : undefined,
-    startTurnOrderLocked: run?.combat?.phase === 'start' &&
-      room.startTurnCombatId === run.combat.combatId && Array.isArray(room.startTurnOrder),
-    startTurnScryAbilities: run?.combat?.phase === 'start'
-      ? startTurnScryAbilities(run.combat)
-      : undefined,
-    startTurnCoordinatorId: run?.combat?.phase === 'start' ? shared.startTurnCoordinatorId : undefined,
-    startTurnScry: run?.combat ? (() => {
-      const preview = startTurnScryPreview(run.combat)
-      return preview ? {
-        ...preview,
-        cards: preview.playerId === viewerId ? structuredClone(preview.cards) : null,
-      } : undefined
-    })() : undefined,
-    startTurnDiscard: run?.combat ? (() => {
-      const preview = startTurnDiscardPreview(run.combat)
-      return preview ? {
-        ...preview,
-        cards: preview.playerId === viewerId ? structuredClone(preview.cards) : null,
-      } : undefined
-    })() : undefined,
+    startTurnPostRollLocked: inStartPhase ? shared.startTurnPostRollLocked : undefined,
+    startTurnOrderPending: inStartPhase ? shared.startTurnOrderPending : undefined,
+    startTurnOrderLocked: inStartPhase ? shared.startTurnOrderLocked : false,
+    startTurnScryAbilities: inStartPhase ? shared.startTurnScryAbilities : undefined,
+    startTurnCoordinatorId: inStartPhase ? shared.startTurnCoordinatorId : undefined,
+    startTurnScry: scryPreview ? {
+      ...scryPreview,
+      cards: scryPreview.playerId === viewerId ? fastClone(scryPreview.cards) : null,
+    } : undefined,
+    startTurnDiscard: discardPreview ? {
+      ...discardPreview,
+      cards: discardPreview.playerId === viewerId ? fastClone(discardPreview.cards) : null,
+    } : undefined,
     discardOrder: viewerId !== null && room.endTurnOrders?.[viewerId]
       ? [...room.endTurnOrders[viewerId]]
       : undefined,
@@ -258,49 +335,33 @@ export function snapshotFor(room, seatToken, shared = {}) {
       ? visibleCardPreview(room.cardPreviews[viewerId])
       : undefined,
     powerPreview: viewerId !== null && room.powerPreviews?.[viewerId]
-      ? structuredClone(room.powerPreviews[viewerId])
+      ? fastClone(room.powerPreviews[viewerId])
       : undefined,
-    cardChoicePlayerId: Object.keys(room.cardPreviews ?? {})[0] ??
-      Object.keys(room.powerPreviews ?? {})[0] ?? run?.combat?.pendingCardCopy?.playerId,
-    merchantPledges: Object.fromEntries(Object.entries(room.merchantPledges ?? {}).map(([key, pledge]) => [key, {
-      ...structuredClone(pledge),
-      cardUid: pledge.kind === 'removal' && pledge.buyerId !== viewerId ? undefined : pledge.cardUid,
-    }])),
-    merchantReady: [...(room.merchantReady ?? [])],
-    courierPledge: room.courierPledge ? structuredClone(room.courierPledge) : undefined,
+    cardChoicePlayerId: shared.cardChoicePlayerId,
+    merchantPledges,
+    merchantReady: shared.merchantReady,
+    courierPledge: shared.courierPledge,
     eventPledge: room.eventPledge ? {
       actorId: room.eventPledge.actorId,
       optionId: room.eventPledge.optionId,
       cost: room.eventPledge.cost,
-      payments: structuredClone(room.eventPledge.payments),
+      payments: shared.eventPledgePayments,
       decision: room.eventPledge.actorId === viewerId
-        ? structuredClone(room.eventPledge.decision)
+        ? fastClone(room.eventPledge.decision)
         : { optionIds: [room.eventPledge.optionId] },
     } : undefined,
     eventCanSkip: viewerId !== null && run ? canSkipEvent(run, viewerId) : false,
     unavailableEventOptionIds: viewerId !== null && run ? unavailableEventOptionIds(run, viewerId) : [],
     giveUpVote: giveUpVote && viewerId && giveUpVote.eligiblePlayerIds.includes(viewerId) ? {
-      ...structuredClone(giveUpVote),
+      ...fastClone(giveUpVote),
       remainingMs: Math.max(0, giveUpVote.deadlineAt - Date.now()),
     } : undefined,
-    campaignProgress: {
-      version: room.campaignProgress.version,
-      characters: structuredClone(room.campaignProgress.characters),
-      colorless: room.campaignProgress.colorless,
-      actIV: room.campaignProgress.actIV,
-      unspentMarks: room.campaignProgress.unspentMarks,
-      highestAscension: room.campaignProgress.highestAscension,
-      nextRunNumber: room.campaignProgress.nextRunNumber ?? 0,
-      finishedRunIds: [...(room.campaignProgress.finishedRunIds ?? [])],
-    },
-    seats: room.seats.map(seatPublic),
+    campaignProgress: shared.campaignProgress,
+    seats: shared.seats,
     pendingRelic: viewerId && run ? pendingRelicPreview(run, viewerId) : null,
-    pendingRelicStatus: pendingOwner && pendingRelic ? {
-      playerId: pendingOwner.id, playerName: pendingOwner.name, relicId: pendingRelic.defId,
-    } : null,
-    pendingTeammateAcquisitionPlayerId: run?.players.find((player) =>
-      player.id !== viewerId && hasPendingRelicAcquisition(run, player.id))?.id ?? null,
-    run: visibleRun ? redactRun(visibleRun, viewerId, room) : null,
+    pendingRelicStatus: shared.pendingRelicStatus,
+    pendingTeammateAcquisitionPlayerId: shared.pendingAcquisitionPlayerIds.find((id) => id !== viewerId) ?? null,
+    run: visibleRun ? redactRun(visibleRun, viewerId, room, shared) : null,
   }
 }
 
@@ -336,265 +397,293 @@ function publicEndTurnId(room, id) {
   return publicId
 }
 
-function redactRun(run, viewerId, room) {
-  const viewerCharacter = run.players.find((player) => player.id === viewerId)?.character
-  const preparedCombat = run.roomState?.kind === 'event' ? run.roomState.preparedCombat : undefined
+function initSharedRun(baseRun, room, shared) {
+  if (shared.run) return shared.run
+  const preparedCombat = baseRun.roomState?.kind === 'event' ? baseRun.roomState.preparedCombat : undefined
   const preparedScry = preparedCombat ? startTurnScryPreview(preparedCombat) : undefined
-  const roomState = run.roomState?.kind === 'event'
-    ? {
-        kind: 'event',
-        card: structuredClone(run.roomState.card),
-        decisions: Object.fromEntries(Object.entries(run.roomState.decisions).map(([playerId, decision]) => [
-          playerId,
-          playerId === viewerId ? structuredClone(decision) : { optionIds: [...decision.optionIds] },
-        ])),
-        dieRolls: structuredClone(run.roomState.dieRolls),
-        rewardOffers: Object.fromEntries(Object.entries(run.roomState.rewardOffers ?? {}).map(([playerId, offers]) => [
-          playerId,
-          playerId === viewerId ? structuredClone(offers) : offers.map(() => []),
-        ])),
-        guardianGemOffers: Object.fromEntries(Object.entries(run.roomState.guardianGemOffers ?? {}).map(([playerId, offers]) => [
-          playerId,
-          playerId === viewerId ? structuredClone(offers) : offers.map(() => []),
-        ])),
-        itemOffers: structuredClone(run.roomState.itemOffers ?? {}),
-        pendingDecisions: viewerId && run.roomState.pendingDecisions?.[viewerId]
-          ? { [viewerId]: structuredClone(run.roomState.pendingDecisions[viewerId]) }
-          : {},
-        pendingRolls: viewerId && run.roomState.pendingRolls?.[viewerId]
-          ? { [viewerId]: structuredClone(run.roomState.pendingRolls[viewerId]) }
-          : {},
-        revealedCards: structuredClone(run.roomState.revealedCards ?? {}),
-        revealedCardDefs: structuredClone(run.roomState.revealedCardDefs ?? {}),
-        revealedRelics: structuredClone(run.roomState.revealedRelics ?? {}),
-        availableRewardSources: structuredClone(run.roomState.availableRewardSources),
-        partyOptionIds: structuredClone(run.roomState.partyOptionIds),
-        preparedStartTurnScryAbilities: preparedCombat ? startTurnScryAbilities(preparedCombat) : undefined,
-        preparedStartTurnScry: preparedScry ? {
-          ...preparedScry,
-          cards: preparedScry.playerId === viewerId ? structuredClone(preparedScry.cards) : null,
-        } : undefined,
-        preparedStartTurnCoordinatorId: preparedCombat
-          ? room.seats.find((seat) => seat.connected !== false && preparedCombat.players
-              .some((player) => player.id === seat.playerId && !player.dead))?.playerId ?? null
-          : undefined,
-        preparedCombat: run.roomState.preparedCombat
-          ? { players: run.roomState.preparedCombat.players.map((player) => ({
-              id: player.id,
-              hand: player.id === viewerId ? structuredClone(player.hand) : null,
-            })),
-            enemies: run.roomState.preparedCombat.enemies.map((enemy) => ({
-              uid: enemy.uid,
-              defId: enemy.defId,
-              row: enemy.row,
-              isBoss: enemy.isBoss,
-              ascension: enemy.ascension,
-              hp: enemy.hp,
-              maxHp: enemy.maxHp,
-              dead: enemy.dead,
-            })),
-            ...(run.roomState.preparedCombat.pendingHermitSetupLoads?.length ? {
-              pendingHermitSetupLoads: structuredClone(run.roomState.preparedCombat.pendingHermitSetupLoads),
-            } : {}),
-          }
-          : undefined,
-        pendingTrade: run.roomState.pendingTrade
-          ? viewerId === run.roomState.pendingTrade.actorId || viewerId === run.roomState.pendingTrade.targetId
-            ? {
-              ...structuredClone(run.roomState.pendingTrade),
-              decision: viewerId === run.roomState.pendingTrade.actorId
-                ? structuredClone(run.roomState.pendingTrade.decision)
-                : { optionIds: [...run.roomState.pendingTrade.decision.optionIds], targetPlayerId: run.roomState.pendingTrade.targetId },
-            }
-            : {
-                actorId: run.roomState.pendingTrade.actorId,
-                targetId: run.roomState.pendingTrade.targetId,
-                kind: run.roomState.pendingTrade.kind,
-                offeredId: '',
-                decision: { optionIds: [], targetPlayerId: run.roomState.pendingTrade.targetId },
-              }
-          : undefined,
-        labChoices: Object.fromEntries(Object.keys(run.roomState.labChoices ?? {}).map((playerId) => [playerId, playerId === viewerId ? structuredClone(run.roomState.labChoices[playerId]) : { optionIds: ['resolve'] }])),
-      }
-    : run.roomState?.kind === 'treasure' || run.roomState?.kind === 'elite'
-      ? {
-          ...structuredClone(run.roomState),
-          decisions: Object.fromEntries(Object.entries(run.roomState.decisions).map(([playerId, decision]) => [
-            playerId,
-            playerId === viewerId || typeof decision === 'number' ? decision : 'skip',
-          ])),
+  let roomStateShared = null
+  if (baseRun.roomState?.kind === 'event') {
+    const rs = baseRun.roomState
+    roomStateShared = {
+      kind: 'event',
+      card: fastClone(rs.card),
+      publicDecisions: Object.fromEntries(Object.entries(rs.decisions).map(([playerId, decision]) => [
+        playerId,
+        { optionIds: [...decision.optionIds] },
+      ])),
+      dieRolls: fastClone(rs.dieRolls),
+      publicRewardOffers: Object.fromEntries(Object.entries(rs.rewardOffers ?? {}).map(([playerId, offers]) => [
+        playerId,
+        offers.map(() => []),
+      ])),
+      publicGuardianGemOffers: Object.fromEntries(Object.entries(rs.guardianGemOffers ?? {}).map(([playerId, offers]) => [
+        playerId,
+        offers.map(() => []),
+      ])),
+      itemOffers: fastClone(rs.itemOffers ?? {}),
+      revealedCards: fastClone(rs.revealedCards ?? {}),
+      revealedCardDefs: fastClone(rs.revealedCardDefs ?? {}),
+      revealedRelics: fastClone(rs.revealedRelics ?? {}),
+      availableRewardSources: fastClone(rs.availableRewardSources),
+      partyOptionIds: fastClone(rs.partyOptionIds),
+      preparedStartTurnScryAbilities: preparedCombat ? startTurnScryAbilities(preparedCombat) : undefined,
+      preparedScry,
+      preparedStartTurnCoordinatorId: preparedCombat
+        ? room.seats.find((seat) => seat.connected !== false && preparedCombat.players
+            .some((player) => player.id === seat.playerId && !player.dead))?.playerId ?? null
+        : undefined,
+      preparedCombatEnemies: preparedCombat
+        ? preparedCombat.enemies.map((enemy) => ({
+          uid: enemy.uid,
+          defId: enemy.defId,
+          row: enemy.row,
+          isBoss: enemy.isBoss,
+          ascension: enemy.ascension,
+          hp: enemy.hp,
+          maxHp: enemy.maxHp,
+          dead: enemy.dead,
+        }))
+        : undefined,
+      preparedCombatHermitSetupLoads: preparedCombat?.pendingHermitSetupLoads?.length
+        ? fastClone(preparedCombat.pendingHermitSetupLoads)
+        : undefined,
+      publicLabChoices: Object.fromEntries(Object.keys(rs.labChoices ?? {}).map((playerId) => [
+        playerId,
+        { optionIds: ['resolve'] },
+      ])),
+    }
+  } else if (baseRun.roomState?.kind === 'treasure' || baseRun.roomState?.kind === 'elite') {
+    roomStateShared = { kind: 'cloned', base: fastClone(baseRun.roomState) }
+  } else if (baseRun.roomState) {
+    roomStateShared = { kind: 'plain', value: fastClone(baseRun.roomState) }
+  }
+
+  const sharedRun = {
+    meta: fastClone(baseRun.meta ?? { mode: 'standard', modifierIds: [] }),
+    setup: baseRun.setup ? fastClone(baseRun.setup) : null,
+    publicNeow: baseRun.neow ? Object.fromEntries(Object.keys(baseRun.neow.players).map((playerId) => [
+      playerId,
+      neowPreview(baseRun, playerId, null),
+    ])) : null,
+    canRerollDownfallSelfBoss: canRerollDownfallSelfBoss(baseRun),
+    map: visibleMap(baseRun),
+    publicPlayers: baseRun.players.map(redactPlayerPublic),
+    publicRewards: baseRun.rewards.map((offer) => {
+      const {
+        choices: _choices, cardSource: _cardSource, prismatic: _prismatic, upgraded: _upgraded,
+        rareChoiceIndices: _rareChoiceIndices, cardsDrawn: _cardsDrawn, raresDrawn: _raresDrawn,
+        drawsReserved: _drawsReserved, prismaticSources: _prismaticSources,
+        prismaticDraws: _prismaticDraws, availableSources: _availableSources,
+        guardianGems: _guardianGems, potionQueue, ...publicOffer
+      } = offer
+      const maskedPotionQueue = potionQueue?.map(() => null)
+      return { publicOffer: { ...publicOffer, choices: null, potionQueue: maskedPotionQueue }, maskedPotionQueue }
+    }),
+    roomStateShared,
+    courier: fastClone(baseRun.courier),
+    campaignBase: {
+      runId: baseRun.campaign.runId,
+      bossesDefeated: baseRun.campaign.bossesDefeated,
+      highestBossActDefeated: baseRun.campaign.highestBossActDefeated,
+      ...(baseRun.campaign.bossCoins ? { bossCoins: fastClone(baseRun.campaign.bossCoins) } : {}),
+      keys: fastClone(baseRun.campaign.keys),
+      finalized: baseRun.campaign.finalized,
+    },
+  }
+  shared.run = sharedRun
+  return sharedRun
+}
+
+function redactRun(run, viewerId, room, shared) {
+  const sharedRun = initSharedRun(room.run, room, shared)
+  const viewerCharacter = viewerId !== null ? run.players.find((player) => player.id === viewerId)?.character : undefined
+  const rsShared = sharedRun.roomStateShared
+  let roomState = null
+  if (rsShared?.kind === 'event') {
+    const rs = run.roomState
+    const decisions = viewerId && Object.hasOwn(rs.decisions, viewerId)
+      ? { ...rsShared.publicDecisions, [viewerId]: fastClone(rs.decisions[viewerId]) }
+      : rsShared.publicDecisions
+    const rewardOffers = viewerId && rs.rewardOffers && Object.hasOwn(rs.rewardOffers, viewerId)
+      ? { ...rsShared.publicRewardOffers, [viewerId]: fastClone(rs.rewardOffers[viewerId]) }
+      : rsShared.publicRewardOffers
+    const guardianGemOffers = viewerId && rs.guardianGemOffers && Object.hasOwn(rs.guardianGemOffers, viewerId)
+      ? { ...rsShared.publicGuardianGemOffers, [viewerId]: fastClone(rs.guardianGemOffers[viewerId]) }
+      : rsShared.publicGuardianGemOffers
+    const labChoices = viewerId && rs.labChoices && Object.hasOwn(rs.labChoices, viewerId)
+      ? { ...rsShared.publicLabChoices, [viewerId]: fastClone(rs.labChoices[viewerId]) }
+      : rsShared.publicLabChoices
+    roomState = {
+      kind: 'event',
+      card: rsShared.card,
+      decisions,
+      dieRolls: rsShared.dieRolls,
+      rewardOffers,
+      guardianGemOffers,
+      itemOffers: rsShared.itemOffers,
+      pendingDecisions: viewerId && rs.pendingDecisions?.[viewerId]
+        ? { [viewerId]: fastClone(rs.pendingDecisions[viewerId]) }
+        : {},
+      pendingRolls: viewerId && rs.pendingRolls?.[viewerId]
+        ? { [viewerId]: fastClone(rs.pendingRolls[viewerId]) }
+        : {},
+      revealedCards: rsShared.revealedCards,
+      revealedCardDefs: rsShared.revealedCardDefs,
+      revealedRelics: rsShared.revealedRelics,
+      availableRewardSources: rsShared.availableRewardSources,
+      partyOptionIds: rsShared.partyOptionIds,
+      preparedStartTurnScryAbilities: rsShared.preparedStartTurnScryAbilities,
+      preparedStartTurnScry: rsShared.preparedScry ? {
+        ...rsShared.preparedScry,
+        cards: rsShared.preparedScry.playerId === viewerId ? fastClone(rsShared.preparedScry.cards) : null,
+      } : undefined,
+      preparedStartTurnCoordinatorId: rsShared.preparedStartTurnCoordinatorId,
+      preparedCombat: rs.preparedCombat
+        ? {
+          players: rs.preparedCombat.players.map((player) => ({
+            id: player.id,
+            hand: player.id === viewerId ? fastClone(player.hand) : null,
+          })),
+          enemies: rsShared.preparedCombatEnemies,
+          ...(rsShared.preparedCombatHermitSetupLoads ? {
+            pendingHermitSetupLoads: rsShared.preparedCombatHermitSetupLoads,
+          } : {}),
         }
-      : run.roomState ? structuredClone(run.roomState) : null
+        : undefined,
+      pendingTrade: rs.pendingTrade
+        ? viewerId === rs.pendingTrade.actorId || viewerId === rs.pendingTrade.targetId
+          ? {
+            ...fastClone(rs.pendingTrade),
+            decision: viewerId === rs.pendingTrade.actorId
+              ? fastClone(rs.pendingTrade.decision)
+              : { optionIds: [...rs.pendingTrade.decision.optionIds], targetPlayerId: rs.pendingTrade.targetId },
+          }
+          : {
+            actorId: rs.pendingTrade.actorId,
+            targetId: rs.pendingTrade.targetId,
+            kind: rs.pendingTrade.kind,
+            offeredId: '',
+            decision: { optionIds: [], targetPlayerId: rs.pendingTrade.targetId },
+          }
+        : undefined,
+      labChoices,
+    }
+  } else if (rsShared?.kind === 'cloned') {
+    roomState = {
+      ...rsShared.base,
+      decisions: Object.fromEntries(Object.entries(run.roomState.decisions).map(([playerId, decision]) => [
+        playerId,
+        playerId === viewerId || typeof decision === 'number' ? decision : 'skip',
+      ])),
+    }
+  } else if (rsShared?.kind === 'plain') {
+    roomState = rsShared.value
+  }
+
   return {
     ascension: run.ascension,
     chooseYourRelic: run.chooseYourRelic,
     lastStand: run.lastStand,
-    meta: structuredClone(run.meta ?? { mode: 'standard', modifierIds: [] }),
-    setup: run.setup ? structuredClone(run.setup) : null,
+    meta: sharedRun.meta,
+    setup: sharedRun.setup,
     act: run.act,
     phase: run.phase,
     // Dealt Blessing faces are public; card offers and the remaining shuffled
     // deck stay private to the owner and authoritative table respectively.
     neow: run.neow ? {
-      players: Object.fromEntries(Object.keys(run.neow.players).map((playerId) => [
-        playerId,
-        neowPreview(run, playerId, viewerId),
-      ])),
+      players: viewerId && Object.hasOwn(run.neow.players, viewerId)
+        ? { ...sharedRun.publicNeow, [viewerId]: neowPreview(run, viewerId, viewerId) }
+        : sharedRun.publicNeow,
     } : null,
     pendingBossDefId: null,
     pendingGuardianSockets: (run.pendingGuardianSockets ?? [])
       .filter((pending, index) => run.phase === 'reward' ? pending.playerId === viewerId : index === 0)
       .slice(0, 1)
-      .map((pending) => pending.playerId === viewerId ? structuredClone(pending) : { playerId: pending.playerId }),
+      .map((pending) => pending.playerId === viewerId ? fastClone(pending) : { playerId: pending.playerId }),
     // Public, unlike `pendingBossDefId`: setup rolls this act's boss in the open
     // before anybody moves, and the map names it so decks can be built for it.
     // The Ascension 13 SECOND Act III boss above stays hidden — that one is not
     // rolled at the table, it is drawn when the first boss falls.
     actBossDefId: run.actBossDefId ?? null,
-    canRerollDownfallSelfBoss: canRerollDownfallSelfBoss(run),
-    map: visibleMap(run),
+    canRerollDownfallSelfBoss: sharedRun.canRerollDownfallSelfBoss,
+    map: sharedRun.map,
     // Public facts only: "Ann played Strike", "Turn 1 begins (die 3)".
     log: run.log,
-    players: run.players.map((player) => redactPlayer(player, viewerId)),
-    combat: run.combat ? redactCombat(run.combat, viewerId) : null,
+    players: run.players.map((player, index) => redactPlayerForViewer(player, sharedRun.publicPlayers[index], viewerId)),
+    combat: run.combat ? redactCombat(run.combat, viewerId, room.run.combat, shared) : null,
     // Card rewards belong to their owner: teammates know a reward exists but
     // never receive the offered cards or the server-side draw bookkeeping.
-    rewards: run.rewards.map((offer) => {
-      if (offer.playerId === viewerId) return { ...offer, potionQueue: offer.potionQueue?.map(() => null) }
-      const {
-        choices, cardSource, prismatic, upgraded, rareChoiceIndices, cardsDrawn, raresDrawn,
-        drawsReserved, prismaticSources, prismaticDraws, availableSources, guardianGems, potionQueue,
-        ...publicOffer
-      } = offer
-      return { ...publicOffer, choices: null, potionQueue: potionQueue?.map(() => null) }
+    rewards: run.rewards.map((offer, index) => {
+      const entry = sharedRun.publicRewards[index]
+      if (offer.playerId === viewerId) return { ...offer, potionQueue: entry.maskedPotionQueue }
+      return entry.publicOffer
     }),
     roomState,
-    courier: structuredClone(run.courier),
-    campaign: {
-      runId: run.campaign.runId,
-      bossesDefeated: run.campaign.bossesDefeated,
-      highestBossActDefeated: run.campaign.highestBossActDefeated,
-      ...(run.campaign.bossCoins ? { bossCoins: structuredClone(run.campaign.bossCoins) } : {}),
-      // A Catch Up joiner is owed only the bosses beaten after their hero arrived.
-      ...(viewerCharacter && run.campaign.joinedAfterBosses?.[viewerCharacter]
-        ? { joinedAfterBosses: { [viewerCharacter]: run.campaign.joinedAfterBosses[viewerCharacter] } } : {}),
-      keys: structuredClone(run.campaign.keys),
-      finalized: run.campaign.finalized,
-    },
+    courier: sharedRun.courier,
+    campaign: viewerCharacter && run.campaign.joinedAfterBosses?.[viewerCharacter]
+      ? {
+        ...sharedRun.campaignBase,
+        // A Catch Up joiner is owed only the bosses beaten after their hero arrived.
+        joinedAfterBosses: { [viewerCharacter]: run.campaign.joinedAfterBosses[viewerCharacter] },
+      }
+      : sharedRun.campaignBase,
   }
 }
 
-function redactCombat(combat, viewerId) {
-  const progress = combat.startTurnProgress
-  const progressOwners = new Map(progress ? startTurnAbilities(combat)
-    .map((ability) => [ability.id, ability.playerId]) : [])
-  const startChoiceOwner = (choice) => progressOwners.get(choice.id) ?? combat.players.find((player) =>
+function startChoiceOwnerOf(combat, progressOwners, choice) {
+  return progressOwners?.get(choice.id) ?? combat.players.find((player) =>
     choice.id.startsWith(`${player.id}/`) || choice.id.startsWith(`${combat.combatId}/${combat.turn}/${player.id}/`) ||
     choice.id.startsWith(`facing:${player.id}`) || choice.id.startsWith(`guardian:${player.id}/`))?.id
-  const redactStartChoice = (choice) => ({
-    ...structuredClone(choice),
-    exhaustUids: startChoiceOwner(choice) === viewerId
-      ? structuredClone(choice.exhaustUids) : undefined,
-    trigger: startChoiceOwner(choice) === viewerId
-      ? structuredClone(choice.trigger) : undefined,
+}
+
+function initSharedCombat(baseCombat, shared) {
+  if (shared.combat) return shared.combat
+  const progress = baseCombat.startTurnProgress
+  const progressOwners = progress
+    ? new Map(startTurnAbilities(baseCombat).map((ability) => [ability.id, ability.playerId]))
+    : null
+  const progressChoiceOwners = progress?.choices?.map((choice) => startChoiceOwnerOf(baseCombat, progressOwners, choice))
+  const progressPublicChoices = progress?.choices?.map((choice) => {
+    const copy = fastClone(choice)
+    copy.exhaustUids = undefined
+    copy.trigger = undefined
+    return copy
   })
-  const visibleProgressChoices = progress?.choices?.map(redactStartChoice)
-  const viewerDieChoice = combat.pendingDieRelicChoices?.some((choice) =>
-    choice.playerId === viewerId && dieRelicChoiceNeedsInput(combat, choice))
-  const triggerCombat = viewerDieChoice
-    ? undefined : prioritizePendingTrigger(combat, (trigger) => trigger.playerId === viewerId)
-  const triggerPreview = triggerCombat && pendingTriggerAbility(triggerCombat)
-  return {
-    combatId: combat.combatId,
-    initialEnemyCount: initialEnemySlots(combat),
-    turn: combat.turn,
-    die: combat.die,
-    phase: combat.phase,
-    lastStand: combat.lastStand === true,
-    potionLimit: combat.potionLimit,
-    startTurnStage: combat.startTurnStage,
-    powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
-    pendingTriggers: structuredClone(combat.pendingTriggers ?? []),
-    pendingTriggerAbility: triggerPreview?.playerId === viewerId ? structuredClone(triggerPreview) : null,
-    // Trigger ids are server allocators, not client state. Masking them also
-    // prevents private draw reactions from becoming a count side channel.
-    nextTriggerId: 0,
-    startTurnProgress: progress ? {
-      choices: visibleProgressChoices,
-      beforeDraw: progress.beforeDraw ? structuredClone(progress.beforeDraw) : undefined,
-      rollPending: progress.rollPending ? structuredClone(progress.rollPending) : undefined,
-      discard: progress.discard ? {
-        playerId: progress.discard.playerId,
-        sourceId: progress.discard.sourceId,
-        // Draw reactions can reveal the privately drawn card's type. The
-        // authoritative queue stays server-side until the owner discards.
-        pendingTriggers: [],
-      } : undefined,
-      forcedCard: progress.forcedCard ? {
-        playerId: progress.forcedCard.playerId,
-        cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,
-        sourceCardId: progress.forcedCard.sourceCardId ?? 'mayhem',
-        sourceLabel: progress.forcedCard.sourceLabel,
-        exhaustNonPower: progress.forcedCard.exhaustNonPower === true,
-      } : undefined,
+  const sharedCombat = {
+    initialEnemyCount: initialEnemySlots(baseCombat),
+    pendingTriggers: fastClone(baseCombat.pendingTriggers ?? []),
+    progressOwners,
+    progressChoiceOwners,
+    progressPublicChoices,
+    progressBeforeDraw: progress?.beforeDraw ? fastClone(progress.beforeDraw) : undefined,
+    progressRollPending: progress?.rollPending ? fastClone(progress.rollPending) : undefined,
+    progressDiscard: progress?.discard ? {
+      playerId: progress.discard.playerId,
+      sourceId: progress.discard.sourceId,
+      // Draw reactions can reveal the privately drawn card's type. The
+      // authoritative queue stays server-side until the owner discards.
+      pendingTriggers: [],
     } : undefined,
-    pendingCardCopy: combat.pendingCardCopy ? {
-      id: combat.pendingCardCopy.playerId === viewerId ? combat.pendingCardCopy.id : 0,
-      playerId: combat.pendingCardCopy.playerId,
-      card: structuredClone(combat.pendingCardCopy.card),
-      energySpent: combat.pendingCardCopy.energySpent,
-      resumePhase: combat.pendingCardCopy.resumePhase,
-      forcedExhaust: combat.pendingCardCopy.forcedExhaust,
-      forcedChoices: combat.pendingCardCopy.forcedChoices?.map(redactStartChoice) ?? null,
-      deferredHavocs: structuredClone(combat.pendingCardCopy.deferredHavocs),
-      deferredTriggers: structuredClone(combat.pendingCardCopy.deferredTriggers ?? []),
-      sourceNames: structuredClone(combat.pendingCardCopy.sourceNames),
-      virtualOnly: combat.pendingCardCopy.virtualOnly === true,
-      queuedWeaves: combat.pendingCardCopy.playerId === viewerId
-        ? structuredClone(combat.pendingCardCopy.queuedWeaves ?? [])
-        : [],
-    } : undefined,
-    pendingDistilled: combat.pendingDistilled ? {
-      playerId: combat.pendingDistilled.playerId,
-      cards: combat.pendingDistilled.playerId === viewerId
-        ? structuredClone(combat.pendingDistilled.cards)
-        : null,
-    } : undefined,
-    pendingHermitSetupLoads: structuredClone(combat.pendingHermitSetupLoads ?? []),
-    pendingDieRelicChoices: structuredClone(combat.pendingDieRelicChoices ?? []),
-    pendingHermitChamberPlays: (combat.pendingHermitChamberPlays ?? []).map((pending) => ({
+    pendingHermitSetupLoads: fastClone(baseCombat.pendingHermitSetupLoads ?? []),
+    pendingDieRelicChoices: fastClone(baseCombat.pendingDieRelicChoices ?? []),
+    pendingHermitChamberPlaysPublic: (baseCombat.pendingHermitChamberPlays ?? []).map((pending) => ({
       playerId: pending.playerId,
       sourceCardId: pending.sourceCardId,
       free: pending.free,
-      cardUids: pending.playerId === viewerId ? structuredClone(pending.cardUids) : [],
+      cardUids: [],
       cardCount: pending.cardUids.length,
     })),
-    pendingHermitStrengthRewards: structuredClone(combat.pendingHermitStrengthRewards ?? []),
-    // Slayer Pack: A window offers private hand cards, so only its owner sees it.
-    ...(combat.pendingCardPlayWindows?.some((window) => window.playerId === viewerId) ? {
-      pendingCardPlayWindows: structuredClone(combat.pendingCardPlayWindows
-        .filter((window) => window.playerId === viewerId)),
-    } : {}),
-    // Slayer Pack: public: who owes which choice, never the cards it reveals.
-    pendingPlayerChoices: structuredClone(combat.pendingPlayerChoices ?? []),
-    // Slayer Pack: the revealed rare reward is its owner's alone.
-    ...(combat.pendingSlayerChoices?.length ? {
-      pendingSlayerChoices: combat.pendingSlayerChoices.map((choice) => choice.kind === 'ritualDagger'
-        ? { ...choice, revealed: choice.playerId === viewerId ? choice.revealed : null }
-        : structuredClone(choice)),
-    } : {}),
-    pendingPlunderSwitches: structuredClone(combat.pendingPlunderSwitches ?? []),
-    pendingRelicScry: combat.pendingRelicScry ? {
-      id: combat.pendingRelicScry.playerId === viewerId ? combat.pendingRelicScry.id : 0,
-      playerId: combat.pendingRelicScry.playerId,
-      relicIndex: combat.pendingRelicScry.relicIndex,
-      cards: combat.pendingRelicScry.playerId === viewerId
-        ? structuredClone(combat.pendingRelicScry.cards)
-        : null,
-    } : undefined,
-    playedCardsThisTurn: structuredClone(combat.playedCardsThisTurn ?? []),
-    viewerStanceChangedThisTurn: combat.stanceChangedThisTurn.includes(viewerId),
-    presentationEvents: (combat.presentationEvents ?? []).map((event) => ({
+    pendingHermitStrengthRewards: fastClone(baseCombat.pendingHermitStrengthRewards ?? []),
+    pendingPlayerChoices: fastClone(baseCombat.pendingPlayerChoices ?? []),
+    pendingSlayerChoicesPublic: baseCombat.pendingSlayerChoices?.length
+      ? baseCombat.pendingSlayerChoices.map((choice) => choice.kind === 'ritualDagger'
+        ? { ...choice, revealed: null }
+        : fastClone(choice))
+      : undefined,
+    pendingPlunderSwitches: fastClone(baseCombat.pendingPlunderSwitches ?? []),
+    playedCardsThisTurn: fastClone(baseCombat.playedCardsThisTurn ?? []),
+    stanceChangedSet: new Set(baseCombat.stanceChangedThisTurn),
+    presentationEvents: (baseCombat.presentationEvents ?? []).map((event) => ({
       seq: event.seq,
       kind: event.kind,
       actorId: event.actorId,
@@ -619,19 +708,159 @@ function redactCombat(combat, viewerId) {
       ...(event.kind === 'orb' ? { orb: event.orb } : {}),
       ...(event.kind === 'turn' ? { effect: event.effect, actorTargeted: event.actorTargeted } : {}),
     })),
+    pendingSummons: fastClone(baseCombat.pendingSummons ?? []),
+    enemies: baseCombat.enemies.map(({ poisonSources: _poisonSources, ...enemy }) => enemy),
+    publicPlayers: baseCombat.players.map(redactPlayerPublic),
+  }
+  shared.combat = sharedCombat
+  return sharedCombat
+}
+
+function redactCombat(combat, viewerId, baseCombat, shared) {
+  const sc = initSharedCombat(baseCombat, shared)
+  const progress = combat.startTurnProgress
+  const redactStartChoice = (choice) => {
+    const owner = startChoiceOwnerOf(combat, sc.progressOwners, choice)
+    const copy = fastClone(choice)
+    copy.exhaustUids = owner === viewerId ? fastClone(choice.exhaustUids) : undefined
+    copy.trigger = owner === viewerId ? fastClone(choice.trigger) : undefined
+    return copy
+  }
+  const visibleProgressChoices = !progress?.choices ? undefined
+    : sc.progressChoiceOwners && progress.choices === baseCombat.startTurnProgress?.choices
+      ? progress.choices.some((choice, index) => sc.progressChoiceOwners[index] === viewerId &&
+        (choice.exhaustUids !== undefined || choice.trigger !== undefined))
+        ? progress.choices.map((choice, index) => (
+          sc.progressChoiceOwners[index] === viewerId
+            ? {
+              ...sc.progressPublicChoices[index],
+              exhaustUids: fastClone(choice.exhaustUids),
+              trigger: fastClone(choice.trigger),
+            }
+            : sc.progressPublicChoices[index]
+        ))
+        : sc.progressPublicChoices
+      : progress.choices.map(redactStartChoice)
+
+  let triggerPreview = null
+  if ((combat.pendingTriggers?.length ?? 0) > 0) {
+    const viewerDieChoice = combat.pendingDieRelicChoices?.some((choice) =>
+      choice.playerId === viewerId && dieRelicChoiceNeedsInput(combat, choice))
+    const triggerCombat = viewerDieChoice
+      ? undefined : prioritizePendingTrigger(combat, (trigger) => trigger.playerId === viewerId)
+    const preview = triggerCombat && pendingTriggerAbility(triggerCombat)
+    if (preview?.playerId === viewerId) triggerPreview = fastClone(preview)
+  }
+
+  const chamberPlays = combat.pendingHermitChamberPlays
+  const visibleChamberPlays = !chamberPlays?.length ? sc.pendingHermitChamberPlaysPublic
+    : chamberPlays.some((pending) => pending.playerId === viewerId)
+      ? chamberPlays.map((pending, index) => (
+        pending.playerId === viewerId
+          ? { ...sc.pendingHermitChamberPlaysPublic[index], cardUids: fastClone(pending.cardUids) }
+          : sc.pendingHermitChamberPlaysPublic[index]
+      ))
+      : sc.pendingHermitChamberPlaysPublic
+
+  const slayerChoices = combat.pendingSlayerChoices
+  const visibleSlayerChoices = !slayerChoices?.length ? undefined
+    : slayerChoices.some((choice) => choice.kind === 'ritualDagger' && choice.playerId === viewerId)
+      ? slayerChoices.map((choice, index) => (
+        choice.kind === 'ritualDagger' && choice.playerId === viewerId
+          ? { ...choice, revealed: choice.revealed }
+          : sc.pendingSlayerChoicesPublic[index]
+      ))
+      : sc.pendingSlayerChoicesPublic
+
+  return {
+    combatId: combat.combatId,
+    initialEnemyCount: sc.initialEnemyCount,
+    turn: combat.turn,
+    die: combat.die,
+    phase: combat.phase,
+    lastStand: combat.lastStand === true,
+    potionLimit: combat.potionLimit,
+    startTurnStage: combat.startTurnStage,
+    powerTriggersUsedThisTurn: combat.powerTriggersUsedThisTurn ?? [],
+    pendingTriggers: sc.pendingTriggers,
+    pendingTriggerAbility: triggerPreview,
+    // Trigger ids are server allocators, not client state. Masking them also
+    // prevents private draw reactions from becoming a count side channel.
+    nextTriggerId: 0,
+    startTurnProgress: progress ? {
+      choices: visibleProgressChoices,
+      beforeDraw: progress.beforeDraw ? sc.progressBeforeDraw : undefined,
+      rollPending: progress.rollPending ? sc.progressRollPending : undefined,
+      discard: progress.discard ? sc.progressDiscard : undefined,
+      forcedCard: progress.forcedCard ? {
+        playerId: progress.forcedCard.playerId,
+        cardUid: progress.forcedCard.playerId === viewerId ? progress.forcedCard.cardUid : null,
+        sourceCardId: progress.forcedCard.sourceCardId ?? 'mayhem',
+        sourceLabel: progress.forcedCard.sourceLabel,
+        exhaustNonPower: progress.forcedCard.exhaustNonPower === true,
+      } : undefined,
+    } : undefined,
+    pendingCardCopy: combat.pendingCardCopy ? {
+      id: combat.pendingCardCopy.playerId === viewerId ? combat.pendingCardCopy.id : 0,
+      playerId: combat.pendingCardCopy.playerId,
+      card: fastClone(combat.pendingCardCopy.card),
+      energySpent: combat.pendingCardCopy.energySpent,
+      resumePhase: combat.pendingCardCopy.resumePhase,
+      forcedExhaust: combat.pendingCardCopy.forcedExhaust,
+      forcedChoices: combat.pendingCardCopy.forcedChoices?.map(redactStartChoice) ?? null,
+      deferredHavocs: fastClone(combat.pendingCardCopy.deferredHavocs),
+      deferredTriggers: fastClone(combat.pendingCardCopy.deferredTriggers ?? []),
+      sourceNames: fastClone(combat.pendingCardCopy.sourceNames),
+      virtualOnly: combat.pendingCardCopy.virtualOnly === true,
+      queuedWeaves: combat.pendingCardCopy.playerId === viewerId
+        ? fastClone(combat.pendingCardCopy.queuedWeaves ?? [])
+        : [],
+    } : undefined,
+    pendingDistilled: combat.pendingDistilled ? {
+      playerId: combat.pendingDistilled.playerId,
+      cards: combat.pendingDistilled.playerId === viewerId
+        ? fastClone(combat.pendingDistilled.cards)
+        : null,
+    } : undefined,
+    pendingHermitSetupLoads: sc.pendingHermitSetupLoads,
+    pendingDieRelicChoices: sc.pendingDieRelicChoices,
+    pendingHermitChamberPlays: visibleChamberPlays,
+    pendingHermitStrengthRewards: sc.pendingHermitStrengthRewards,
+    // Slayer Pack: A window offers private hand cards, so only its owner sees it.
+    ...(combat.pendingCardPlayWindows?.some((window) => window.playerId === viewerId) ? {
+      pendingCardPlayWindows: fastClone(combat.pendingCardPlayWindows
+        .filter((window) => window.playerId === viewerId)),
+    } : {}),
+    // Slayer Pack: public: who owes which choice, never the cards it reveals.
+    pendingPlayerChoices: sc.pendingPlayerChoices,
+    // Slayer Pack: the revealed rare reward is its owner's alone.
+    ...(visibleSlayerChoices ? { pendingSlayerChoices: visibleSlayerChoices } : {}),
+    pendingPlunderSwitches: sc.pendingPlunderSwitches,
+    pendingRelicScry: combat.pendingRelicScry ? {
+      id: combat.pendingRelicScry.playerId === viewerId ? combat.pendingRelicScry.id : 0,
+      playerId: combat.pendingRelicScry.playerId,
+      relicIndex: combat.pendingRelicScry.relicIndex,
+      cards: combat.pendingRelicScry.playerId === viewerId
+        ? fastClone(combat.pendingRelicScry.cards)
+        : null,
+    } : undefined,
+    playedCardsThisTurn: sc.playedCardsThisTurn,
+    viewerStanceChangedThisTurn: viewerId !== null && sc.stanceChangedSet.has(viewerId),
+    presentationEvents: sc.presentationEvents,
     // Pending summons are public telegraphed enemy-card effects; the shuffled
     // Summons deck itself remains server-only.
-    pendingSummons: structuredClone(combat.pendingSummons ?? []),
+    pendingSummons: sc.pendingSummons,
     log: combat.log,
     // Enemies carry nothing secret: hit points, tokens and the cube's position
     // are all printed on the card and face up on the table.
-    enemies: combat.enemies.map(({ poisonSources, ...enemy }) => enemy),
-    players: combat.players.map((player) => redactPlayer(player, viewerId)),
+    enemies: sc.enemies,
+    players: combat.players.map((player, index) => redactPlayerForViewer(player, sc.publicPlayers[index], viewerId)),
   }
 }
 
 /**
- * What one seat may see of a player.
+ * What every observer may see of a player (never includes hand, draw, chamber,
+ * deck, or private relic bookkeeping).
  *
  * An ALLOWLIST, deliberately. The obvious way to write this is to destructure
  * the secrets out and spread the rest — but then every field added to `Player`
@@ -639,8 +868,11 @@ function redactCombat(combat, viewerId) {
  * out means a new field is invisible until someone decides it is public, which
  * is the safe direction to fail in.
  */
-function redactPlayer(player, viewerId) {
-  const mine = player.id === viewerId
+function redactPlayerPublic(player) {
+  let tradableDeckCount = 0
+  for (let i = 0; i < player.deck.length; i += 1) {
+    if (player.deck[i].defId !== 'ascenders_bane') tradableDeckCount += 1
+  }
   return {
     id: player.id,
     name: player.name,
@@ -692,7 +924,7 @@ function redactPlayer(player, viewerId) {
     darkOrbEvokeBonus: player.darkOrbEvokeBonus ?? 0,
     orbEndTurnBonus: player.orbEndTurnBonus ?? 0,
     lightningEndTurnBonus: player.lightningEndTurnBonus ?? 0,
-    damageStats: structuredClone(player.damageStats),
+    damageStats: fastClone(player.damageStats),
     freeGemCardsThisTurn: player.freeGemCardsThisTurn ?? 0,
     freePowersThisTurn: player.freePowersThisTurn ?? 0,
     nextPowerOrSlimeDiscount: player.nextPowerOrSlimeDiscount,
@@ -708,14 +940,14 @@ function redactPlayer(player, viewerId) {
     vigor: player.vigor ?? 0,
     vigorSpentThisTurn: player.vigorSpentThisTurn ?? 0,
     guardianModeLocked: player.guardianModeLocked === true,
-    slimes: structuredClone(player.slimes ?? []),
+    slimes: fastClone(player.slimes ?? []),
     lootChests: player.lootChests ?? 0,
     dead: player.dead,
     // Face up on the table.
     discard: player.discard,
     exhaust: player.exhaust,
     powers: player.powers,
-    relics: mine ? player.relics : player.relics.map(({
+    relics: player.relics.map(({
       guardianGemGroups: _gems,
       pendingRewardDraws: _draws,
       pendingRewardIndices: _rewards,
@@ -730,16 +962,29 @@ function redactPlayer(player, viewerId) {
     handCount: player.hand.length,
     drawCount: player.draw.length,
     deckCount: player.deck.length,
-    tradableDeckCount: player.deck.filter((card) => card.defId !== 'ascenders_bane').length,
+    tradableDeckCount,
     // Face-down reward stacks, secret even from their owner until drawn.
     cardRewardCount: player.cardRewards.length,
     rareRewardCount: player.rareRewards.length,
-    // Yours alone. Hands are ordered; draw piles are sorted only to erase the
-    // authoritative top-to-bottom order before they reach the client.
-    hand: mine ? player.hand : null,
-    draw: mine ? [...player.draw].sort((left, right) =>
-      left.defId.localeCompare(right.defId) || left.uid.localeCompare(right.uid)) : null,
-    chamber: mine ? player.chamber ?? [] : null,
-    deck: mine ? player.deck : null,
+    // Yours alone — always nulled in the shared public projection.
+    hand: null,
+    draw: null,
+    chamber: null,
+    deck: null,
+  }
+}
+
+function redactPlayerForViewer(player, publicPlayer, viewerId) {
+  if (player.id !== viewerId) return publicPlayer
+  // Hands are ordered; draw piles are sorted only to erase the authoritative
+  // top-to-bottom order before they reach the client.
+  return {
+    ...publicPlayer,
+    relics: player.relics,
+    hand: player.hand,
+    draw: [...player.draw].sort((left, right) =>
+      left.defId.localeCompare(right.defId) || left.uid.localeCompare(right.uid)),
+    chamber: player.chamber ?? [],
+    deck: player.deck,
   }
 }

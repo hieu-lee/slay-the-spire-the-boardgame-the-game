@@ -20,7 +20,7 @@ import {
   startTurnChoicePlayerIds,
   startTurnOrderChoicePlayerId,
 } from '../../../src/game/combat/start-turn.ts'
-import { fail, prioritizePendingTrigger } from './shared.mjs'
+import { fail, fastClone, prioritizePendingTrigger } from './shared.mjs'
 
 /** Seats the server readied with fallback picks while they were away. */
 export function rememberAutoReadyStartTurn(room, playerIds) {
@@ -54,7 +54,7 @@ export function replayedStartTurnTrigger(room, combat, queued) {
     }))
   if (choices.length !== room.startTurnOrder.length) return null
   const replayed = continueStartTurn(
-    { ...structuredClone(combat), pendingTriggers: [] }, choices, undefined, queuedChoiceId,
+    { ...fastClone(combat), pendingTriggers: [] }, choices, undefined, queuedChoiceId,
   )
   const pending = prioritizePendingTrigger(replayed, (trigger) =>
     trigger.playerId === queued.playerId && trigger.sourceId === queued.sourceId)
@@ -68,15 +68,31 @@ export function savedStartTurnChoices(room) {
 
 const startTurnAbilitiesCache = new WeakMap()
 
-export function plannedStartTurnAbilities(room) {
+function startTurnPlanSignature(room) {
+  const combat = room.run?.combat
+  if (!combat) return ''
+  // Neither startTurnAbilities nor startTurnOrderChoicePlayerId reads combat.log
+  // or combat.presentationEvents; excluding them avoids re-serializing hundreds
+  // of log lines on every read while still invalidating on any in-place combat change.
+  const { log: _log, presentationEvents: _events, ...relevantCombat } = combat
+  const order = room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder)
+    ? room.startTurnOrder : undefined
+  // Before a shared order is committed, plannedStartTurnAbilities(room) only
+  // depends on `combat` (staged picks/targets are not passed into it), so
+  // staging choices before order commit must not invalidate the cached plan or
+  // order-owner simulation.
+  return order
+    ? JSON.stringify([relevantCombat, order, room.startTurnEnemyTargets, room.startTurnChoices])
+    : JSON.stringify(relevantCombat)
+}
+
+export function plannedStartTurnAbilities(room, shared) {
   const combat = room.run?.combat
   if (!combat) return []
   // Snapshot reads and authorization inspect the same plan repeatedly. Include
   // its contents so in-place effects and restored rooms invalidate it too.
-  const signature = JSON.stringify([
-    combat, room.startTurnCombatId, room.startTurnOrder,
-    room.startTurnEnemyTargets, room.startTurnChoices,
-  ])
+  const signature = shared?.startTurnPlanSignature ?? startTurnPlanSignature(room)
+  if (shared) shared.startTurnPlanSignature = signature
   const cached = startTurnAbilitiesCache.get(room)
   if (cached?.signature === signature) return cached.abilities
   const order = room.startTurnCombatId === combat.combatId ? room.startTurnOrder : undefined
@@ -98,20 +114,18 @@ export function plannedStartTurnAbilities(room) {
 // state change invalidate it without relying on object identity.
 const startTurnOrderOwnerCache = new WeakMap()
 
-export function cachedStartTurnOrderChoicePlayerId(room, abilities = plannedStartTurnAbilities(room)) {
+export function cachedStartTurnOrderChoicePlayerId(room, abilities, shared) {
   const combat = room.run?.combat
   if (!combat || combat.phase !== 'start') return undefined
-  const signature = JSON.stringify([
-    combat,
-    room.startTurnCombatId,
-    room.startTurnOrder,
-    room.startTurnEnemyTargets,
-    room.startTurnChoices,
-    abilities,
-  ])
+  const resolvedAbilities = abilities ?? plannedStartTurnAbilities(room, shared)
+  const baseSignature = shared?.startTurnPlanSignature ?? startTurnPlanSignature(room)
+  if (shared) shared.startTurnPlanSignature = baseSignature
+  const cachedAbilities = startTurnAbilitiesCache.get(room)
+  const matchesPlanned = cachedAbilities?.signature === baseSignature && cachedAbilities.abilities === resolvedAbilities
+  const signature = matchesPlanned ? baseSignature : `${baseSignature}\0${JSON.stringify(resolvedAbilities)}`
   const cached = startTurnOrderOwnerCache.get(room)
   if (cached?.signature === signature) return cached.playerId
-  const playerId = startTurnOrderChoicePlayerId(combat, abilities)
+  const playerId = startTurnOrderChoicePlayerId(combat, resolvedAbilities)
   startTurnOrderOwnerCache.set(room, { signature, playerId })
   return playerId
 }
@@ -414,7 +428,7 @@ export function reopenStagedStartTurnTriggers(room, choices) {
   const staged = room.startTurnStagedTriggers ?? []
   if (combat?.phase !== 'start' || staged.length === 0) return false
   const stalledAt = Array.isArray(choices)
-    ? continueStartTurn(structuredClone(combat), choices).startTurnProgress?.choices?.[0]?.id
+    ? continueStartTurn(fastClone(combat), choices).startTurnProgress?.choices?.[0]?.id
     : undefined
   const stagedIds = new Set(staged.map((trigger) => `${trigger.playerId}/${trigger.sourceId}`))
   const stalledOwner = staged.find((trigger) => `${trigger.playerId}/${trigger.sourceId}` === stalledAt)?.playerId
@@ -460,8 +474,7 @@ export function resetStartTurnReady(room) {
   room.startTurnReady = Object.fromEntries((room.startTurnRequired ?? []).map((playerId) => [playerId, false]))
 }
 
-export function savedStartTurnEnemyTargets(room) {
-  const abilities = plannedStartTurnAbilities(room)
+export function savedStartTurnEnemyTargets(room, abilities = plannedStartTurnAbilities(room)) {
   const combatId = room.run?.combat?.combatId
   const storedTargets = room.startTurnCombatId === combatId ? room.startTurnEnemyTargets : undefined
   return Object.fromEntries(abilities.flatMap((ability) => {
@@ -477,11 +490,13 @@ export function noxiousFumesIds(combat) {
     .map((power) => `${player.id}/power:${power.uid}`)) ?? [])
 }
 
-export function pendingNoxiousFumes(room) {
+export function pendingNoxiousFumes(
+  room,
+  abilities = plannedStartTurnAbilities(room),
+  saved = savedStartTurnEnemyTargets(room, abilities),
+) {
   const combat = room.run?.combat
-  const saved = savedStartTurnEnemyTargets(room)
   const ids = noxiousFumesIds(combat)
-  const abilities = plannedStartTurnAbilities(room)
   const pending = abilities.find((ability) =>
     ids.has(ability.id) && (ability.targets?.length ?? 0) > 1 && !saved[ability.id])
   if (pending || !combat || (room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder)) ||
@@ -563,8 +578,14 @@ export function reopenStartTurnOwners(room, owners) {
     .map((playerId) => [playerId, !owners.has(playerId) && room.startTurnReady?.[playerId] === true]))
 }
 
-export function choicesBeforeNoxious(combat, order, choices, fumesId, ownerId) {
-  const abilities = startTurnAbilities(combat, order, choices)
+export function choicesBeforeNoxious(
+  combat,
+  order,
+  choices,
+  fumesId,
+  ownerId,
+  abilities = startTurnAbilities(combat, order, choices),
+) {
   const index = abilities.findIndex((ability) => ability.id === fumesId)
   const prefix = abilities.slice(0, index)
   if (abilities.length !== order.length || index < 0 || prefix.some((ability, abilityIndex) =>
@@ -589,11 +610,11 @@ export function startTurnOrderCoordinator(
   room,
   abilities = plannedStartTurnAbilities(room),
   knownOrderOwner = UNKNOWN_START_TURN_ORDER_OWNER,
+  saved = savedStartTurnEnemyTargets(room, abilities),
+  fumes = pendingNoxiousFumes(room, abilities, saved),
 ) {
   const combat = room.run?.combat
   if (!combat || roomPostRollChoicePending(room)) return null
-  const saved = savedStartTurnEnemyTargets(room)
-  const fumes = pendingNoxiousFumes(room)
   const fumesIds = noxiousFumesIds(combat)
   const orderOwner = knownOrderOwner === UNKNOWN_START_TURN_ORDER_OWNER
     ? cachedStartTurnOrderChoicePlayerId(room, abilities) : knownOrderOwner
@@ -609,18 +630,19 @@ export function startTurnOrderPending(
   room,
   abilities = plannedStartTurnAbilities(room),
   knownOrderOwner = UNKNOWN_START_TURN_ORDER_OWNER,
+  saved = savedStartTurnEnemyTargets(room, abilities),
+  fumes = pendingNoxiousFumes(room, abilities, saved),
 ) {
   const combat = room.run?.combat
   if (!combat || roomPostRollChoicePending(room)) return false
-  const fumes = pendingNoxiousFumes(room)
-  const orderOwner = knownOrderOwner === UNKNOWN_START_TURN_ORDER_OWNER
-    ? cachedStartTurnOrderChoicePlayerId(room, abilities) : knownOrderOwner
-  if (!fumes && !orderOwner ||
-    room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder)) {
+  if (room.startTurnCombatId === combat.combatId && Array.isArray(room.startTurnOrder)) {
     return false
   }
+  const orderOwner = knownOrderOwner === UNKNOWN_START_TURN_ORDER_OWNER
+    ? cachedStartTurnOrderChoicePlayerId(room, abilities) : knownOrderOwner
+  if (!fumes && !orderOwner) return false
   return Boolean(orderOwner) ||
-    startTurnOrderCoordinator(room, abilities, orderOwner) !== connectedStartTurnPlayer(room, fumes?.playerId)
+    startTurnOrderCoordinator(room, abilities, orderOwner, saved, fumes) !== connectedStartTurnPlayer(room, fumes?.playerId)
 }
 
 export function startTurnCoordinator(
@@ -629,6 +651,8 @@ export function startTurnCoordinator(
   knownOrderOwner = UNKNOWN_START_TURN_ORDER_OWNER,
   knownOrderPending = UNKNOWN_START_TURN_ORDER_PENDING,
   knownRequired = room.startTurnRequired,
+  saved = savedStartTurnEnemyTargets(room, abilities),
+  fumes = pendingNoxiousFumes(room, abilities, saved),
 ) {
   const combat = room.run?.combat
   if (roomPostRollChoicePending(room)) {
@@ -640,11 +664,10 @@ export function startTurnCoordinator(
     room.seats.find((seat) => seat.connected && combat.players
       .some((player) => player.id === seat.playerId && !player.dead))?.playerId ?? null
   const orderPending = knownOrderPending === UNKNOWN_START_TURN_ORDER_PENDING
-    ? startTurnOrderPending(room, abilities, knownOrderOwner) : knownOrderPending
-  if (orderPending) return startTurnOrderCoordinator(room, abilities, knownOrderOwner)
-  const saved = savedStartTurnEnemyTargets(room)
+    ? startTurnOrderPending(room, abilities, knownOrderOwner, saved, fumes) : knownOrderPending
+  if (orderPending) return startTurnOrderCoordinator(room, abilities, knownOrderOwner, saved, fumes)
   const stored = new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))
-  const owner = pendingNoxiousFumes(room)?.playerId ??
+  const owner = fumes?.playerId ??
     abilities.find((ability) => startTurnAbilityNeedsChoice(ability, saved, stored))?.playerId ??
     room.startTurnRequired?.find((playerId) => room.startTurnReady?.[playerId] !== true)
   return connectedStartTurnPlayer(room, owner)

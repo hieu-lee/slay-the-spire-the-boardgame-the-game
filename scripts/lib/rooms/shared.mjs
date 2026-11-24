@@ -96,14 +96,60 @@ export function normalizeLegacyPlayer(player) {
   player.lootChests = Number.isSafeInteger(player.lootChests) ? player.lootChests : 0
 }
 
+/**
+ * Fast deep clone for JSON-compatible plain objects, arrays, and primitives.
+ * Preserves `undefined` property values like `structuredClone` while avoiding
+ * V8's structured-serialization overhead on flat game/room state. Falls back to
+ * `structuredClone` for non-plain objects (Date, Map, Set, typed arrays, etc.).
+ */
+export function fastClone(value) {
+  if (value === null || typeof value !== 'object') return value
+  if (Array.isArray(value)) {
+    const length = value.length
+    const out = new Array(length)
+    for (let i = 0; i < length; i += 1) out[i] = fastClone(value[i])
+    return out
+  }
+  if (value.constructor !== Object && Object.getPrototypeOf(value) !== null) {
+    return structuredClone(value)
+  }
+  const keys = Object.keys(value)
+  const out = {}
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i]
+    if (key === '__proto__') {
+      Object.defineProperty(out, key, {
+        value: fastClone(value[key]),
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      })
+    } else {
+      out[key] = fastClone(value[key])
+    }
+  }
+  return out
+}
+
 export function assignPendingRelicIds(run) {
   if (!run) return
   let next = run.nextPendingRelicId ?? 0
-  for (const relic of run.players.flatMap((player) => player.relics).filter((relic) => relic.pending)) {
-    if (!Number.isInteger(relic.pendingId)) relic.pendingId = next++
-    else next = Math.max(next, relic.pendingId + 1)
+  let assigned = false
+  const players = run.players
+  for (let i = 0; i < players.length; i += 1) {
+    const relics = players[i].relics
+    for (let j = 0; j < relics.length; j += 1) {
+      const relic = relics[j]
+      if (!relic.pending) continue
+      if (!Number.isInteger(relic.pendingId)) {
+        relic.pendingId = next++
+        assigned = true
+      } else if (relic.pendingId + 1 > next) {
+        next = relic.pendingId + 1
+      }
+    }
   }
-  run.nextPendingRelicId = next
+  if (assigned || run.nextPendingRelicId !== next) run.nextPendingRelicId = next
 }
 
 export function findSeat(room, seatToken) {
@@ -317,7 +363,7 @@ export function recordedRunOf(room) {
   if (!run?.campaign.finalized || !Array.isArray(awards) || awards.length === 0) return undefined
   return {
     runId: run.campaign.runId,
-    bossCoins: structuredClone(awards),
+    bossCoins: fastClone(awards),
     skips: Object.fromEntries(run.players.flatMap((player) => {
       const seat = room.seats.find((candidate) => candidate.playerId === player.id)
       return seat ? [[seat.token, catchUpAwardIndex(

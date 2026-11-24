@@ -54,6 +54,7 @@ import {
   absentSetupLoadCard,
   deterministicDieRelicChoiceContext,
   fail,
+  fastClone,
   prioritizePendingChoice,
   prioritizePendingTrigger,
   restoreConcurrentChoice,
@@ -382,7 +383,7 @@ export function settleForcedCards(room, applyAction, consumedPreviewPlayerId = n
       const preview = room.cardPreviews?.[pending.playerId]
       if (pending.playerId !== consumedPreviewPlayerId &&
         preview?.chamber === true && preview.cardUid === pending.cardUids[0]) {
-        const checkpoint = structuredClone(room)
+        const checkpoint = fastClone(room)
         room.run = { ...room.run, combat: choiceCombat }
         if (!resolveAbandonedPreviews(room, applyAction)) {
           restoreRoom(room, checkpoint)

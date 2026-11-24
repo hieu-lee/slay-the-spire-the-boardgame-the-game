@@ -110,20 +110,40 @@ import {
   submitDiscard,
 } from './start-turn.mjs'
 
+const CHOICE_FIELDS = [
+  'pendingPlunderSwitches', 'pendingDieRelicChoices', 'pendingHermitSetupLoads',
+  'pendingHermitChamberPlays', 'pendingHermitStrengthRewards', 'pendingSlayerChoices',
+  'pendingPlayerChoices',
+]
+
+function roomTopLevelChanged(room, checkpoint, checkpointKeys) {
+  const keys = Object.keys(room)
+  if (keys.length !== checkpointKeys.length) return true
+  for (let i = 0; i < checkpointKeys.length; i += 1) {
+    const key = checkpointKeys[i]
+    if (!Object.hasOwn(room, key) || !Object.is(room[key], checkpoint[key])) return true
+  }
+  return false
+}
+
 export function apply(
   room,
   seatToken,
   action,
   consumedPreviewPlayerId = null,
   suspendedWork = null,
+  sharedSnapshot = undefined,
 ) {
   if (consumedPreviewPlayerId !== null || suspendedWork !== null) {
     return applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspendedWork)
   }
-  const checkpoint = structuredClone(room)
-  // No-op actions must preserve nested identities held by the server loop;
-  // only restore when a failed action actually mutated the room.
-  const checkpointJson = JSON.stringify(room)
+  // Every engine transition and room helper updates top-level room properties
+  // immutably (never mutating `room.run` or nested objects in place before a
+  // throw or no-op). A shallow checkpoint therefore rolls back completely while
+  // preserving exact nested object identities and avoiding full-room clones and
+  // JSON.stringify passes on the hot path.
+  const checkpoint = { ...room }
+  const checkpointKeys = Object.keys(checkpoint)
   try {
     const result = applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspendedWork)
     if (result.changed) {
@@ -135,13 +155,15 @@ export function apply(
       // Any accepted action can land the turn in the discard phase owing only a disconnected seat's Retain
       // choice (the last end-of-turn effect or a trigger answer, not just the final vote or discard).
       settleDiscard(room)
-      return { ...result, snapshot: snapshotFor(room, seatToken) }
+      return { ...result, snapshot: snapshotFor(room, seatToken, sharedSnapshot) }
     }
-    if (JSON.stringify(room) === checkpointJson) return result
+    if (!roomTopLevelChanged(room, checkpoint, checkpointKeys)) {
+      return result.snapshot ? result : { ...result, snapshot: snapshotFor(room, seatToken, sharedSnapshot) }
+    }
     restoreRoom(room, checkpoint)
-    return { ...result, snapshot: snapshotFor(room, seatToken) }
+    return { ...result, snapshot: snapshotFor(room, seatToken, sharedSnapshot) }
   } catch (error) {
-    if (JSON.stringify(room) !== checkpointJson) restoreRoom(room, checkpoint)
+    if (roomTopLevelChanged(room, checkpoint, checkpointKeys)) restoreRoom(room, checkpoint)
     throw error
   }
 }
@@ -161,17 +183,23 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   const ownCopy = copyIndex >= 0 ? room.concurrentCardCopies[copyIndex] : undefined
   const asyncPlayerTurn = combat?.phase === 'player' ||
     combat?.phase === 'copy' && activeCopy?.resumePhase === 'player'
-  const choiceFields = [
-    'pendingPlunderSwitches', 'pendingDieRelicChoices', 'pendingHermitSetupLoads',
-    'pendingHermitChamberPlays', 'pendingHermitStrengthRewards', 'pendingSlayerChoices',
-    'pendingPlayerChoices',
-  ]
   const choiceBelongsToSeat = (field, choice) => choice.playerId === seat.playerId &&
     (field !== 'pendingDieRelicChoices' || dieRelicChoiceNeedsInput(combat, choice))
-  const foreignChoices = Object.fromEntries(choiceFields.map((field) => [
-    field, asyncPlayerTurn
-      ? (combat?.[field] ?? []).filter((choice) => !choiceBelongsToSeat(field, choice)) : [],
-  ]))
+  let hasForeignChoice = false
+  if (asyncPlayerTurn) {
+    for (let i = 0; i < CHOICE_FIELDS.length; i += 1) {
+      const field = CHOICE_FIELDS[i]
+      const list = combat[field]
+      if (!list?.length) continue
+      for (let j = 0; j < list.length; j += 1) {
+        if (!choiceBelongsToSeat(field, list[j])) {
+          hasForeignChoice = true
+          break
+        }
+      }
+      if (hasForeignChoice) break
+    }
+  }
   const activeDistilled = asyncPlayerTurn && combat?.pendingDistilled?.playerId !== seat.playerId
     ? combat?.pendingDistilled : undefined
   const activeRelicScry = asyncPlayerTurn && combat?.pendingRelicScry?.playerId !== seat.playerId
@@ -188,14 +216,18 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   const forcedCardIndex = asyncPlayerTurn && playerTurnForcedCard?.playerId !== seat.playerId
     ? room.concurrentForcedCards?.findLastIndex((pending) => pending.playerId === seat.playerId) ?? -1 : -1
   const ownForcedCard = forcedCardIndex >= 0 ? room.concurrentForcedCards[forcedCardIndex] : undefined
-  const foreignTriggers = asyncPlayerTurn
-    ? (combat.pendingTriggers ?? []).filter((trigger) => trigger.playerId !== seat.playerId) : []
+  const foreignTriggers = asyncPlayerTurn && combat.pendingTriggers?.length
+    ? combat.pendingTriggers.filter((trigger) => trigger.playerId !== seat.playerId) : []
   const hasForeignWork = foreignCopy || activeDistilled || ownDistilled || activeRelicScry || ownRelicScry ||
     activeForcedCard || ownForcedCard ||
     foreignTriggers.length > 0 ||
-    Object.values(foreignChoices).some((choices) => choices.length > 0)
+    hasForeignChoice
   if (!suspendedWork && hasForeignWork) {
-    const checkpoint = structuredClone(room)
+    const foreignChoices = Object.fromEntries(CHOICE_FIELDS.map((field) => [
+      field, asyncPlayerTurn
+        ? (combat?.[field] ?? []).filter((choice) => !choiceBelongsToSeat(field, choice)) : [],
+    ]))
+    const checkpoint = { ...room }
     const foreignWork = {
       copies: [foreignCopy, ...(room.concurrentCardCopies ?? [])].filter(Boolean),
       forcedCards: [activeForcedCard, ...(room.concurrentForcedCards ?? [])].filter(Boolean),
@@ -225,7 +257,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
           forcedCard: ownForcedCard,
         } } : {}),
         pendingTriggers: (combat.pendingTriggers ?? []).filter((trigger) => trigger.playerId === seat.playerId),
-        ...Object.fromEntries(choiceFields.map((field) => [
+        ...Object.fromEntries(CHOICE_FIELDS.map((field) => [
           field, (combat[field] ?? []).filter((choice) => choiceBelongsToSeat(field, choice)),
         ])),
       },
@@ -234,7 +266,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
       const result = apply(room, seatToken, action, consumedPreviewPlayerId, foreignWork)
       if (!result.changed) {
         restoreRoom(room, checkpoint)
-        return { changed: false, snapshot: snapshotFor(room, seatToken) }
+        return { changed: false }
       }
       if (room.run?.phase === 'combat' && !['won', 'lost'].includes(room.run.combat?.phase)) {
         let restored = room.run.combat
@@ -266,7 +298,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
           }
         }
         restored = { ...restored, pendingTriggers: [...foreignTriggers, ...(restored.pendingTriggers ?? [])],
-          ...Object.fromEntries(choiceFields.map((field) => [
+          ...Object.fromEntries(CHOICE_FIELDS.map((field) => [
             field, [...restoredChoices[field], ...(restored[field] ?? [])],
           ])) }
         room.run = { ...room.run, combat: restored }
@@ -297,7 +329,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
             pendingSlayerChoices: [...ritual, ...(room.run.combat.pendingSlayerChoices ?? [])] } }
         }
       }
-      return { ...result, snapshot: snapshotFor(room, seatToken) }
+      return result
     } catch (error) {
       restoreRoom(room, checkpoint)
       throw error
@@ -328,7 +360,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
     settleForcedCards(room, apply, null, true, suspendedWork)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   const preparedScryAbilities = preparedCombat ? startTurnScryAbilities(preparedCombat) : []
   const preparedScry = preparedCombat ? startTurnScryPreview(preparedCombat) : undefined
@@ -345,7 +377,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
     settleForcedCards(room, apply, null, true, suspendedWork)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (preparedScry) {
     if (action?.kind !== 'resolveStartTurnScry') {
@@ -359,7 +391,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     room.run = { ...room.run, roomState: { ...room.run.roomState, preparedCombat: next } }
     settleForcedCards(room, apply, null, true, suspendedWork)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (preparedCombat?.startTurnProgress && !preparedCombat.startTurnProgress.pauseAfterDraw) {
     fail('Finish the prepared opening-hand step')
@@ -401,7 +433,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     room.run = finishRewardsIfComplete(next)
     settleForcedCards(room, apply, null, true, suspendedWork)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   const staged = room.cardPreviews?.[seat.playerId]
   const stagedPower = room.powerPreviews?.[seat.playerId]
@@ -500,7 +532,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
       })) fail('That triggered ability target is no longer legal')
       settleDisconnectedStartTurnChoices(room, apply)
       room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
     const next = resolvePendingTrigger(
       combat,
@@ -518,7 +550,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     clearEndTurnOrdering(room)
     room.version += 1
     if (publishEndTurnEffect(room)) settleDisconnectedEndTurnEffects(room, apply)
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (mandatoryChoicePending(room.run.combat)) {
     const combat = room.run.combat
@@ -570,10 +602,12 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
     if (typeof action.powerUid !== 'string') fail('Power preview needs a Power id')
     const preview = previewPowerChoice(room.run.combat, seat.playerId, action.powerUid)
     if (!preview || preview.kind !== 'scry') fail('That Power cannot reveal a choice now')
+    const nextTriggerId = room.run.combat.nextTriggerId
+    room.run = { ...room.run, combat: { ...room.run.combat, nextTriggerId: nextTriggerId + 1 } }
     room.powerPreviews = { ...room.powerPreviews,
-      [seat.playerId]: { id: room.run.combat.nextTriggerId++, powerUid: action.powerUid, ...preview } }
+      [seat.playerId]: { id: nextTriggerId, powerUid: action.powerUid, ...preview } }
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
 
   if (action?.kind === 'previewHermitChamberCard') {
@@ -628,7 +662,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
       },
     }
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
 
   if (action?.kind === 'previewCardCopy') {
@@ -661,7 +695,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
       },
     }
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
 
   if (action?.kind === 'previewCard') {
@@ -708,7 +742,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
       },
     }
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
 
   if (action?.kind === 'playCard') {
@@ -841,7 +875,7 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   const postRollItemAction = postRollWindowOpen && isPostRollItemAction(room, seat, action)
   const before = room.run
   const next = dispatch(before, seat, action, locked)
-  if (next === before) return { changed: false, snapshot: snapshotFor(room, seatToken) }
+  if (next === before) return { changed: false }
 
   if (before.phase === 'neow' && next.phase !== 'neow') {
     room.seats = room.seats.filter((candidate) => !candidate.pendingCatchUp)
@@ -922,5 +956,5 @@ function applyRoomAction(room, seatToken, action, consumedPreviewPlayerId, suspe
   room.version += 1
   // The answer cleared the published end-turn effect like any combat action; the same effect is next.
   if (orderingEndTurn && publishEndTurnEffect(room)) settleDisconnectedEndTurnEffects(room, apply)
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }

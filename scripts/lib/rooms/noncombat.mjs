@@ -46,7 +46,6 @@ import {
   recordedRunOf,
 } from './shared.mjs'
 import { clearStartTurnPlan } from './start-turn-plan.mjs'
-import { snapshotFor } from './snapshot.mjs'
 import { settleDisconnectedRewards, settlePendingRelics, settleReward } from './settlement.mjs'
 
 function neowRewardChoice(action) {
@@ -100,7 +99,7 @@ export function applyGiveUpVote(room, seat, action, seatToken) {
   const current = activeGiveUpVote(room)
   if (action.vote === 'start') {
     if (Object.keys(action).some((key) => key !== 'kind' && key !== 'vote')) fail('Invalid give-up vote')
-    if (current) return { changed: false, snapshot: snapshotFor(room, seatToken) }
+    if (current) return { changed: false }
     if (eligiblePlayerIds.length === 1) {
       finishGiveUp(room)
     } else {
@@ -123,7 +122,7 @@ export function applyGiveUpVote(room, seat, action, seatToken) {
     } else room.giveUpVote = { ...current, eligiblePlayerIds, votes }
   }
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 /** One authenticated action covers Neow's red reward, blue option, and queued rewards. */
@@ -163,7 +162,7 @@ export function neowAction(room, seat, action, seatToken) {
   if (next.phase !== 'neow') room.seats = room.seats.filter((candidate) => !candidate.pendingCatchUp)
   room.run = next
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 function purchaseKey(purchase) {
@@ -210,6 +209,7 @@ export function cancelImpossibleDisconnectedPledges(room, merchantOnly = false) 
       ? merchantRemovalCost(room.run.ascension)
       : merchantPurchaseCost(room.run.roomState, pledge)
     if (cost === null || available(merchantPlayers(room.run), pledge.payments, (id) => pledgedGold(room, id, key)) < cost) {
+      room.merchantPledges = { ...room.merchantPledges }
       delete room.merchantPledges[key]
     }
   }
@@ -266,8 +266,12 @@ export function merchantPurchase(room, seat, action, seatToken) {
   if (!existing && eligible.reduce((sum, player) => sum + player.gold - pledgedGold(room, player.id, key), 0) < available) fail('The party cannot afford that purchase')
   const pledge = { buyerId: purchase.buyerId, section: purchase.section, slot: purchase.slot, potionRecipientId: purchase.potionRecipientId, discardPotionId: purchase.discardPotionId, payments }
   if (!existing) {
-    const probe = structuredClone(run)
-    probe.players.find((player) => player.id === purchase.buyerId).gold = available
+    // Engine `purchaseAtMerchant` is pure; a shallow copy with the buyer's gold
+    // raised to the full cost validates legality without deep-cloning `run`.
+    const probe = {
+      ...run,
+      players: run.players.map((player) => player.id === purchase.buyerId ? { ...player, gold: available } : player),
+    }
     if (purchaseAtMerchant(probe, { ...pledge, payments: { [purchase.buyerId]: available } }) === probe) fail('That purchase cannot be completed')
   }
   if (total < available) room.merchantPledges = { ...room.merchantPledges, [key]: pledge }
@@ -281,7 +285,7 @@ export function merchantPurchase(room, seat, action, seatToken) {
   }
   resetMerchantReady(room, seat.playerId)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 export function merchantRemove(room, seat, action, seatToken) {
@@ -309,8 +313,11 @@ export function merchantRemove(room, seat, action, seatToken) {
   if (!existing && eligible.reduce((sum, player) => sum + player.gold - pledgedGold(room, player.id, key), 0) < cost) fail('The party cannot afford card removal')
   const pledge = { kind: 'removal', buyerId: targetId, cardUid: existing?.cardUid ?? action.cardUid, payments }
   if (!existing) {
-    const probe = structuredClone(run)
-    probe.players.find((player) => player.id === targetId).gold = cost
+    // Engine `removeAtCurrentMerchant` is pure; shallow gold override suffices.
+    const probe = {
+      ...run,
+      players: run.players.map((player) => player.id === targetId ? { ...player, gold: cost } : player),
+    }
     if (removeAtCurrentMerchant(probe, targetId, pledge.cardUid, { [targetId]: cost }) === probe) fail('That card cannot be removed')
   }
   if (Object.values(payments).reduce((sum, value) => sum + value, 0) < cost) room.merchantPledges = { ...room.merchantPledges, [key]: pledge }
@@ -323,10 +330,10 @@ export function merchantRemove(room, seat, action, seatToken) {
   }
   resetMerchantReady(room, seat.playerId)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function merchantWithdraw(room, seat, action, seatToken) {
+export function merchantWithdraw(room, seat, action, _seatToken) {
   const pending = typeof action.key === 'string' && Object.hasOwn(room.merchantPledges ?? {}, action.key) ? room.merchantPledges[action.key] : undefined
   if (!pending || !(seat.playerId in pending.payments)) fail('You have no pledge on that purchase')
   const payments = { ...pending.payments }
@@ -336,19 +343,19 @@ export function merchantWithdraw(room, seat, action, seatToken) {
   else room.merchantPledges[action.key] = { ...pending, payments }
   resetMerchantReady(room, seat.playerId)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function merchantResume(room, seat, seatToken) {
+export function merchantResume(room, seat, _seatToken) {
   const run = room.run
   if (run?.phase !== 'room' || run.roomState?.kind !== 'merchant') fail('The party is not at a Merchant')
   if (!merchantPlayers(run).some((player) => player.id === seat.playerId)) fail('Only active players visit this Merchant')
   const changed = resetMerchantReady(room, seat.playerId)
   if (changed) room.version += 1
-  return { changed, snapshot: snapshotFor(room, seatToken) }
+  return { changed }
 }
 
-export function merchantFinish(room, seat, seatToken) {
+export function merchantFinish(room, seat, _seatToken) {
   const run = room.run
   if (run?.phase !== 'room' || run.roomState?.kind !== 'merchant') fail('The party is not at a Merchant')
   const connected = new Set(room.seats.filter((candidate) => candidate.connected !== false).map((candidate) => candidate.playerId))
@@ -359,7 +366,7 @@ export function merchantFinish(room, seat, seatToken) {
   room.merchantReady = [...new Set([...(room.merchantReady ?? []), seat.playerId])].filter((id) => visitors.includes(id))
   settleMerchantReady(room)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 export function settleMerchantReady(room) {
@@ -383,10 +390,10 @@ export function courierReveal(room, seat, action, seatToken) {
   room.run = next
   room.courierPledge = undefined
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function courierResolve(room, seat, action, seatToken) {
+export function courierResolve(room, seat, action, _seatToken) {
   const offer = room.run?.courier?.offer
   if (!offer) fail('The Courier has no offer')
   if (action.playerId !== undefined && action.playerId !== offer.playerId) fail('That Courier offer belongs to another player')
@@ -397,7 +404,7 @@ export function courierResolve(room, seat, action, seatToken) {
     room.run = next
     room.courierPledge = undefined
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (action.decision !== 'buy') fail('Choose whether to buy or discard')
   const amount = action.payments?.[seat.playerId]
@@ -416,8 +423,14 @@ export function courierResolve(room, seat, action, seatToken) {
   if (!pending && room.run.combat.players.filter((player) => !player.dead).reduce((sum, player) => sum + player.gold, 0) < cost) fail('The party cannot afford that Courier offer')
   const pledge = { playerId: offer.playerId, id: offer.id, discardPotionId: action.discardPotionId, payments }
   if (!pending) {
-    const probe = structuredClone(room.run)
-    probe.combat.players.find((player) => player.id === offer.playerId).gold = cost
+    // Engine `decideCourier` is pure; shallow gold override avoids deep-cloning `run`.
+    const probe = {
+      ...room.run,
+      combat: {
+        ...room.run.combat,
+        players: room.run.combat.players.map((player) => player.id === offer.playerId ? { ...player, gold: cost } : player),
+      },
+    }
     if (decideCourier(probe, offer.playerId, 'buy', { [offer.playerId]: cost }, action.discardPotionId) === probe) fail('That Courier purchase is not legal')
   }
   if (total === cost) {
@@ -427,10 +440,10 @@ export function courierResolve(room, seat, action, seatToken) {
     room.courierPledge = undefined
   } else room.courierPledge = pledge
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function relicReward(room, seat, action, seatToken, applyAction) {
+export function relicReward(room, seat, action, _seatToken, applyAction) {
   if (room.run?.phase === 'reward' && action.choice !== undefined) {
     if (!['gain', 'skip'].includes(action.choice)) fail('Choose gain or skip for the Relic reward')
     const next = resolveRelicReward(room.run, seat.playerId, action.choice === 'gain')
@@ -439,7 +452,7 @@ export function relicReward(room, seat, action, seatToken, applyAction) {
     settleDisconnectedRewards(room)
     settleReward(room, applyAction)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (action.playerId !== undefined && action.playerId !== seat.playerId) fail('Choose only your own relic')
   const next = chooseRelicReward(room.run, seat.playerId, action.decision)
@@ -447,7 +460,7 @@ export function relicReward(room, seat, action, seatToken, applyAction) {
   room.run = next
   settlePendingRelics(room)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 export function eventChoice(room, seat, action, seatToken) {
@@ -501,13 +514,16 @@ export function eventChoice(room, seat, action, seatToken) {
     const pledge = { actorId, optionId, cost, decision: pending?.decision ?? { ...decision, payments: undefined }, payments }
     if (total < cost) {
       if (!pending) {
-        const probe = structuredClone(room.run)
-        probe.players.find((player) => player.id === actorId).gold = Math.max(probe.players.find((player) => player.id === actorId).gold, cost)
+        // Engine `chooseEvent` is pure; shallow gold override avoids deep-cloning `run`.
+        const probe = {
+          ...room.run,
+          players: room.run.players.map((player) => player.id === actorId ? { ...player, gold: Math.max(player.gold, cost) } : player),
+        }
         if (chooseEvent(probe, actorId, { ...pledge.decision, payments: { [actorId]: cost } }) === probe) fail('That Event choice is not legal')
       }
       room.eventPledge = pledge
       room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
     decision = { ...pledge.decision, payments }
   }
@@ -517,22 +533,22 @@ export function eventChoice(room, seat, action, seatToken) {
   settlePendingRelics(room)
   room.eventPledge = undefined
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function cancelEventPledge(room, seat, seatToken) {
+export function cancelEventPledge(room, seat, _seatToken) {
   if (!room.eventPledge || room.eventPledge.actorId !== seat.playerId) fail('Only the Event chooser can cancel this payment')
   room.eventPledge = undefined
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function eventSkip(room, seat, action, seatToken) {
+export function eventSkip(room, seat, action, _seatToken) {
   if (action.playerId !== undefined && action.playerId !== seat.playerId) fail('Skip only your own unavailable Event choice')
   if (!canSkipEvent(room.run, seat.playerId)) fail('A printed Event choice is available')
   room.run = skipEvent(room.run, seat.playerId)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 export function finishCampaignRun(room, seatToken) {
@@ -571,10 +587,10 @@ export function finishCampaignRun(room, seatToken) {
   room.campaignProgress = room.campaignBaseProgress
   room.run = { ...next, campaignProgress: room.campaignProgress }
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function allocateCampaign(room, seat, action, seatToken) {
+export function allocateCampaign(room, seat, action, _seatToken) {
   if (!room.run?.campaign.finalized) fail('Finish the campaign run before assigning marks')
   if (room.seats[0]?.playerId !== seat.playerId) fail('The journal keeper assigns shared campaign marks')
   if (action.expectedRunId !== room.run.campaign.runId || !Number.isInteger(action.expectedUnspentMarks) || action.expectedUnspentMarks !== room.campaignProgress.unspentMarks) fail('That campaign allocation is stale')
@@ -587,10 +603,10 @@ export function allocateCampaign(room, seat, action, seatToken) {
   room.campaignProgress = room.campaignBaseProgress
   room.run = { ...room.run, campaignProgress: room.campaignProgress }
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function returnToLobby(room, seat, seatToken) {
+export function returnToLobby(room, seat, _seatToken) {
   if (!room.run?.campaign.finalized || room.campaignProgress.unspentMarks > 0) fail('Finish assigning campaign marks first')
   if (room.seats[0]?.playerId !== seat.playerId) fail('The journal keeper begins the next run')
   room.phase = 'lobby'
@@ -602,7 +618,7 @@ export function returnToLobby(room, seat, seatToken) {
   room.run = null
   includeSeatUnlocks(room)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 /**
@@ -665,9 +681,9 @@ export function campfire(room, seat, action, seatToken) {
 
   const waiting = settleCampfire(room)
   if (waiting) {
-    return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true, waitingOn: waiting }
   }
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
 /**
@@ -722,7 +738,7 @@ export function cardReward(room, seat, action, seatToken) {
     room.run = next
     settleDisconnectedRewards(room)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (choice !== null && (
     offer.choices === null || !Number.isInteger(choice) || choice < 0 || choice >= offer.choices.length
@@ -734,10 +750,10 @@ export function cardReward(room, seat, action, seatToken) {
   room.run = next
   settleDisconnectedRewards(room)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function transformReward(room, seat, action, seatToken, applyAction) {
+export function transformReward(room, seat, action, _seatToken, applyAction) {
   const run = room.run
   if (run.phase !== 'reward') fail('The party is not choosing rewards')
   if (!run.rewards.some((offer) => offer.playerId === seat.playerId && offer.transformReward)) {
@@ -751,10 +767,10 @@ export function transformReward(room, seat, action, seatToken, applyAction) {
   settleDisconnectedRewards(room)
   settleReward(room, applyAction)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function quickSetupStep(room, seat, action, seatToken) {
+export function quickSetupStep(room, seat, action, _seatToken) {
   const setup = room.run?.setup
   if (room.run?.phase !== 'setup' || !setup) fail('The party is not resolving Quick Start')
   const activePlayerId = setup.playerIds[setup.playerIndex] ?? setup.playerIds[0]
@@ -765,5 +781,5 @@ export function quickSetupStep(room, seat, action, seatToken) {
   if (next === room.run) fail('That Quick Start choice is not legal')
   room.run = next
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }

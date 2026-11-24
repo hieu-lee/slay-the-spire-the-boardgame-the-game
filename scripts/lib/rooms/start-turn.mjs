@@ -43,7 +43,6 @@ import {
   startTurnOwnerChoicesChanged,
   validStartTurnChoice,
 } from './start-turn-plan.mjs'
-import { snapshotFor } from './snapshot.mjs'
 import {
   finishPostRollChoiceWindow,
   settleDiscard,
@@ -98,16 +97,21 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
       if (room.run?.combat?.phase === 'start') settleDisconnectedStartTurnChoices(room, applyAction)
     }
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
-  const abilitiesById = new Map(plannedStartTurnAbilities(room).map((ability) => [ability.id, ability]))
+  const plannedAbilities = plannedStartTurnAbilities(room)
+  const abilitiesById = new Map(plannedAbilities.map((ability) => [ability.id, ability]))
   if (normalized.length !== abilitiesById.size || new Set(normalized.map((choice) => choice.id)).size !== abilitiesById.size ||
     normalized.some((choice) => !abilitiesById.has(choice.id))) {
     fail('Start-of-Turn choices must contain every ability exactly once')
   }
   const defaultsById = new Map(defaultStartTurnChoices(combat).map((choice) => [choice.id, choice]))
-  const pendingFumesBefore = pendingNoxiousFumes(room)
-  const orderCoordinator = startTurnOrderPending(room) ? startTurnOrderCoordinator(room) : null
+  const savedTargetsBefore = savedStartTurnEnemyTargets(room, plannedAbilities)
+  const pendingFumesBefore = pendingNoxiousFumes(room, plannedAbilities, savedTargetsBefore)
+  const orderPendingBefore = startTurnOrderPending(room, plannedAbilities, undefined, savedTargetsBefore, pendingFumesBefore)
+  const orderCoordinator = orderPendingBefore
+    ? startTurnOrderCoordinator(room, plannedAbilities, undefined, savedTargetsBefore, pendingFumesBefore)
+    : null
   if (orderCoordinator && seat.playerId !== orderCoordinator &&
     (!pendingFumesBefore || seat.playerId !== pendingFumesBefore.playerId)) {
     const merged = mergedStartTurnChoices(room, normalized, savedStartTurnChoices(room) ?? [], seat.playerId)
@@ -128,7 +132,7 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
     else markStartTurnReady(room, seat.playerId)
     settleDisconnectedStartTurnChoices(room, applyAction)
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (orderCoordinator && seat.playerId !== orderCoordinator) {
     fail('Only the start-turn order coordinator can commit the shared order')
@@ -152,15 +156,15 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
   if (existingOrder && normalized.some((choice, index) => choice.id !== existingOrder[index])) {
     fail('The Start-of-Turn order is already committed')
   }
-  if (startTurnOrderPending(room)) {
+  if (orderPendingBefore) {
     const order = normalized.map((choice) => choice.id)
-    if (startTurnAbilities(combat, order).length !== startTurnAbilities(combat).length) {
+    const orderedAbilities = startTurnAbilities(combat, order, normalized)
+    if (orderedAbilities.length !== abilitiesById.size) {
       fail('Start-of-Turn choices must contain every ability and valid targets')
     }
     room.startTurnCombatId = combat.combatId
     room.startTurnOrder = order
     room.startTurnEnemyTargets = undefined
-    const orderedAbilities = startTurnAbilities(combat, order, normalized)
     const orderedById = new Map(orderedAbilities.map((ability) => [ability.id, ability]))
     const committedChoices = normalized.filter((choice) => {
       const ability = orderedById.get(choice.id)
@@ -175,21 +179,23 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
     settleDisconnectedStartTurnChoices(room, applyAction)
     const fumes = pendingNoxiousFumes(room)
     if (fumes) {
-      const stagedChoices = choicesBeforeNoxious(combat, order, normalized, fumes.id, seat.playerId)
+      const stagedChoices = choicesBeforeNoxious(combat, order, normalized, fumes.id, seat.playerId, orderedAbilities)
       saveStartTurnOwnerChoices(room, seat.playerId, stagedChoices)
       // The staged prefix can leave Fumes one forced target; then nothing is left to ask.
-      if (room.run?.combat !== combat || pendingNoxiousFumes(room)) {
-        if (!plannedStartTurnAbilities(room).some((ability) => ability.playerId === seat.playerId &&
-          startTurnAbilityNeedsChoice(ability, savedStartTurnEnemyTargets(room),
+      const afterAbilities = room.run?.combat === combat ? plannedStartTurnAbilities(room) : []
+      const afterTargets = room.run?.combat === combat ? savedStartTurnEnemyTargets(room, afterAbilities) : {}
+      if (room.run?.combat !== combat || pendingNoxiousFumes(room, afterAbilities, afterTargets)) {
+        if (!afterAbilities.some((ability) => ability.playerId === seat.playerId &&
+          startTurnAbilityNeedsChoice(ability, afterTargets,
             new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))))) {
           markStartTurnReady(room, seat.playerId)
           // This may complete the quorum while the remaining owners are away.
           settleDisconnectedStartTurnChoices(room, applyAction)
         }
         room.version += 1
-        return { changed: true, snapshot: snapshotFor(room, seatToken) }
+        return { changed: true }
       }
-      const forced = startTurnAbilities(combat, order, normalized).find((ability) => ability.id === fumes.id)
+      const forced = orderedAbilities.find((ability) => ability.id === fumes.id)
       const fumesChoice = normalized.find((choice) => choice.id === fumes.id)
       if (fumesChoice && forced?.targets?.length === 1) fumesChoice.enemyUid = forced.targets[0].uid
     }
@@ -217,23 +223,25 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
     room.startTurnEnemyTargets = { ...savedTargets, [pendingFumes.id]: target }
     const staged = mergedStartTurnChoices(room, ownerChoices)
     const stagedById = new Map(staged.map((choice) => [choice.id, choice]))
-    const remainingChoice = plannedStartTurnAbilities(room).some((ability) =>
+    const afterAbilities = plannedStartTurnAbilities(room)
+    const afterTargets = savedStartTurnEnemyTargets(room, afterAbilities)
+    const remainingChoice = afterAbilities.some((ability) =>
       startTurnChoicePending(ability, stagedById.get(ability.id)))
-    if (pendingNoxiousFumes(room) || remainingChoice) {
+    if (pendingNoxiousFumes(room, afterAbilities, afterTargets) || remainingChoice) {
       // The Fumes target can reveal a prompt (Evoke, Shiv overflow) for a seat that already answered.
-      const revealed = new Set(plannedStartTurnAbilities(room).filter((ability) =>
+      const revealed = new Set(afterAbilities.filter((ability) =>
         ability.playerId !== seat.playerId && startTurnChoicePending(ability, stagedById.get(ability.id)))
         .map((ability) => ability.playerId))
       if (revealed.size > 0) reopenStartTurnOwners(room, revealed)
-      if (!plannedStartTurnAbilities(room).some((ability) => ability.playerId === seat.playerId &&
-        startTurnAbilityNeedsChoice(ability, savedStartTurnEnemyTargets(room),
+      if (!afterAbilities.some((ability) => ability.playerId === seat.playerId &&
+        startTurnAbilityNeedsChoice(ability, afterTargets,
           new Set((savedStartTurnChoices(room) ?? []).map((choice) => choice.id))))) {
         markStartTurnReady(room, seat.playerId)
         // This may complete the quorum while the remaining owners are away.
         settleDisconnectedStartTurnChoices(room, applyAction)
       }
       room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
   }
   const saved = savedStartTurnEnemyTargets(room)
@@ -260,7 +268,7 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
       reopenStartTurnOwners(room, new Set(outdated.map((ability) => ability.playerId)))
       settleDisconnectedStartTurnChoices(room, applyAction)
       room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
     room.startTurnCombatId = previousPlan.combatId
     room.startTurnOrder = previousPlan.order
@@ -286,11 +294,11 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
   settleDisconnectedStartTurnChoices(room, applyAction)
   if (room.run?.combat !== combat) {
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   if (!room.startTurnRequired.every((playerId) => room.startTurnReady[playerId])) {
     room.version += 1
-    return { changed: true, snapshot: snapshotFor(room, seatToken) }
+    return { changed: true }
   }
   const stored = new Map((savedStartTurnChoices(room) ?? []).map((choice) => [choice.id, choice]))
   const defaults = new Map(defaultStartTurnChoices(combat).map((choice) => [choice.id, choice]))
@@ -316,12 +324,12 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
         .map(([playerId, ready]) => [playerId, owners.has(playerId) ? false : ready]))
       settleDisconnectedStartTurnChoices(room, applyAction)
       room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
     if (reopenStagedStartTurnTriggers(room, finalChoices)) {
       settleForcedCards(room, applyAction)
       room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
     // A staged choice that an earlier ability or a reorder made illegal belongs to
     // another seat; reopen that seat instead of failing the last submitter.
@@ -343,7 +351,7 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
       reopenStartTurnOwners(room, owners)
       settleDisconnectedStartTurnChoices(room, applyAction)
       room.version += 1
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
     room.startTurnCombatId = previousPlan.combatId
     room.startTurnOrder = previousPlan.order
@@ -356,10 +364,10 @@ function resolveStartTurnChoices(room, seat, action, seatToken, applyAction) {
   clearStartTurnPlan(room)
   settleForcedCards(room, applyAction)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function resolveBeforeDrawScry(room, seat, action, seatToken, applyAction) {
+export function resolveBeforeDrawScry(room, seat, action, _seatToken, applyAction) {
   const combat = room.run?.combat
   const preview = combat && startTurnScryPreview(combat)
   if (!combat || !preview) fail('The party is not resolving a pre-draw Scry')
@@ -374,10 +382,10 @@ export function resolveBeforeDrawScry(room, seat, action, seatToken, applyAction
   room.run = { ...room.run, combat: next }
   settleForcedCards(room, applyAction)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function resolvePrivateStartTurnDiscard(room, seat, action, seatToken, applyAction) {
+export function resolvePrivateStartTurnDiscard(room, seat, action, _seatToken, applyAction) {
   const combat = room.run?.combat
   const preview = combat && startTurnDiscardPreview(combat)
   if (!combat || !preview) fail('The party is not resolving a start-turn discard')
@@ -390,10 +398,10 @@ export function resolvePrivateStartTurnDiscard(room, seat, action, seatToken, ap
   room.run = { ...room.run, combat: next }
   settleForcedCards(room, applyAction)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function orderBeforeDrawScries(room, seat, action, seatToken, applyAction) {
+export function orderBeforeDrawScries(room, seat, action, _seatToken, applyAction) {
   const combat = room.run?.combat
   if (!combat || combat.phase !== 'start') fail('The party is not ordering pre-draw Scries')
   const coordinator = startTurnCoordinator(room)
@@ -405,10 +413,10 @@ export function orderBeforeDrawScries(room, seat, action, seatToken, applyAction
   room.run = { ...room.run, combat: next }
   settleForcedCards(room, applyAction)
   room.version += 1
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }
 
-export function submitDiscard(room, seat, action, seatToken) {
+export function submitDiscard(room, seat, action, _seatToken) {
   const combat = room.run?.combat
   if (!combat || combat.phase !== 'discard') fail('The party is not ordering discards')
   const player = combat.players.find((candidate) => candidate.id === seat.playerId)
@@ -421,5 +429,5 @@ export function submitDiscard(room, seat, action, seatToken) {
   room.endTurnOrders = { ...room.endTurnOrders, [seat.playerId]: order }
   room.version += 1
   const waiting = settleDiscard(room, true)
-  return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true, waitingOn: waiting }
 }

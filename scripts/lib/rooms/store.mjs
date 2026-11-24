@@ -50,6 +50,7 @@ import { restoreCoinGrants } from '../coin-grants.mjs'
 import {
   assignPendingRelicIds,
   fail,
+  fastClone,
   LEGACY_DECK_TYPES,
   MAX_RECORDED_RUNS,
   normalizeLegacyPlayer,
@@ -468,7 +469,7 @@ export function createRoom(store, options = {}) {
     metaOptions: { mode: 'standard', modifiers: [], quickStartAct: 1 },
     seats: [],
     run: null,
-    campaignBaseProgress: structuredClone(campaignProgress),
+    campaignBaseProgress: fastClone(campaignProgress),
     campaignProgress,
     /** Bumped on every accepted mutation so clients can drop stale frames. */
     version: 0,

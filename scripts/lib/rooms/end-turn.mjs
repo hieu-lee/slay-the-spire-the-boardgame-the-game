@@ -9,7 +9,6 @@ import {
 import { mandatoryCardPlayWindowOwners } from '../../../src/game/combat/queries.ts'
 import { abandonCardPlayWindows } from '../../../src/game/combat/play.ts'
 import { clearEndTurnOrdering, fail, publishEndTurnEffect, UID_LIMIT } from './shared.mjs'
-import { snapshotFor } from './snapshot.mjs'
 import { resolveAbandonedPreviews, settleDiscard, settleForcedCards } from './settlement.mjs'
 
 export function endTurn(room, seat, _action, seatToken, applyAction) {
@@ -25,7 +24,7 @@ export function endTurn(room, seat, _action, seatToken, applyAction) {
     combat = room.run?.combat
     if (combat && ['won', 'lost'].includes(combat.phase)) {
       room.endTurnReady = undefined
-      return { changed: true, snapshot: snapshotFor(room, seatToken) }
+      return { changed: true }
     }
   }
   if (room.endTurnAbilities) fail('The party is already ordering end-of-turn abilities')
@@ -41,7 +40,7 @@ export function endTurn(room, seat, _action, seatToken, applyAction) {
   room.endTurnReady = { ...room.endTurnReady, [seat.playerId]: true }
   room.version += 1
   const waiting = settleEndTurn(room, applyAction)
-  return { changed: true, waitingOn: waiting, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true, waitingOn: waiting }
 }
 
 export function settleEndTurn(room, applyAction) {
@@ -137,5 +136,5 @@ export function resolveEndTurnEffect(room, seat, action, seatToken, applyAction)
     fail('That end-turn effect target is no longer legal')
   }
   settleDisconnectedEndTurnEffects(room, applyAction)
-  return { changed: true, snapshot: snapshotFor(room, seatToken) }
+  return { changed: true }
 }

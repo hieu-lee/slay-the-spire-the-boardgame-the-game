@@ -12,7 +12,7 @@ import {
   resolveEnemyTargets,
   slimeCommandEnemyChoiceCount,
 } from '../../../src/game/state.ts'
-import { fail, uidList } from './shared.mjs'
+import { fail, fastClone, uidList } from './shared.mjs'
 
 export function previewSlimeChoices(combat, action, def, player, effectEnergy, charged, playedCard) {
   const slimeUids = uidList(action.slimeUids) ?? []
@@ -98,7 +98,7 @@ export function visibleCardPreview(preview) {
     retargetEnemy: _retargetEnemy, retargetSlime: _retargetSlime,
     slimeEnemyCount: _slimeEnemyCount, ...visible
   } = preview
-  return structuredClone(visible)
+  return fastClone(visible)
 }
 
 function combatForPreview(combat, playerId, suspendedWork) {

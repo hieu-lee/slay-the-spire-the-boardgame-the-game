@@ -7,6 +7,7 @@ import { classifyDeckType, codexReady } from './lib/codex-deck-classifier.mjs'
 import { addLeaderboardRun, roomLeaderboardRun } from './lib/leaderboard.mjs'
 import { backfillDailyCoins } from './lib/daily-coins.mjs'
 import { deckHash, HERO_NAMES, SPECIFIC_ARCHETYPE_FLOOR, otherDeckType, recordDeckClassification, soloDeck, validClassifierThreadId, validDeckType, validSoloDeck } from './lib/stats.mjs'
+import { fastClone } from './lib/rooms/shared.mjs'
 import {
   apply,
   chooseAscension,
@@ -109,12 +110,12 @@ export function createRoomServer({
 
   let saveTimer
   let saveError = null
-  const applyAndRecord = (room, token, action) => {
+  const applyAndRecord = (room, token, action, sharedSnapshot) => {
     const finalized = room.run?.campaign.finalized === true
-    const checkpoint = !finalized && action?.kind === 'finishRun' ? structuredClone(room) : null
+    const checkpoint = !finalized && action?.kind === 'finishRun' ? fastClone(room) : null
     try {
       if (finalized && addLeaderboardRun(store, roomLeaderboardRun(room))) { queueSave(); scheduleClassification() }
-      const result = apply(room, token, action)
+      const result = apply(room, token, action, null, null, sharedSnapshot)
       if (!finalized && room.run?.campaign.finalized === true) {
         addLeaderboardRun(store, roomLeaderboardRun(room))
         scheduleClassification()
@@ -615,6 +616,7 @@ export function createRoomServer({
       if (store.rooms.get(room.code) !== room) return send(response, 404, { error: 'Room not found' })
       let changed = true
       let snapshot = null
+      let sharedSnapshot
       acted = { room, version: room.version, token }
       if (operation === 'character') snapshot = chooseCharacter(room, token, body.character, body.skin)
       else if (operation === 'relic-rule') snapshot = chooseRelicRule(room, token, body.enabled)
@@ -648,7 +650,8 @@ export function createRoomServer({
         snapshot = startRun(room, token, { campaign: body.campaign })
       }
       else if (operation === 'action') {
-        const result = applyAndRecord(room, token, body.action)
+        sharedSnapshot = {}
+        const result = applyAndRecord(room, token, body.action, sharedSnapshot)
         changed = result.changed
         snapshot = result.snapshot
       }
@@ -656,7 +659,7 @@ export function createRoomServer({
       if (changed) {
         touch(room)
         queueSave()
-        publish(room)
+        publish(room, undefined, sharedSnapshot, token, snapshot)
       }
       // Accepted: whatever happens while answering is not a refusal to reconcile.
       acted = null

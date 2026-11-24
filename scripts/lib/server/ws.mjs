@@ -38,6 +38,7 @@ export function createWsLayer({
   onSlowOperation,
 }) {
   const sockets = new Map()
+  const roomSockets = new Map()
   const pendingAuth = new Map()
   const upgradeRates = new Map()
   const invalidUpgradeRates = new Map()
@@ -48,17 +49,45 @@ export function createWsLayer({
   })
   let preserveRoomsOnClose = false
 
-  function publish(room, skipToken) {
+  function registerSocket(socket, client) {
+    sockets.set(socket, client)
+    let group = roomSockets.get(client.code)
+    if (!group) {
+      group = new Set()
+      roomSockets.set(client.code, group)
+    }
+    group.add(socket)
+  }
+
+  function unregisterSocket(socket) {
+    const client = sockets.get(socket)
+    if (!client) return undefined
+    sockets.delete(socket)
+    const group = roomSockets.get(client.code)
+    if (group) {
+      group.delete(socket)
+      if (group.size === 0) roomSockets.delete(client.code)
+    }
+    return client
+  }
+
+  function publish(room, skipToken, sharedSnapshot = {}, precomputedToken, precomputedSnapshot) {
+    const group = roomSockets.get(room.code)
+    if (!group || group.size === 0) return
     const startedAt = Date.now()
-    const sharedSnapshot = {}
-    for (const [socket, client] of sockets) {
-      if (client.code !== room.code || socket.readyState !== 1) continue
+    for (const socket of group) {
+      if (socket.readyState !== 1) continue
+      const client = sockets.get(socket)
+      if (!client) continue
       if (skipToken !== undefined && client.token === skipToken) continue
       if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
         socket.terminate()
         continue
       }
-      socket.send(JSON.stringify({ type: 'snapshot', snapshot: snapshotFor(room, client.token, sharedSnapshot) }))
+      const snapshot = precomputedToken !== undefined && client.token === precomputedToken && precomputedSnapshot !== undefined
+        ? precomputedSnapshot
+        : snapshotFor(room, client.token, sharedSnapshot)
+      socket.send(JSON.stringify({ type: 'snapshot', snapshot }))
     }
     const durationMs = Date.now() - startedAt
     if (durationMs >= 100) {
@@ -152,8 +181,10 @@ export function createWsLayer({
           let seat = findSeat(room, message.token)
           if (!seat) return socket.close(4003, 'Unknown seat')
           if (isRestrictedName(seat.name)) return socket.close(4003, SPIRE_REJECTION)
-          const replacedSockets = [...sockets].filter(([, other]) =>
-            other.code === room.code && other.token === message.token)
+          const existingRoomSockets = roomSockets.get(room.code)
+          const replacedSockets = existingRoomSockets
+            ? [...existingRoomSockets].filter((otherSocket) => sockets.get(otherSocket)?.token === message.token)
+            : []
           if (replacedSockets.length === 0 && sockets.size >= maxConnections) {
             return socket.close(4009, 'Server connection capacity reached')
           }
@@ -167,11 +198,11 @@ export function createWsLayer({
             token: message.token,
             playerId: seat.playerId,
           }
-          sockets.set(socket, client)
+          registerSocket(socket, client)
           pendingAuth.delete(socket)
           clearTimeout(authTimer)
-          for (const [otherSocket] of replacedSockets) {
-            sockets.delete(otherSocket)
+          for (const otherSocket of replacedSockets) {
+            unregisterSocket(otherSocket)
             otherSocket.close(4001, 'Seat opened elsewhere')
           }
           touch(room)
@@ -186,11 +217,18 @@ export function createWsLayer({
             if (recoveringRestart(room)) {
               throw Object.assign(new Error('Waiting for every player to reconnect'), { status: 409 })
             }
-            const result = applyAndRecord(room, client.token, message.action)
+            const sharedSnapshot = {}
+            const result = applyAndRecord(room, client.token, message.action, sharedSnapshot)
             if (result.changed) {
               touch(room)
               queueSave()
-              publish(room, requestId ? client.token : undefined)
+              publish(
+                room,
+                requestId ? client.token : undefined,
+                sharedSnapshot,
+                requestId ? undefined : client.token,
+                requestId ? undefined : result.snapshot,
+              )
             }
             if (requestId) {
               if (socket.bufferedAmount > MAX_BUFFERED_BYTES) socket.terminate()
@@ -214,17 +252,21 @@ export function createWsLayer({
           if (JSON.stringify(message.signal).length > MAX_VOICE_SIGNAL_BYTES) throw new Error('Voice signal is too large')
           const target = room.seats.find((seat) => seat.playerId === message.to)
           if (!target) throw new Error('Unknown voice peer')
-          for (const [peer, peerClient] of sockets) {
-            if (peerClient.code === room.code && peerClient.playerId === target.playerId && peer.readyState === 1) {
-              if (peer.bufferedAmount > MAX_BUFFERED_BYTES) {
-                peer.terminate()
-                continue
+          const group = roomSockets.get(room.code)
+          if (group) {
+            for (const peer of group) {
+              const peerClient = sockets.get(peer)
+              if (peerClient?.playerId === target.playerId && peer.readyState === 1) {
+                if (peer.bufferedAmount > MAX_BUFFERED_BYTES) {
+                  peer.terminate()
+                  continue
+                }
+                peer.send(JSON.stringify({
+                  type: 'voice',
+                  from: client.playerId,
+                  signal: message.signal,
+                }))
               }
-              peer.send(JSON.stringify({
-                type: 'voice',
-                from: client.playerId,
-                signal: message.signal,
-              }))
             }
           }
         } else {
@@ -242,10 +284,10 @@ export function createWsLayer({
     socket.on('close', () => {
       clearTimeout(authTimer)
       pendingAuth.delete(socket)
-      const client = sockets.get(socket)
-      sockets.delete(socket)
+      const client = unregisterSocket(socket)
       if (!client || preserveRoomsOnClose) return
-      if ([...sockets.values()].some((other) => other.code === client.code && other.token === client.token)) return
+      const group = roomSockets.get(client.code)
+      if (group && [...group].some((other) => sockets.get(other)?.token === client.token)) return
       const room = store.rooms.get(client.code)
       if (room) {
         const quorum = store.reconnectQuorums.get(room.code)
@@ -285,24 +327,31 @@ export function createWsLayer({
       pruneRateMap(invalidUpgradeRates, createWindowMs, now)
     },
     isSeatConnected(code, token) {
-      return [...sockets.values()].some((client) => client.code === code && client.token === token)
+      const group = roomSockets.get(code)
+      if (!group) return false
+      for (const socket of group) if (sockets.get(socket)?.token === token) return true
+      return false
     },
     closeSeatSockets(code, token, closeCode, reason) {
-      for (const [socket, client] of sockets) {
-        if (client.code === code && client.token === token) {
-          sockets.delete(socket)
+      const group = roomSockets.get(code)
+      if (!group) return
+      for (const socket of [...group]) {
+        if (sockets.get(socket)?.token === token) {
+          unregisterSocket(socket)
           socket.close(closeCode, reason)
         }
       }
     },
     closeRoomSockets(code, closeCode, reason) {
-      for (const [socket, client] of sockets) {
-        if (client.code === code) socket.close(closeCode, reason)
-      }
+      const group = roomSockets.get(code)
+      if (!group) return
+      for (const socket of [...group]) socket.close(closeCode, reason)
     },
     dropConnection(code, token) {
-      for (const [socket, client] of sockets) {
-        if (client.code === code && client.token === token) socket.terminate()
+      const group = roomSockets.get(code)
+      if (!group) return
+      for (const socket of [...group]) {
+        if (sockets.get(socket)?.token === token) socket.terminate()
       }
     },
     close({ preserveRooms = false } = {}) {
