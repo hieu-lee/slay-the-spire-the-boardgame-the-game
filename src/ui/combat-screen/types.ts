@@ -12,8 +12,8 @@ import type {
   StartTurnScryPreview,
   PlayContext,
 } from '../../game/combat.ts'
-import type { CardInstance, GuardianMode, OrbType } from '../../game/types.ts'
-import type { ActionOutcome } from '../../multiplayer/useRoomSession.ts'
+import type { CardInstance, GuardianMode, OrbType, Player } from '../../game/types.ts'
+import type { ActionOutcome, VisibleCombat, VisiblePlayer } from '../../multiplayer/useRoomSession.ts'
 import type { cardMotionDestination } from '../board-signals.ts'
 import type { VfxRecipe } from '../combat-vfx.ts'
 
@@ -289,3 +289,8 @@ export type ChamberReturnFlight = {
 }
 
 export type SlimeCardZoom = { card: CardInstance; x: number; y: number }
+
+export type ReconciliationResult = {
+  combat: CombatState | VisibleCombat
+  player: Player | VisiblePlayer
+} | null
