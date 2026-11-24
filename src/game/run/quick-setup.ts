@@ -5,7 +5,7 @@
 import { createEnemyDecks, rollActBoss } from './encounters.ts'
 import { availableRewardSources, revealRewardItems } from './rewards.ts'
 import { canUpgradeCard, hasModifier, hasPendingRelicAcquisition, nextRunUid } from './rules.ts'
-import { colorlessCardsAvailable, merchantItemDecks } from './supplies.ts'
+import { cloneItemDecks, colorlessCardsAvailable, merchantItemDecks, mirrorItemSupplies } from './supplies.ts'
 import type { CardRewardOffer, RewardSource, RunState } from './types.ts'
 import { queueNewGuardianSockets } from '../guardian-gems.ts'
 import { availableTransformRewards, gainGold, removeCard, transformCard, upgradeCard } from '../acquisition.ts'
@@ -160,10 +160,12 @@ function advanceQuickSetupUnit(state: RunState, cardUids: readonly string[] = []
     if (cardUids.length > 0) return state
     const players = setup.kind === 'catch-up'
       ? state.players.filter((player) => setup.playerIds.includes(player.id)) : state.players
+    const itemDecks = cloneItemDecks(state.itemDecks)
+    itemDecks.potions = [...state.potionDeck]
     const guardianGemDeck = [...(state.guardianGemDeck ?? [])]
-    return { ...state, phase: 'room', guardianGemDeck,
-      roomState: createMerchant(merchantItemDecks(state, state.itemDecks), players, guardianGemDeck,
-        state.meta.ruleset) }
+    return mirrorItemSupplies({ ...state, phase: 'room', guardianGemDeck,
+      roomState: createMerchant(merchantItemDecks(state, itemDecks), players, guardianGemDeck,
+        state.meta.ruleset) }, itemDecks)
   }
 
   if (!player) return state

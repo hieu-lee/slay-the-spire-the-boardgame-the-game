@@ -572,11 +572,10 @@ export function finishCampaignRun(room, seatToken) {
   )
   if (ascensionBossQualifies(room.run.players.length, room.run.campaign.highestBossActDefeated)) {
     const earned = Math.min(MAX_ASCENSION, room.run.ascension + 1)
-    for (const seat of room.seats) {
-      if (room.run.players.some((player) => player.id === seat.playerId)) {
-        seat.earnedAscension = Math.max(seat.earnedAscension ?? 0, earned)
-      }
-    }
+    room.seats = room.seats.map((seat) =>
+      room.run.players.some((player) => player.id === seat.playerId)
+        ? { ...seat, earnedAscension: Math.max(seat.earnedAscension ?? 0, earned) }
+        : seat)
   }
   room.campaignBaseProgress = {
     ...campaignProgress,

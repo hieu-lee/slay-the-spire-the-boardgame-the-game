@@ -218,9 +218,11 @@ function diffState(before: unknown, after: unknown, path: (string | number)[], r
   for (let i = 0; i < leftKeys.length; i += 1) {
     const key = leftKeys[i]!
     if (!Object.hasOwn(right, key)) {
-      path.push(key)
-      result.push({ path: path.slice(), remove: true })
-      path.pop()
+      if (left[key] !== undefined) {
+        path.push(key)
+        result.push({ path: path.slice(), remove: true })
+        path.pop()
+      }
     } else {
       matched += 1
       if (left[key] !== right[key]) {
